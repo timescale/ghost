@@ -18,6 +18,12 @@ curl -fsSL https://install.ghost.build | sh
 irm https://install.ghost.build/install.ps1 | iex
 ```
 
+### Homebrew (macOS/Linux)
+
+```bash
+brew install timescale/tap/ghost
+```
+
 ### Debian/Ubuntu
 
 ```bash

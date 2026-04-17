@@ -56,6 +56,9 @@ jobs:
           AWS_REGION: us-east-1
           # PackageCloud credentials for publishing Linux packages
           PACKAGECLOUD_TOKEN: ${{ secrets.IO_PACKAGECLOUD_TOKEN }}
+          # Cross-repo GitHub token for publishing the Homebrew cask to timescale/homebrew-tap.
+          # NOTE: this token will need to be rotated once per year.
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
       - name: Invalidate CloudFront Cache
         env:

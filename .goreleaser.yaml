@@ -92,6 +92,44 @@ nfpms:
       lintian_overrides:
         - statically-linked-binary
 
+# Homebrew cask published to https://github.com/timescale/homebrew-tap (Casks/ghost.rb).
+# Using homebrew_casks (rather than the deprecated brews) is the GoReleaser-recommended path
+# going forward. `brew install timescale/tap/ghost` still works as Homebrew auto-detects casks.
+homebrew_casks:
+  - name: ghost
+    repository:
+      owner: timescale
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://ghost.build
+    description: |-
+      Ghost - A command-line interface for managing PostgreSQL databases.
+    binaries: [ ghost ]
+    license: Apache-2.0
+    # Skips prerelease builds
+    skip_upload: auto
+    # Download from the ghost-releases CDN (same URL the install script uses), not GitHub.
+    url:
+      template: "https://install.ghost.build/releases/{{ .Tag }}/{{ .ArtifactName }}"
+    hooks:
+      # TODO: Sign and notarize instead of removing the quarantine bit.
+      # See: https://goreleaser.com/customization/homebrew_casks/#signing-and-notarizing
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ghost"]
+          end
+    # Shell completions (ship in the archive under completions/ via scripts/completions.sh)
+    completions:
+      bash: "completions/ghost.bash"
+      zsh: "completions/ghost.zsh"
+      fish: "completions/ghost.fish"
+    # NOTE: There is a bug in GoReleaser when caveats contain normal multiline
+    # strings, which causes the homebrew cask to only output the final line.
+    # Formatting it in the following way works around it.
+    caveats: >
+      Ghost CLI has been installed successfully!\n\nGet started with:\n  ghost login\n  ghost mcp install\n\nFor help:\n  ghost help
+
 dockers_v2:
   - id: docker
     images:

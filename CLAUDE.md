@@ -306,7 +306,11 @@ Creating a release automatically triggers a build and publish via GoReleaser. To
    gh run watch $(gh run list -w Release -b v<NEXT_VERSION> -L 1 --json databaseId -q '.[0].databaseId')
    ```
 
-The tag push triggers the `Release` workflow, which runs GoReleaser to build binaries, Docker images, and Linux packages, then publishes them to GitHub Releases, S3, GHCR, and PackageCloud. No manual deploy step is needed.
+The tag push triggers the `Release` workflow, which runs GoReleaser to build binaries, Docker images, and Linux packages, then publishes them to GitHub Releases, S3, GHCR, PackageCloud, and the Homebrew tap at [timescale/homebrew-tap](https://github.com/timescale/homebrew-tap) (as `Casks/ghost.rb`). No manual deploy step is needed.
+
+The Homebrew cask is generated and pushed by GoReleaser's native `homebrew_casks` integration (see the `homebrew_casks:` section of `.goreleaser.yaml`). It requires the `HOMEBREW_TAP_GITHUB_TOKEN` repository secret, which must be a GitHub token with write access to `timescale/homebrew-tap`. Prereleases are skipped (`skip_upload: auto`), matching the behavior of the S3 `latest.txt`/install script publishing.
+
+We use a Cask (not a Formula) because it's GoReleaser's recommended path going forward — the `brews:` option has been deprecated. From the user's perspective, `brew install timescale/tap/ghost` works either way: Homebrew auto-detects casks in a tap by name.
 
 ## Keeping Documentation Up to Date
 
