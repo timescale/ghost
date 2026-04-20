@@ -45,5 +45,6 @@ Ghost is a command-line interface for managing PostgreSQL databases.
 * [ghost schema](ghost_schema.md)	 - Display database schema information
 * [ghost sql](ghost_sql.md)	 - Execute SQL query on a database
 * [ghost status](ghost_status.md)	 - Show space usage
+* [ghost update](ghost_update.md)	 - Update the ghost CLI to the latest version
 * [ghost version](ghost_version.md)	 - Show version information
 

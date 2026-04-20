@@ -79,6 +79,7 @@ ghost list        # List all databases
 | `schema` | Display database schema information |
 | `sql` | Execute SQL query on a database |
 | `status` | Show space usage |
+| `update` | Update the ghost CLI to the latest version |
 | `version` | Show version information |
 
 Run `ghost [command] --help` for more information about a command.
