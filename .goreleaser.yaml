@@ -20,7 +20,7 @@ builds:
       - windows
       - darwin
     goarch:
-      - 386
+      - '386'
       - amd64
       - arm64
     ldflags:
@@ -103,7 +103,8 @@ homebrew_casks:
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://ghost.build
     description: |-
-      Ghost - A command-line interface for managing PostgreSQL databases.
+      Ghost - The first database designed for agents.
+      Unlimited Postgres databases you can create, fork, and discard freely. Built for how agents actually work.
     binaries: [ ghost ]
     license: Apache-2.0
     # Skips prerelease builds
