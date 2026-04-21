@@ -43,7 +43,7 @@ func buildUpdateCmd(app *common.App) *cobra.Command {
 		Short:   "Update the ghost CLI to the latest version",
 		Long: `Download and install the latest published version of the ghost CLI, replacing the currently running binary.
 
-Uses the same release archives as the install script. If ghost was installed via a package manager (Homebrew, apt, yum/dnf), the update will be refused with a suggestion to use that package manager instead, unless --force is set.`,
+If ghost was installed via a package manager (Homebrew, apt, yum/dnf), the update will be refused with a suggestion to use that package manager instead.`,
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
@@ -53,7 +53,9 @@ Uses the same release archives as the install script. If ghost was installed via
 	}
 
 	cmd.Flags().StringVar(&requestedVersion, "version", "", "specific version to install (e.g. v1.2.3). Defaults to latest.")
+	cmd.Flags().MarkHidden("version")
 	cmd.Flags().BoolVar(&force, "force", false, "reinstall even if the current version already matches, or the binary was installed via a package manager")
+	cmd.Flags().MarkHidden("force")
 
 	return cmd
 }
@@ -89,7 +91,7 @@ func runUpdate(cmd *cobra.Command, app *common.App, requestedVersion string, for
 	switch versionCheckResult.InstallMethod {
 	case common.InstallMethodHomebrew, common.InstallMethodDeb, common.InstallMethodRPM:
 		if !force {
-			return fmt.Errorf("ghost appears to have been installed via %s; update it with:\n    %s\nOr re-run with --force to overwrite the binary from the release archive",
+			return fmt.Errorf("ghost appears to have been installed via %s; update it with:\n    %s",
 				versionCheckResult.InstallMethod, versionCheckResult.UpdateCommand)
 		}
 		cmd.PrintErrf("Warning: ghost appears to have been installed via %s; overwriting from release archive because --force was set\n", versionCheckResult.InstallMethod)
