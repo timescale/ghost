@@ -16,7 +16,9 @@ func startFakeReleasesServer(t *testing.T, latestVersion string) *httptest.Serve
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /latest.txt", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(latestVersion + "\n"))
+		if _, err := w.Write([]byte(latestVersion + "\n")); err != nil {
+			t.Errorf("failed to write latest.txt response: %v", err)
+		}
 	})
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)

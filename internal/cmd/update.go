@@ -53,9 +53,13 @@ If ghost was installed via a package manager (Homebrew, apt, yum/dnf), the updat
 	}
 
 	cmd.Flags().StringVar(&requestedVersion, "version", "", "specific version to install (e.g. v1.2.3). Defaults to latest.")
-	cmd.Flags().MarkHidden("version")
+	if err := cmd.Flags().MarkHidden("version"); err != nil {
+		panic(err)
+	}
 	cmd.Flags().BoolVar(&force, "force", false, "reinstall even if the current version already matches, or the binary was installed via a package manager")
-	cmd.Flags().MarkHidden("force")
+	if err := cmd.Flags().MarkHidden("force"); err != nil {
+		panic(err)
+	}
 
 	return cmd
 }
@@ -228,8 +232,15 @@ func checkCanReplaceBinary(currentBinaryPath string) error {
 		return fmt.Errorf("cannot write to %s (where ghost is installed): %w\nConsider re-running with elevated privileges, or updating via the install method originally used", parentDir, err)
 	}
 	probePath := probe.Name()
-	_ = probe.Close()
-	_ = os.Remove(probePath)
+	defer os.Remove(probePath)
+	defer probe.Close()
+
+	if err := probe.Close(); err != nil {
+		return fmt.Errorf("failed to close write-check probe file %s: %w", probePath, err)
+	}
+	if err := os.Remove(probePath); err != nil {
+		return fmt.Errorf("failed to remove write-check probe file %s: %w", probePath, err)
+	}
 	return nil
 }
 
@@ -257,6 +268,12 @@ func downloadFile(ctx context.Context, url, outputPath string) error {
 
 	if _, err := io.Copy(out, resp.Body); err != nil {
 		return err
+	}
+	if err := out.Close(); err != nil {
+		return fmt.Errorf("failed to close %s: %w", outputPath, err)
+	}
+	if err := resp.Body.Close(); err != nil {
+		return fmt.Errorf("failed to close response body: %w", err)
 	}
 	return nil
 }
@@ -287,6 +304,9 @@ func fetchSHA256Checksum(ctx context.Context, url string) (string, error) {
 	if len(fields) == 0 {
 		return "", errors.New("checksum file is empty")
 	}
+	if err := resp.Body.Close(); err != nil {
+		return "", fmt.Errorf("failed to close response body: %w", err)
+	}
 	return fields[0], nil
 }
 
@@ -306,7 +326,7 @@ func verifyFileSHA256(filePath, expectedHex string) error {
 	if !strings.EqualFold(actualHex, expectedHex) {
 		return fmt.Errorf("checksum mismatch for %s: expected %s, got %s", filepath.Base(filePath), expectedHex, actualHex)
 	}
-	return nil
+	return file.Close()
 }
 
 // extractBinaryFromArchive extracts the named binary out of a release archive
@@ -337,20 +357,22 @@ func extractBinaryFromTarGz(archivePath, binaryName, destPath string) error {
 	for {
 		header, err := tarReader.Next()
 		if errors.Is(err, io.EOF) {
-			break
+			return fmt.Errorf("binary %q not found in archive", binaryName)
 		}
 		if err != nil {
 			return err
 		}
-		if header.Typeflag != tar.TypeReg {
+		if header.Typeflag != tar.TypeReg || filepath.Base(header.Name) != binaryName {
 			continue
 		}
-		if filepath.Base(header.Name) != binaryName {
-			continue
+		if err := writeExecutableFile(destPath, tarReader); err != nil {
+			return err
 		}
-		return writeExecutableFile(destPath, tarReader)
+		if err := gzReader.Close(); err != nil {
+			return fmt.Errorf("failed to close gzip reader: %w", err)
+		}
+		return file.Close()
 	}
-	return fmt.Errorf("binary %q not found in archive", binaryName)
 }
 
 func extractBinaryFromZip(archivePath, binaryName, destPath string) error {
@@ -364,15 +386,29 @@ func extractBinaryFromZip(archivePath, binaryName, destPath string) error {
 		if filepath.Base(file.Name) != binaryName {
 			continue
 		}
-		rc, err := file.Open()
-		if err != nil {
+		if err := copyZipEntryToFile(file, destPath); err != nil {
 			return err
 		}
-		err = writeExecutableFile(destPath, rc)
-		_ = rc.Close()
-		return err
+		return reader.Close()
 	}
 	return fmt.Errorf("binary %q not found in archive", binaryName)
+}
+
+// copyZipEntryToFile copies the contents of a zip entry into a new executable
+// file at destPath.
+func copyZipEntryToFile(entry *zip.File, destPath string) error {
+	rc, err := entry.Open()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	if err := writeExecutableFile(destPath, rc); err != nil {
+		return err
+	}
+	if err := rc.Close(); err != nil {
+		return fmt.Errorf("failed to close zip entry: %w", err)
+	}
+	return nil
 }
 
 func writeExecutableFile(destPath string, src io.Reader) error {
@@ -383,6 +419,9 @@ func writeExecutableFile(destPath string, src io.Reader) error {
 	defer out.Close()
 	if _, err := io.Copy(out, src); err != nil {
 		return err
+	}
+	if err := out.Close(); err != nil {
+		return fmt.Errorf("failed to close %s: %w", destPath, err)
 	}
 	return nil
 }
@@ -408,20 +447,21 @@ func replaceRunningBinary(currentBinaryPath, newBinaryPath string) error {
 		return fmt.Errorf("failed to stage new binary in %s: %w", targetDir, err)
 	}
 	stagedPath := stagedFile.Name()
+	// If stagedPath is successfully renamed into place, the deferred Remove
+	// becomes a no-op (ENOENT), which we ignore in the defer. Close is
+	// deferred as a best-effort safety net on early-return paths; the explicit
+	// Close below propagates any real error.
+	defer os.Remove(stagedPath)
+	defer stagedFile.Close()
 
 	if err := copyFileContents(stagedFile, newBinaryPath); err != nil {
-		_ = stagedFile.Close()
-		_ = os.Remove(stagedPath)
 		return err
 	}
 	if err := stagedFile.Chmod(0o755); err != nil {
-		_ = stagedFile.Close()
-		_ = os.Remove(stagedPath)
 		return err
 	}
 	if err := stagedFile.Close(); err != nil {
-		_ = os.Remove(stagedPath)
-		return err
+		return fmt.Errorf("failed to close staged binary %s: %w", stagedPath, err)
 	}
 
 	if runtime.GOOS == "windows" {
@@ -429,7 +469,6 @@ func replaceRunningBinary(currentBinaryPath, newBinaryPath string) error {
 
 		oldPath := fmt.Sprintf("%s.old.%d", currentBinaryPath, time.Now().UnixNano())
 		if err := os.Rename(currentBinaryPath, oldPath); err != nil {
-			_ = os.Remove(stagedPath)
 			return fmt.Errorf("failed to move existing binary aside: %w", err)
 		}
 		if err := os.Rename(stagedPath, currentBinaryPath); err != nil {
@@ -437,7 +476,6 @@ func replaceRunningBinary(currentBinaryPath, newBinaryPath string) error {
 			if rollbackErr := os.Rename(oldPath, currentBinaryPath); rollbackErr != nil {
 				return fmt.Errorf("failed to install new binary (%w) and failed to restore original from %s: %v", err, oldPath, rollbackErr)
 			}
-			_ = os.Remove(stagedPath)
 			return fmt.Errorf("failed to install new binary: %w", err)
 		}
 		// oldPath remains on disk; Windows holds the file open until the
@@ -447,7 +485,6 @@ func replaceRunningBinary(currentBinaryPath, newBinaryPath string) error {
 	}
 
 	if err := os.Rename(stagedPath, currentBinaryPath); err != nil {
-		_ = os.Remove(stagedPath)
 		return fmt.Errorf("failed to install new binary: %w", err)
 	}
 	return nil
@@ -463,18 +500,23 @@ func copyFileContents(dest *os.File, srcPath string) error {
 	if _, err := io.Copy(dest, src); err != nil {
 		return err
 	}
-	return nil
+	return src.Close()
 }
 
 // cleanupStaleOldBinaries removes leftover ghost.exe.old.* files from previous
 // Windows updates. Files still held open by another process will silently fail
-// to delete; that's fine — they'll be cleaned up on a future invocation.
+// to delete; that's fine — they'll be cleaned up on a future invocation, so
+// Remove errors are intentionally not propagated.
 func cleanupStaleOldBinaries(currentBinaryPath string) {
+	// filepath.Glob only returns an error for a malformed pattern, which is
+	// a programmer error — the pattern we build here is always well-formed.
 	matches, err := filepath.Glob(currentBinaryPath + ".old.*")
 	if err != nil {
 		return
 	}
 	for _, match := range matches {
-		_ = os.Remove(match)
+		// Best-effort: failure (usually because the file is still locked by
+		// another running ghost process) is expected and harmless.
+		os.Remove(match) //nolint:errcheck // documented best-effort cleanup
 	}
 }
