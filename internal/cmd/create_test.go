@@ -120,7 +120,7 @@ name: mydb
 		},
 		{
 			name: "with share token",
-			args: []string{"create", "--share-token", "tok_xyz"},
+			args: []string{"create", "--from-share-token", "tok_xyz"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
 				m.EXPECT().CreateDatabaseWithResponse(validCtx, "test-project", api.CreateDatabaseRequest{ShareToken: new("tok_xyz")}).
 					Return(&api.CreateDatabaseResponse{

@@ -159,7 +159,7 @@ size: 1x
 		},
 		{
 			name: "with share token",
-			args: []string{"create", "dedicated", "--share-token", "tok_xyz"},
+			args: []string{"create", "dedicated", "--from-share-token", "tok_xyz"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
 				req := api.CreateDatabaseRequest{
 					Type:       new(api.DatabaseTypeDedicated),

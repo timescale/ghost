@@ -79,4 +79,3 @@ func (s *Server) handleShareList(ctx context.Context, req *mcp.CallToolRequest, 
 
 	return nil, output, nil
 }
-
