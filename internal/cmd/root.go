@@ -118,6 +118,7 @@ func buildRootCmd() (*cobra.Command, *common.App, error) {
 	cmd.AddCommand(buildLogsCmd(app))
 	cmd.AddCommand(buildFeedbackCmd(app))
 	cmd.AddCommand(buildRenameCmd(app))
+	cmd.AddCommand(buildShareCmd(app))
 	cmd.AddCommand(buildApiKeyCmd(app))
 	cmd.AddCommand(buildPaymentInteractiveCmd(app))
 	cmd.AddCommand(buildUpgradeCmd(app))

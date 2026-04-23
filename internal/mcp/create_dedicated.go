@@ -12,15 +12,17 @@ import (
 
 // CreateDedicatedInput represents input for ghost_create_dedicated
 type CreateDedicatedInput struct {
-	Name string `json:"name,omitempty"`
-	Size string `json:"size,omitempty"`
-	Wait bool   `json:"wait,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Size       string `json:"size,omitempty"`
+	ShareToken string `json:"share_token,omitempty"`
+	Wait       bool   `json:"wait,omitempty"`
 }
 
 func (CreateDedicatedInput) Schema() *jsonschema.Schema {
 	schema := util.Must(jsonschema.For[CreateDedicatedInput](nil))
 	createNameInputProperties(schema)
 	sizeInputProperties(schema)
+	shareTokenInputProperties(schema)
 	waitInputProperties(schema)
 	return schema
 }
@@ -68,9 +70,10 @@ Note: new databases may take a few minutes to start up. Use ghost_list to check 
 func (s *Server) handleCreateDedicated(ctx context.Context, req *mcp.CallToolRequest, input CreateDedicatedInput) (*mcp.CallToolResult, CreateDedicatedOutput, error) {
 	result, err := s.createDatabase(ctx, createDatabaseArgs{
 		req: api.CreateDatabaseRequest{
-			Name: util.PtrIfNonZero(input.Name),
-			Type: new(api.DatabaseTypeDedicated),
-			Size: new(api.DatabaseSize(input.Size)),
+			Name:       util.PtrIfNonZero(input.Name),
+			Type:       new(api.DatabaseTypeDedicated),
+			Size:       new(api.DatabaseSize(input.Size)),
+			ShareToken: util.PtrIfNonZero(input.ShareToken),
 		},
 		wait: input.Wait,
 	})

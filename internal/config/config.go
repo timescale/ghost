@@ -23,6 +23,7 @@ type Config struct {
 	DocsMCPURL   string `mapstructure:"docs_mcp_url"`
 	ReadOnly     bool   `mapstructure:"read_only"`
 	ReleasesURL  string `mapstructure:"releases_url"`
+	ShareURL     string `mapstructure:"share_url"`
 	VersionCheck bool   `mapstructure:"version_check"`
 
 	ConfigDir string         `mapstructure:"-"`
@@ -36,6 +37,7 @@ type ConfigOutput struct {
 	DocsMCPURL   *string `mapstructure:"docs_mcp_url" json:"docs_mcp_url,omitempty"`
 	ReadOnly     *bool   `mapstructure:"read_only" json:"read_only,omitempty"`
 	ReleasesURL  *string `mapstructure:"releases_url" json:"releases_url,omitempty"`
+	ShareURL     *string `mapstructure:"share_url" json:"share_url,omitempty"`
 	VersionCheck *bool   `mapstructure:"version_check" json:"version_check,omitempty"`
 
 	ConfigDir string       `mapstructure:"-" json:"-"`
@@ -51,6 +53,7 @@ const (
 	defaultDocsMCPURL   = "https://mcp.tigerdata.com/docs"
 	defaultReadOnly     = false
 	defaultReleasesURL  = "https://install.ghost.build"
+	defaultShareURL     = "https://ghost.build/share"
 	defaultVersionCheck = true
 )
 
@@ -65,6 +68,7 @@ var privateDefaultValues = map[string]any{
 	"api_url":      defaultAPIURL,
 	"docs_mcp_url": defaultDocsMCPURL,
 	"releases_url": defaultReleasesURL,
+	"share_url":    defaultShareURL,
 }
 
 var defaultValues = func() map[string]any {
@@ -290,7 +294,7 @@ func (c *Config) ensureConfigDir() (string, error) {
 // writing to the config file.
 func validateValue(key, val string) (any, error) {
 	switch key {
-	case "api_url", "docs_mcp_url", "releases_url":
+	case "api_url", "docs_mcp_url", "releases_url", "share_url":
 		return val, nil
 	case "analytics", "color", "read_only", "version_check":
 		return parseBool(key, val)

@@ -77,6 +77,7 @@ ghost list        # List all databases
 | `rename` | Rename a database |
 | `resume` | Resume a paused database |
 | `schema` | Display database schema information |
+| `share` | Share a database |
 | `sql` | Execute SQL query on a database |
 | `status` | Show space usage |
 | `upgrade` | Upgrade the ghost CLI to the latest version |
@@ -94,10 +95,16 @@ The `ghost mcp` command installs a [Model Context Protocol](https://modelcontext
 | `ghost_list` | List all databases |
 | `ghost_status` | Show space usage |
 | `ghost_create` | Create a new database |
+| `ghost_create_dedicated` | Create a new dedicated database |
 | `ghost_delete` | Delete a database permanently |
 | `ghost_fork` | Fork a database |
+| `ghost_fork_dedicated` | Fork a database as a new dedicated instance |
+| `ghost_pause` | Pause a running database |
 | `ghost_resume` | Resume a paused database |
 | `ghost_rename` | Rename a database |
+| `ghost_share` | Share a database |
+| `ghost_share_list` | List database shares |
+| `ghost_share_revoke` | Revoke a database share |
 | `ghost_connect` | Get a connection string for a database |
 | `ghost_sql` | Execute a SQL query against a database |
 | `ghost_schema` | Display database schema information |

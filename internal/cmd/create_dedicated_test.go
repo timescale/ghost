@@ -157,6 +157,23 @@ name: mydb
 size: 1x
 `,
 		},
+		{
+			name: "with share token",
+			args: []string{"create", "dedicated", "--share-token", "tok_xyz"},
+			setup: func(m *mock.MockClientWithResponsesInterface) {
+				req := api.CreateDatabaseRequest{
+					Type:       new(api.DatabaseTypeDedicated),
+					Size:       new(api.DatabaseSize("1x")),
+					ShareToken: new("tok_xyz"),
+				}
+				m.EXPECT().CreateDatabaseWithResponse(validCtx, "test-project", req).
+					Return(&api.CreateDatabaseResponse{
+						HTTPResponse: httpResponse(http.StatusAccepted),
+						JSON202:      &db,
+					}, nil)
+			},
+			wantStdout: "Created dedicated database 'mydb' (size: 1x)\nID: abc1234567\nConnection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb\n",
+		},
 	}
 
 	runCmdTests(t, tests)

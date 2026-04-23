@@ -38,6 +38,9 @@ func TestMCPListCmd(t *testing.T) {
 				"tool    ghost_rename                            \n" +
 				"tool    ghost_resume                            \n" +
 				"tool    ghost_schema                            \n" +
+				"tool    ghost_share                             \n" +
+				"tool    ghost_share_list                        \n" +
+				"tool    ghost_share_revoke                      \n" +
 				"tool    ghost_sql                               \n" +
 				"tool    ghost_status                            \n" +
 				"tool    search_docs                             \n" +

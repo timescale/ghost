@@ -16,13 +16,15 @@ import (
 
 // CreateInput represents input for ghost_create
 type CreateInput struct {
-	Name string `json:"name,omitempty"`
-	Wait bool   `json:"wait,omitempty"`
+	Name       string `json:"name,omitempty"`
+	ShareToken string `json:"share_token,omitempty"`
+	Wait       bool   `json:"wait,omitempty"`
 }
 
 func (CreateInput) Schema() *jsonschema.Schema {
 	schema := util.Must(jsonschema.For[CreateInput](nil))
 	createNameInputProperties(schema)
+	shareTokenInputProperties(schema)
 	waitInputProperties(schema)
 	return schema
 }
@@ -66,7 +68,8 @@ Note: new databases may take a few minutes to start up. Use ghost_list to check 
 func (s *Server) handleCreate(ctx context.Context, req *mcp.CallToolRequest, input CreateInput) (*mcp.CallToolResult, CreateOutput, error) {
 	result, err := s.createDatabase(ctx, createDatabaseArgs{
 		req: api.CreateDatabaseRequest{
-			Name: util.PtrIfNonZero(input.Name),
+			Name:       util.PtrIfNonZero(input.Name),
+			ShareToken: util.PtrIfNonZero(input.ShareToken),
 		},
 		wait: input.Wait,
 	})

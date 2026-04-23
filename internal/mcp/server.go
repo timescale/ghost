@@ -104,6 +104,9 @@ func (s *Server) registerTools(ctx context.Context) {
 	mcp.AddTool(s.mcpServer, newRenameTool(), s.handleRename)
 	mcp.AddTool(s.mcpServer, newCreateDedicatedTool(), s.handleCreateDedicated)
 	mcp.AddTool(s.mcpServer, newForkDedicatedTool(), s.handleForkDedicated)
+	mcp.AddTool(s.mcpServer, newShareTool(), s.handleShare)
+	mcp.AddTool(s.mcpServer, newShareListTool(), s.handleShareList)
+	mcp.AddTool(s.mcpServer, newShareRevokeTool(), s.handleShareRevoke)
 	if s.app.Experimental {
 		mcp.AddTool(s.mcpServer, newInvoiceListTool(), s.handleInvoiceList)
 		mcp.AddTool(s.mcpServer, newInvoiceTool(), s.handleInvoice)

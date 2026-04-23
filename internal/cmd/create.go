@@ -14,6 +14,7 @@ import (
 
 func buildCreateCmd(app *common.App) *cobra.Command {
 	var name string
+	var shareToken string
 	var jsonOutput bool
 	var yamlOutput bool
 	var wait bool
@@ -26,6 +27,9 @@ func buildCreateCmd(app *common.App) *cobra.Command {
 
   # Create a database with a custom name
   ghost create --name myapp
+
+  # Create a database from a share token
+  ghost create --share-token <token> --name myapp
 
   # Create and output as JSON
   ghost create --json
@@ -41,7 +45,8 @@ func buildCreateCmd(app *common.App) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return createDatabase(cmd, app, createDatabaseArgs{
 				req: api.CreateDatabaseRequest{
-					Name: util.PtrIfNonZero(name),
+					Name:       util.PtrIfNonZero(name),
+					ShareToken: util.PtrIfNonZero(shareToken),
 				},
 				jsonOutput: jsonOutput,
 				yamlOutput: yamlOutput,
@@ -52,6 +57,7 @@ func buildCreateCmd(app *common.App) *cobra.Command {
 
 	// Add flags
 	cmd.Flags().StringVar(&name, "name", "", "Database name (auto-generated if not provided)")
+	cmd.Flags().StringVar(&shareToken, "share-token", "", "Create the database from a share token")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	cmd.Flags().BoolVar(&yamlOutput, "yaml", false, "Output in YAML format")
 	cmd.Flags().BoolVar(&wait, "wait", false, "Wait for the database to be ready before returning")

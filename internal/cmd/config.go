@@ -106,5 +106,8 @@ func outputConfigTable(w io.Writer, cfg *config.ConfigOutput) error {
 	if cfg.ReleasesURL != nil {
 		table.Append("releases_url", *cfg.ReleasesURL)
 	}
+	if cfg.ShareURL != nil {
+		table.Append("share_url", *cfg.ShareURL)
+	}
 	return table.Render()
 }

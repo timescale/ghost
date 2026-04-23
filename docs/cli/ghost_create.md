@@ -21,6 +21,9 @@ ghost create [flags]
   # Create a database with a custom name
   ghost create --name myapp
 
+  # Create a database from a share token
+  ghost create --share-token <token> --name myapp
+
   # Create and output as JSON
   ghost create --json
 
@@ -34,11 +37,12 @@ ghost create [flags]
 ### Options
 
 ```
-  -h, --help          help for create
-      --json          Output in JSON format
-      --name string   Database name (auto-generated if not provided)
-      --wait          Wait for the database to be ready before returning
-      --yaml          Output in YAML format
+  -h, --help                 help for create
+      --json                 Output in JSON format
+      --name string          Database name (auto-generated if not provided)
+      --share-token string   Create the database from a share token
+      --wait                 Wait for the database to be ready before returning
+      --yaml                 Output in YAML format
 ```
 
 ### Options inherited from parent commands

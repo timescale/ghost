@@ -11,6 +11,7 @@ import (
 func buildCreateDedicatedCmd(app *common.App) *cobra.Command {
 	var name string
 	var size string
+	var shareToken string
 	var jsonOutput bool
 	var yamlOutput bool
 	var wait bool
@@ -30,6 +31,9 @@ A payment method must be on file.`,
   # Create with a custom name
   ghost create dedicated --name myapp --size 4x
 
+  # Create a dedicated database from a share token
+  ghost create dedicated --share-token <token>
+
   # Create and output as JSON
   ghost create dedicated --json
 
@@ -41,9 +45,10 @@ A payment method must be on file.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return createDatabase(cmd, app, createDatabaseArgs{
 				req: api.CreateDatabaseRequest{
-					Name: util.PtrIfNonZero(name),
-					Type: new(api.DatabaseTypeDedicated),
-					Size: new(api.DatabaseSize(size)),
+					Name:       util.PtrIfNonZero(name),
+					Type:       new(api.DatabaseTypeDedicated),
+					Size:       new(api.DatabaseSize(size)),
+					ShareToken: util.PtrIfNonZero(shareToken),
 				},
 				jsonOutput: jsonOutput,
 				yamlOutput: yamlOutput,
@@ -54,6 +59,7 @@ A payment method must be on file.`,
 
 	cmd.Flags().StringVar(&name, "name", "", "Database name (auto-generated if not provided)")
 	cmd.Flags().StringVar(&size, "size", "1x", "Database size (1x, 2x, 4x, 8x)")
+	cmd.Flags().StringVar(&shareToken, "share-token", "", "Create the database from a share token")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	cmd.Flags().BoolVar(&yamlOutput, "yaml", false, "Output in YAML format")
 	cmd.Flags().BoolVar(&wait, "wait", false, "Wait for the database to be ready before returning")

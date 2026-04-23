@@ -74,7 +74,8 @@ version_check: true
 				"version_check  true                            \n" +
 				"api_url        https://api.ghost.build/v0      \n" +
 				"docs_mcp_url   https://mcp.tigerdata.com/docs  \n" +
-				"releases_url   https://install.ghost.build     \n",
+				"releases_url   https://install.ghost.build     \n" +
+				"share_url      https://ghost.build/share       \n",
 		},
 		{
 			name: "all flag json output",
@@ -86,6 +87,7 @@ version_check: true
   "docs_mcp_url": "https://mcp.tigerdata.com/docs",
   "read_only": false,
   "releases_url": "https://install.ghost.build",
+  "share_url": "https://ghost.build/share",
   "version_check": true
 }
 `,
@@ -99,6 +101,7 @@ color: true
 docs_mcp_url: https://mcp.tigerdata.com/docs
 read_only: false
 releases_url: https://install.ghost.build
+share_url: https://ghost.build/share
 version_check: true
 `,
 		},
@@ -112,7 +115,8 @@ version_check: true
 				"version_check  true                            \n" +
 				"api_url        https://api.ghost.build/v0      \n" +
 				"docs_mcp_url   https://mcp.tigerdata.com/docs  \n" +
-				"releases_url   https://install.ghost.build     \n",
+				"releases_url   https://install.ghost.build     \n" +
+				"share_url      https://ghost.build/share       \n",
 		},
 		{
 			name: "env and all flags json output",
@@ -125,6 +129,7 @@ version_check: true
   "docs_mcp_url": "https://mcp.tigerdata.com/docs",
   "read_only": false,
   "releases_url": "https://install.ghost.build",
+  "share_url": "https://ghost.build/share",
   "version_check": true
 }
 `,
@@ -139,6 +144,7 @@ color: false
 docs_mcp_url: https://mcp.tigerdata.com/docs
 read_only: false
 releases_url: https://install.ghost.build
+share_url: https://ghost.build/share
 version_check: true
 `,
 		},

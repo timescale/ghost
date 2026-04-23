@@ -28,6 +28,7 @@ var ignore = []string{
 	"query",
 	"parameters",
 	"message",
+	"share_token",
 }
 
 type Analytics struct {
@@ -111,6 +112,11 @@ func Args(commandPath string, args []string) Option {
 
 		// Redact the feedback message from "ghost feedback [message]"
 		if commandPath == "ghost feedback" && len(filtered) > 0 {
+			filtered[0] = "[REDACTED]"
+		}
+
+		// Redact the share token from "ghost share revoke <share-token>"
+		if commandPath == "ghost share revoke" && len(filtered) > 0 {
 			filtered[0] = "[REDACTED]"
 		}
 
