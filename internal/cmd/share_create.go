@@ -46,6 +46,9 @@ in their own space from the shared snapshot.`,
 		ValidArgsFunction: databaseCompletion(app),
 		SilenceUsage:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if expiresIn < 0 {
+				return errors.New("--expires-in must be positive")
+			}
 			var expiresAt *time.Time
 			switch {
 			case expiresIn > 0:

@@ -10,7 +10,6 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/timescale/ghost/internal/api"
 	"github.com/timescale/ghost/internal/common"
 	"github.com/timescale/ghost/internal/util"
 )
@@ -53,7 +52,7 @@ func (s *Server) handleShareRevoke(ctx context.Context, req *mcp.CallToolRequest
 		return nil, Share{}, err
 	}
 
-	share, err := findShareByToken(ctx, client, projectID, input.ShareToken)
+	share, err := common.FindShareByToken(ctx, client, projectID, input.ShareToken)
 	if err != nil {
 		return nil, Share{}, err
 	}
@@ -70,26 +69,4 @@ func (s *Server) handleShareRevoke(ctx context.Context, req *mcp.CallToolRequest
 	}
 
 	return nil, toShare(*resp.JSON200, cfg.ShareURL, time.Now()), nil
-}
-
-// findShareByToken looks up the API share matching the given token. The
-// revoke API requires the internal share ID, so we list shares and match on
-// token client-side to keep the ID out of the user-facing surface.
-func findShareByToken(ctx context.Context, client api.ClientWithResponsesInterface, projectID, token string) (api.DatabaseShare, error) {
-	resp, err := client.ListSharesWithResponse(ctx, projectID)
-	if err != nil {
-		return api.DatabaseShare{}, fmt.Errorf("failed to list shares: %w", err)
-	}
-	if resp.StatusCode() != http.StatusOK {
-		return api.DatabaseShare{}, common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
-	}
-	if resp.JSON200 == nil {
-		return api.DatabaseShare{}, errors.New("empty response from API")
-	}
-	for _, s := range *resp.JSON200 {
-		if s.ShareToken == token {
-			return s, nil
-		}
-	}
-	return api.DatabaseShare{}, fmt.Errorf("share not found for the given token")
 }

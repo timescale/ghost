@@ -54,7 +54,7 @@ func (Share) Schema() *jsonschema.Schema {
 // status relative to now.
 func toShare(s api.DatabaseShare, baseURL string, now time.Time) Share {
 	return Share{
-		URL:          shareURL(baseURL, s.ShareToken),
+		URL:          common.ShareURL(baseURL, s.ShareToken),
 		ShareToken:   s.ShareToken,
 		DatabaseID:   s.DatabaseId,
 		DatabaseName: s.DatabaseName,
@@ -134,11 +134,6 @@ func (s *Server) handleShare(ctx context.Context, req *mcp.CallToolRequest, inpu
 	}
 
 	return nil, toShare(*resp.JSON201, cfg.ShareURL, time.Now()), nil
-}
-
-// shareURL mirrors the CLI helper — both produce the same landing-page URL.
-func shareURL(baseURL, token string) string {
-	return baseURL + "/" + token
 }
 
 func shareStatus(s api.DatabaseShare, now time.Time) string {

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/timescale/ghost/internal/api"
 	"github.com/timescale/ghost/internal/common"
 	"github.com/timescale/ghost/internal/util"
 )
@@ -31,7 +29,7 @@ func buildShareRevokeCmd(app *common.App) *cobra.Command {
 				return err
 			}
 
-			share, err := findShareByToken(cmd.Context(), client, projectID, args[0])
+			share, err := common.FindShareByToken(cmd.Context(), client, projectID, args[0])
 			if err != nil {
 				return err
 			}
@@ -65,26 +63,4 @@ func buildShareRevokeCmd(app *common.App) *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("json", "yaml")
 
 	return cmd
-}
-
-// findShareByToken looks up the API share matching the given token. The
-// revoke API requires the internal share ID, so we list shares and match on
-// token client-side to keep the ID out of the user-facing surface.
-func findShareByToken(ctx context.Context, client api.ClientWithResponsesInterface, projectID, token string) (api.DatabaseShare, error) {
-	resp, err := client.ListSharesWithResponse(ctx, projectID)
-	if err != nil {
-		return api.DatabaseShare{}, fmt.Errorf("failed to list shares: %w", err)
-	}
-	if resp.StatusCode() != http.StatusOK {
-		return api.DatabaseShare{}, common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
-	}
-	if resp.JSON200 == nil {
-		return api.DatabaseShare{}, errors.New("empty response from API")
-	}
-	for _, s := range *resp.JSON200 {
-		if s.ShareToken == token {
-			return s, nil
-		}
-	}
-	return api.DatabaseShare{}, fmt.Errorf("share not found for the given token")
 }

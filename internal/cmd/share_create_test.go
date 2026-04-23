@@ -158,6 +158,12 @@ func TestShareCmd(t *testing.T) {
 			wantErr: `invalid --expires-at (expected RFC3339 like 2026-05-01T00:00:00Z): parsing time "not-a-date" as "2006-01-02T15:04:05Z07:00": cannot parse "not-a-date" as "2006"`,
 		},
 		{
+			name: "negative --expires-in",
+			args: []string{"share", "abc1234567", "--expires-in", "-1h"},
+			// no mock: error is caught before any API call
+			wantErr: "--expires-in must be positive",
+		},
+		{
 			name: "text output no expiry",
 			args: []string{"share", "abc1234567"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {

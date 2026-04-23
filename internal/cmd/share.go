@@ -31,11 +31,6 @@ func buildShareCmd(app *common.App) *cobra.Command {
 	return cmd
 }
 
-// shareURL returns the landing-page URL a recipient opens to consume a share.
-func shareURL(baseURL, token string) string {
-	return baseURL + "/" + token
-}
-
 func shareStatus(s api.DatabaseShare, now time.Time) string {
 	if s.RevokedAt != nil {
 		return "revoked"
@@ -50,7 +45,7 @@ func shareStatus(s api.DatabaseShare, now time.Time) string {
 // status relative to now.
 func toShare(s api.DatabaseShare, baseURL string, now time.Time) Share {
 	return Share{
-		URL:          shareURL(baseURL, s.ShareToken),
+		URL:          common.ShareURL(baseURL, s.ShareToken),
 		ShareToken:   s.ShareToken,
 		DatabaseID:   s.DatabaseId,
 		DatabaseName: s.DatabaseName,
