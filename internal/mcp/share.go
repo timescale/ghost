@@ -52,9 +52,13 @@ func (Share) Schema() *jsonschema.Schema {
 
 // toShare converts an API share into the MCP output shape, computing the
 // status relative to now.
-func toShare(s api.DatabaseShare, baseURL string, now time.Time) Share {
+func toShare(s api.DatabaseShare, baseURL string, now time.Time) (Share, error) {
+	u, err := common.ShareURL(baseURL, s.ShareToken)
+	if err != nil {
+		return Share{}, err
+	}
 	return Share{
-		URL:          common.ShareURL(baseURL, s.ShareToken),
+		URL:          u,
 		ShareToken:   s.ShareToken,
 		DatabaseID:   s.DatabaseId,
 		DatabaseName: s.DatabaseName,
@@ -62,7 +66,7 @@ func toShare(s api.DatabaseShare, baseURL string, now time.Time) Share {
 		CreatedAt:    s.CreatedAt,
 		ExpiresAt:    s.ExpiresAt,
 		RevokedAt:    s.RevokedAt,
-	}
+	}, nil
 }
 
 func newShareTool() *mcp.Tool {
@@ -133,7 +137,11 @@ func (s *Server) handleShare(ctx context.Context, req *mcp.CallToolRequest, inpu
 		return nil, Share{}, errors.New("empty response from API")
 	}
 
-	return nil, toShare(*resp.JSON201, cfg.ShareURL, time.Now()), nil
+	output, err := toShare(*resp.JSON201, cfg.ShareURL, time.Now())
+	if err != nil {
+		return nil, Share{}, err
+	}
+	return nil, output, nil
 }
 
 func shareStatus(s api.DatabaseShare, now time.Time) string {

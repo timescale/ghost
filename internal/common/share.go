@@ -13,16 +13,14 @@ import (
 // ShareURL returns the landing-page URL a recipient opens to consume a
 // share. Uses url.JoinPath so callers don't have to care whether the
 // configured base URL ends with a slash, and so the token is properly
-// percent-encoded into the path.
-func ShareURL(baseURL, token string) string {
+// percent-encoded into the path. Returns an error if the configured base
+// URL is malformed.
+func ShareURL(baseURL, token string) (string, error) {
 	joined, err := url.JoinPath(baseURL, token)
 	if err != nil {
-		// Fall back to naïve join; a malformed base URL will surface
-		// elsewhere (e.g. when the recipient opens the link) rather than
-		// silently corrupting output here.
-		return baseURL + "/" + token
+		return "", fmt.Errorf("invalid share_url %q: %w", baseURL, err)
 	}
-	return joined
+	return joined, nil
 }
 
 // FindShareByToken looks up the API share matching the given token. The

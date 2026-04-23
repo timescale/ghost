@@ -43,9 +43,13 @@ func shareStatus(s api.DatabaseShare, now time.Time) string {
 
 // toShare converts an API share into the CLI output shape, computing the
 // status relative to now.
-func toShare(s api.DatabaseShare, baseURL string, now time.Time) Share {
+func toShare(s api.DatabaseShare, baseURL string, now time.Time) (Share, error) {
+	u, err := common.ShareURL(baseURL, s.ShareToken)
+	if err != nil {
+		return Share{}, err
+	}
 	return Share{
-		URL:          common.ShareURL(baseURL, s.ShareToken),
+		URL:          u,
 		ShareToken:   s.ShareToken,
 		DatabaseID:   s.DatabaseId,
 		DatabaseName: s.DatabaseName,
@@ -53,5 +57,5 @@ func toShare(s api.DatabaseShare, baseURL string, now time.Time) Share {
 		CreatedAt:    s.CreatedAt,
 		ExpiresAt:    s.ExpiresAt,
 		RevokedAt:    s.RevokedAt,
-	}
+	}, nil
 }

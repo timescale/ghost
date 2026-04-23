@@ -68,5 +68,9 @@ func (s *Server) handleShareRevoke(ctx context.Context, req *mcp.CallToolRequest
 		return nil, Share{}, errors.New("empty response from API")
 	}
 
-	return nil, toShare(*resp.JSON200, cfg.ShareURL, time.Now()), nil
+	output, err := toShare(*resp.JSON200, cfg.ShareURL, time.Now())
+	if err != nil {
+		return nil, Share{}, err
+	}
+	return nil, output, nil
 }

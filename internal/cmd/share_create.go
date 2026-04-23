@@ -111,7 +111,10 @@ func runShareCreate(cmd *cobra.Command, app *common.App, databaseRef string, exp
 	if resp.JSON201 == nil {
 		return errors.New("empty response from API")
 	}
-	output := toShare(*resp.JSON201, cfg.ShareURL, time.Now())
+	output, err := toShare(*resp.JSON201, cfg.ShareURL, time.Now())
+	if err != nil {
+		return err
+	}
 
 	switch {
 	case jsonOutput:

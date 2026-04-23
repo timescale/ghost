@@ -70,7 +70,11 @@ func (s *Server) handleShareList(ctx context.Context, req *mcp.CallToolRequest, 
 		Shares: make([]Share, len(shares)),
 	}
 	for i, sh := range shares {
-		output.Shares[i] = toShare(sh, cfg.ShareURL, now)
+		share, err := toShare(sh, cfg.ShareURL, now)
+		if err != nil {
+			return nil, ShareListOutput{}, err
+		}
+		output.Shares[i] = share
 	}
 
 	return nil, output, nil

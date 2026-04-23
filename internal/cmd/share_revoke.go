@@ -44,7 +44,10 @@ func buildShareRevokeCmd(app *common.App) *cobra.Command {
 			if resp.JSON200 == nil {
 				return errors.New("empty response from API")
 			}
-			output := toShare(*resp.JSON200, cfg.ShareURL, time.Now())
+			output, err := toShare(*resp.JSON200, cfg.ShareURL, time.Now())
+			if err != nil {
+				return err
+			}
 
 			switch {
 			case jsonOutput:

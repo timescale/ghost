@@ -54,7 +54,11 @@ func buildShareListCmd(app *common.App) *cobra.Command {
 			now := time.Now()
 			output := make([]Share, len(shares))
 			for i, s := range shares {
-				output[i] = toShare(s, cfg.ShareURL, now)
+				share, err := toShare(s, cfg.ShareURL, now)
+				if err != nil {
+					return err
+				}
+				output[i] = share
 			}
 
 			switch {
