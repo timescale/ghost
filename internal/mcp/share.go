@@ -17,15 +17,15 @@ import (
 
 // ShareInput represents input for ghost_share.
 type ShareInput struct {
-	Ref       string `json:"name_or_id"`
-	ExpiresAt string `json:"expires_at,omitempty"`
+	Ref     string `json:"name_or_id"`
+	Expires string `json:"expires,omitempty"`
 }
 
 func (ShareInput) Schema() *jsonschema.Schema {
 	schema := util.Must(jsonschema.For[ShareInput](nil))
 	databaseRefInputProperties(schema)
-	schema.Properties["expires_at"].Description = "Optional RFC3339 timestamp after which the share expires. If omitted, the share does not expire."
-	schema.Properties["expires_at"].Examples = []any{"2026-05-01T00:00:00Z"}
+	schema.Properties["expires"].Description = "Optional share expiry. Accepts a Go duration relative to now (e.g. \"30m\", \"24h\") or an RFC3339 timestamp (e.g. \"2026-05-01T00:00:00Z\"). If omitted, the share does not expire."
+	schema.Properties["expires"].Examples = []any{"24h", "2026-05-01T00:00:00Z"}
 	return schema
 }
 
@@ -98,13 +98,9 @@ func (s *Server) handleShare(ctx context.Context, req *mcp.CallToolRequest, inpu
 		return nil, Share{}, err
 	}
 
-	var expiresAt *time.Time
-	if input.ExpiresAt != "" {
-		t, err := time.Parse(time.RFC3339, input.ExpiresAt)
-		if err != nil {
-			return nil, Share{}, fmt.Errorf("invalid expires_at (expected RFC3339 like 2026-05-01T00:00:00Z): %w", err)
-		}
-		expiresAt = &t
+	expiresAt, err := common.ParseExpires(input.Expires, time.Now())
+	if err != nil {
+		return nil, Share{}, err
 	}
 
 	// Fetch source database to check readiness (sharing snapshots the DB)
