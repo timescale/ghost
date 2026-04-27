@@ -29,11 +29,11 @@ func (ShareInput) Schema() *jsonschema.Schema {
 	return schema
 }
 
-// Share represents a database share in MCP output. The share_token (also
+// ShareOutput represents a database share in MCP output. The share_token (also
 // embedded in the URL) is the only identifier exposed — it's what a recipient
 // passes to ghost_create, and it's also what you pass back to
 // ghost_share_revoke to revoke the share.
-type Share struct {
+type ShareOutput struct {
 	URL          string     `json:"url"`
 	ShareToken   string     `json:"share_token"`
 	DatabaseID   string     `json:"database_id"`
@@ -44,20 +44,20 @@ type Share struct {
 	RevokedAt    *time.Time `json:"revoked_at,omitempty"`
 }
 
-func (Share) Schema() *jsonschema.Schema {
-	schema := util.Must(jsonschema.For[Share](nil))
+func (ShareOutput) Schema() *jsonschema.Schema {
+	schema := util.Must(jsonschema.For[ShareOutput](nil))
 	shareOutputProperties(schema)
 	return schema
 }
 
-// toShare converts an API share into the MCP output shape, computing the
+// toShareOutput converts an API share into the MCP output shape, computing the
 // status relative to now.
-func toShare(s api.DatabaseShare, baseURL string, now time.Time) (Share, error) {
+func toShareOutput(s api.DatabaseShare, baseURL string, now time.Time) (ShareOutput, error) {
 	u, err := common.ShareURL(baseURL, s.ShareToken)
 	if err != nil {
-		return Share{}, err
+		return ShareOutput{}, err
 	}
-	return Share{
+	return ShareOutput{
 		URL:          u,
 		ShareToken:   s.ShareToken,
 		DatabaseID:   s.DatabaseId,
@@ -77,7 +77,7 @@ func newShareTool() *mcp.Tool {
 
 The share URL can be handed to anyone — they don't need access to this space. Pass the returned share_token to ghost_create (or ghost_create_dedicated) to create a database from the shared snapshot.`,
 		InputSchema:  ShareInput{}.Schema(),
-		OutputSchema: Share{}.Schema(),
+		OutputSchema: ShareOutput{}.Schema(),
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:    false,
 			DestructiveHint: new(false),
@@ -88,54 +88,54 @@ The share URL can be handed to anyone — they don't need access to this space. 
 	}
 }
 
-func (s *Server) handleShare(ctx context.Context, req *mcp.CallToolRequest, input ShareInput) (*mcp.CallToolResult, Share, error) {
+func (s *Server) handleShare(ctx context.Context, req *mcp.CallToolRequest, input ShareInput) (*mcp.CallToolResult, ShareOutput, error) {
 	cfg, client, projectID, err := s.app.GetAll()
 	if err != nil {
-		return nil, Share{}, err
+		return nil, ShareOutput{}, err
 	}
 
 	if err := checkReadOnly(cfg); err != nil {
-		return nil, Share{}, err
+		return nil, ShareOutput{}, err
 	}
 
 	expiresAt, err := common.ParseExpires(input.Expires, time.Now())
 	if err != nil {
-		return nil, Share{}, err
+		return nil, ShareOutput{}, err
 	}
 
 	// Fetch source database to check readiness (sharing snapshots the DB)
 	getResp, err := client.GetDatabaseWithResponse(ctx, projectID, input.Ref)
 	if err != nil {
-		return nil, Share{}, fmt.Errorf("failed to get database details: %w", err)
+		return nil, ShareOutput{}, fmt.Errorf("failed to get database details: %w", err)
 	}
 	if getResp.StatusCode() != http.StatusOK {
-		return nil, Share{}, common.ExitWithErrorFromStatusCode(getResp.StatusCode(), getResp.JSONDefault)
+		return nil, ShareOutput{}, common.ExitWithErrorFromStatusCode(getResp.StatusCode(), getResp.JSONDefault)
 	}
 	if getResp.JSON200 == nil {
-		return nil, Share{}, errors.New("empty response from API")
+		return nil, ShareOutput{}, errors.New("empty response from API")
 	}
 	database := *getResp.JSON200
 
 	if err := common.CheckReady(database); err != nil {
-		return nil, Share{}, handleDatabaseError(err)
+		return nil, ShareOutput{}, handleDatabaseError(err)
 	}
 
 	resp, err := client.ShareDatabaseWithResponse(ctx, projectID, database.Id, api.ShareDatabaseJSONRequestBody{
 		ExpiresAt: expiresAt,
 	})
 	if err != nil {
-		return nil, Share{}, fmt.Errorf("failed to create share: %w", err)
+		return nil, ShareOutput{}, fmt.Errorf("failed to create share: %w", err)
 	}
 	if resp.StatusCode() != http.StatusCreated {
-		return nil, Share{}, common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
+		return nil, ShareOutput{}, common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
 	}
 	if resp.JSON201 == nil {
-		return nil, Share{}, errors.New("empty response from API")
+		return nil, ShareOutput{}, errors.New("empty response from API")
 	}
 
-	output, err := toShare(*resp.JSON201, cfg.ShareURL, time.Now())
+	output, err := toShareOutput(*resp.JSON201, cfg.ShareURL, time.Now())
 	if err != nil {
-		return nil, Share{}, err
+		return nil, ShareOutput{}, err
 	}
 	return nil, output, nil
 }

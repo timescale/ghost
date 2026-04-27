@@ -23,7 +23,7 @@ func (ShareListInput) Schema() *jsonschema.Schema {
 
 // ShareListOutput represents output for ghost_share_list.
 type ShareListOutput struct {
-	Shares []Share `json:"shares"`
+	Shares []ShareOutput `json:"shares"`
 }
 
 func (ShareListOutput) Schema() *jsonschema.Schema {
@@ -67,10 +67,10 @@ func (s *Server) handleShareList(ctx context.Context, req *mcp.CallToolRequest, 
 
 	now := time.Now()
 	output := ShareListOutput{
-		Shares: make([]Share, len(shares)),
+		Shares: make([]ShareOutput, len(shares)),
 	}
 	for i, sh := range shares {
-		share, err := toShare(sh, cfg.ShareURL, now)
+		share, err := toShareOutput(sh, cfg.ShareURL, now)
 		if err != nil {
 			return nil, ShareListOutput{}, err
 		}

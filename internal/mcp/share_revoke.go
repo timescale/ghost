@@ -31,7 +31,7 @@ func newShareRevokeTool() *mcp.Tool {
 		Title:        "Revoke Database Share",
 		Description:  "Revoke a database share so its URL can no longer be used to create new forks.",
 		InputSchema:  ShareRevokeInput{}.Schema(),
-		OutputSchema: Share{}.Schema(),
+		OutputSchema: ShareOutput{}.Schema(),
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:    false,
 			DestructiveHint: new(true),
@@ -42,30 +42,30 @@ func newShareRevokeTool() *mcp.Tool {
 	}
 }
 
-func (s *Server) handleShareRevoke(ctx context.Context, req *mcp.CallToolRequest, input ShareRevokeInput) (*mcp.CallToolResult, Share, error) {
+func (s *Server) handleShareRevoke(ctx context.Context, req *mcp.CallToolRequest, input ShareRevokeInput) (*mcp.CallToolResult, ShareOutput, error) {
 	cfg, client, projectID, err := s.app.GetAll()
 	if err != nil {
-		return nil, Share{}, err
+		return nil, ShareOutput{}, err
 	}
 
 	if err := checkReadOnly(cfg); err != nil {
-		return nil, Share{}, err
+		return nil, ShareOutput{}, err
 	}
 
 	resp, err := client.RevokeShareWithResponse(ctx, projectID, input.ShareToken)
 	if err != nil {
-		return nil, Share{}, fmt.Errorf("failed to revoke share: %w", err)
+		return nil, ShareOutput{}, fmt.Errorf("failed to revoke share: %w", err)
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return nil, Share{}, common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
+		return nil, ShareOutput{}, common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
 	}
 	if resp.JSON200 == nil {
-		return nil, Share{}, errors.New("empty response from API")
+		return nil, ShareOutput{}, errors.New("empty response from API")
 	}
 
-	output, err := toShare(*resp.JSON200, cfg.ShareURL, time.Now())
+	output, err := toShareOutput(*resp.JSON200, cfg.ShareURL, time.Now())
 	if err != nil {
-		return nil, Share{}, err
+		return nil, ShareOutput{}, err
 	}
 	return nil, output, nil
 }
