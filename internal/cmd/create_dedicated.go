@@ -32,7 +32,7 @@ A payment method must be on file.`,
   ghost create dedicated --name myapp --size 4x
 
   # Create a dedicated database from a share token
-  ghost create dedicated --from-share-token <token>
+  ghost create dedicated --from-share <token>
 
   # Create and output as JSON
   ghost create dedicated --json
@@ -59,7 +59,7 @@ A payment method must be on file.`,
 
 	cmd.Flags().StringVar(&name, "name", "", "Database name (auto-generated if not provided)")
 	cmd.Flags().StringVar(&size, "size", "1x", "Database size (1x, 2x, 4x, 8x)")
-	cmd.Flags().StringVar(&shareToken, "from-share-token", "", "Create the database from a share token")
+	cmd.Flags().StringVar(&shareToken, "from-share", "", "Create the database from a share token")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	cmd.Flags().BoolVar(&yamlOutput, "yaml", false, "Output in YAML format")
 	cmd.Flags().BoolVar(&wait, "wait", false, "Wait for the database to be ready before returning")

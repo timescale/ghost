@@ -120,7 +120,7 @@ name: mydb
 		},
 		{
 			name: "with share token",
-			args: []string{"create", "--from-share-token", "tok_xyz"},
+			args: []string{"create", "--from-share", "tok_xyz"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
 				m.EXPECT().CreateDatabaseWithResponse(validCtx, "test-project", api.CreateDatabaseRequest{ShareToken: new("tok_xyz")}).
 					Return(&api.CreateDatabaseResponse{
@@ -128,7 +128,7 @@ name: mydb
 						JSON202:      &db,
 					}, nil)
 			},
-			wantStdout: "Created database 'mydb'\nID: abc1234567\nConnection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb\n",
+			wantStdout: "Created database 'mydb'\nID: abc1234567\nConnection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb?sslmode=require\n",
 		},
 	}
 

@@ -29,7 +29,7 @@ func buildCreateCmd(app *common.App) *cobra.Command {
   ghost create --name myapp
 
   # Create a database from a share token
-  ghost create --from-share-token <token> --name myapp
+  ghost create --from-share <token> --name myapp
 
   # Create and output as JSON
   ghost create --json
@@ -57,7 +57,7 @@ func buildCreateCmd(app *common.App) *cobra.Command {
 
 	// Add flags
 	cmd.Flags().StringVar(&name, "name", "", "Database name (auto-generated if not provided)")
-	cmd.Flags().StringVar(&shareToken, "from-share-token", "", "Create the database from a share token")
+	cmd.Flags().StringVar(&shareToken, "from-share", "", "Create the database from a share token")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	cmd.Flags().BoolVar(&yamlOutput, "yaml", false, "Output in YAML format")
 	cmd.Flags().BoolVar(&wait, "wait", false, "Wait for the database to be ready before returning")

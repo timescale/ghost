@@ -31,7 +31,7 @@ ghost create dedicated [flags]
   ghost create dedicated --name myapp --size 4x
 
   # Create a dedicated database from a share token
-  ghost create dedicated --from-share-token <token>
+  ghost create dedicated --from-share <token>
 
   # Create and output as JSON
   ghost create dedicated --json
@@ -43,13 +43,13 @@ ghost create dedicated [flags]
 ### Options
 
 ```
-      --from-share-token string   Create the database from a share token
-  -h, --help                      help for dedicated
-      --json                      Output in JSON format
-      --name string               Database name (auto-generated if not provided)
-      --size string               Database size (1x, 2x, 4x, 8x) (default "1x")
-      --wait                      Wait for the database to be ready before returning
-      --yaml                      Output in YAML format
+      --from-share string   Create the database from a share token
+  -h, --help                help for dedicated
+      --json                Output in JSON format
+      --name string         Database name (auto-generated if not provided)
+      --size string         Database size (1x, 2x, 4x, 8x) (default "1x")
+      --wait                Wait for the database to be ready before returning
+      --yaml                Output in YAML format
 ```
 
 ### Options inherited from parent commands

@@ -159,7 +159,7 @@ size: 1x
 		},
 		{
 			name: "with share token",
-			args: []string{"create", "dedicated", "--from-share-token", "tok_xyz"},
+			args: []string{"create", "dedicated", "--from-share", "tok_xyz"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
 				req := api.CreateDatabaseRequest{
 					Type:       new(api.DatabaseTypeDedicated),
@@ -172,7 +172,7 @@ size: 1x
 						JSON202:      &db,
 					}, nil)
 			},
-			wantStdout: "Created dedicated database 'mydb' (size: 1x)\nID: abc1234567\nConnection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb\n",
+			wantStdout: "Created dedicated database 'mydb' (size: 1x)\nID: abc1234567\nConnection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb?sslmode=require\n",
 		},
 	}
 
