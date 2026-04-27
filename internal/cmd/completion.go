@@ -191,6 +191,38 @@ var validSizes = []string{"1x", "2x", "4x", "8x"}
 
 var sizeCompletion = cobra.FixedCompletions(validSizes, cobra.ShellCompDirectiveNoFileComp)
 
+func shareTokenCompletion(app *common.App) func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		// Share token is always first positional argument
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		client, projectID, err := app.GetClient()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		resp, err := client.ListSharesWithResponse(cmd.Context(), projectID)
+		if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		// Skip revoked shares — they can't be revoked again, so suggesting
+		// them as completions would just produce errors.
+		results := make([]string, 0, len(*resp.JSON200))
+		for _, share := range *resp.JSON200 {
+			if share.RevokedAt != nil {
+				continue
+			}
+			if strings.HasPrefix(share.ShareToken, toComplete) {
+				results = append(results, cobra.CompletionWithDesc(share.ShareToken, share.DatabaseName))
+			}
+		}
+		return results, cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
 // filterCompletionsByPrefix filters a slice of strings to only include items
 // that start with the given prefix. This is used by shell completion functions
 // to narrow down suggestions based on what the user has typed so far.
