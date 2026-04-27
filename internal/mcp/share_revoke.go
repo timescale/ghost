@@ -52,12 +52,7 @@ func (s *Server) handleShareRevoke(ctx context.Context, req *mcp.CallToolRequest
 		return nil, Share{}, err
 	}
 
-	share, err := common.FindShareByToken(ctx, client, projectID, input.ShareToken)
-	if err != nil {
-		return nil, Share{}, err
-	}
-
-	resp, err := client.RevokeShareWithResponse(ctx, projectID, share.Id)
+	resp, err := client.RevokeShareWithResponse(ctx, projectID, input.ShareToken)
 	if err != nil {
 		return nil, Share{}, fmt.Errorf("failed to revoke share: %w", err)
 	}

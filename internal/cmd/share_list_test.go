@@ -17,7 +17,6 @@ func TestShareListCmd(t *testing.T) {
 	revokedAt := time.Date(2026, 4, 24, 9, 0, 0, 0, time.UTC)
 
 	active := api.DatabaseShare{
-		Id:           "shr_active",
 		ShareToken:   "tok_a",
 		DatabaseId:   "abc1234567",
 		DatabaseName: "mydb",
@@ -25,7 +24,6 @@ func TestShareListCmd(t *testing.T) {
 		ExpiresAt:    &futureExpiry,
 	}
 	expired := api.DatabaseShare{
-		Id:           "shr_expired",
 		ShareToken:   "tok_e",
 		DatabaseId:   "def7654321",
 		DatabaseName: "otherdb",
@@ -33,7 +31,6 @@ func TestShareListCmd(t *testing.T) {
 		ExpiresAt:    &pastExpiry,
 	}
 	revoked := api.DatabaseShare{
-		Id:           "shr_revoked",
 		ShareToken:   "tok_r",
 		DatabaseId:   "ghi9999999",
 		DatabaseName: "thirddb",

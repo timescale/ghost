@@ -15,7 +15,6 @@ func TestShareCmd(t *testing.T) {
 	expiresAt := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 
 	share := api.DatabaseShare{
-		Id:           "shr_abc",
 		ShareToken:   "tok_xyz",
 		DatabaseId:   "abc1234567",
 		DatabaseName: "mydb",

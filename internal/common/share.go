@@ -1,13 +1,8 @@
 package common
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
-
-	"github.com/timescale/ghost/internal/api"
 )
 
 // ShareURL returns the landing-page URL a recipient opens to consume a
@@ -21,27 +16,4 @@ func ShareURL(baseURL, token string) (string, error) {
 		return "", fmt.Errorf("invalid share_url %q: %w", baseURL, err)
 	}
 	return joined, nil
-}
-
-// FindShareByToken looks up the API share matching the given token. The
-// revoke API requires the internal share ID, so callers that want to let
-// users revoke by token list shares and match client-side before calling
-// RevokeShareWithResponse with the share's ID.
-func FindShareByToken(ctx context.Context, client api.ClientWithResponsesInterface, projectID, token string) (api.DatabaseShare, error) {
-	resp, err := client.ListSharesWithResponse(ctx, projectID)
-	if err != nil {
-		return api.DatabaseShare{}, fmt.Errorf("failed to list shares: %w", err)
-	}
-	if resp.StatusCode() != http.StatusOK {
-		return api.DatabaseShare{}, ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
-	}
-	if resp.JSON200 == nil {
-		return api.DatabaseShare{}, errors.New("empty response from API")
-	}
-	for _, s := range *resp.JSON200 {
-		if s.ShareToken == token {
-			return s, nil
-		}
-	}
-	return api.DatabaseShare{}, errors.New("share not found for the given token")
 }
