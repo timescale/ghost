@@ -151,16 +151,16 @@ func TestShareCmd(t *testing.T) {
 			wantErr: "empty response from API",
 		},
 		{
-			name: "invalid --expires-at",
-			args: []string{"share", "abc1234567", "--expires-at", "not-a-date"},
+			name: "invalid --expires",
+			args: []string{"share", "abc1234567", "--expires", "not-a-date"},
 			// no mock: error is caught before any API call
-			wantErr: `invalid --expires-at (expected RFC3339 like 2026-05-01T00:00:00Z): parsing time "not-a-date" as "2006-01-02T15:04:05Z07:00": cannot parse "not-a-date" as "2006"`,
+			wantErr: `invalid expires value "not-a-date" (expected duration like 24h or RFC3339 timestamp like 2026-05-01T00:00:00Z)`,
 		},
 		{
-			name: "negative --expires-in",
-			args: []string{"share", "abc1234567", "--expires-in", "-1h"},
+			name: "negative --expires duration",
+			args: []string{"share", "abc1234567", "--expires", "-1h"},
 			// no mock: error is caught before any API call
-			wantErr: "--expires-in must be positive",
+			wantErr: "expires duration must be positive",
 		},
 		{
 			name: "text output no expiry",
@@ -172,8 +172,8 @@ func TestShareCmd(t *testing.T) {
 			wantStdout: "Shared 'mydb'\nURL: https://ghost.build/share/tok_xyz\nToken: tok_xyz\nExpires: never\n",
 		},
 		{
-			name: "text output with --expires-at",
-			args: []string{"share", "abc1234567", "--expires-at", "2026-05-01T00:00:00Z"},
+			name: "text output with --expires (RFC3339)",
+			args: []string{"share", "abc1234567", "--expires", "2026-05-01T00:00:00Z"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
 				setupGet(m)
 				setupShareSuccess(&expiresAt, true)(m)

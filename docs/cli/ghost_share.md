@@ -27,11 +27,11 @@ ghost share <name-or-id> [flags]
   # Share a database (no expiry)
   ghost share my-database
 
-  # Share for 24 hours
-  ghost share my-database --expires-in 24h
+  # Share for 24 hours (relative duration)
+  ghost share my-database --expires 24h
 
-  # Share until a specific time
-  ghost share my-database --expires-at 2026-05-01T00:00:00Z
+  # Share until a specific time (RFC3339)
+  ghost share my-database --expires 2026-05-01T00:00:00Z
 
   # Output as JSON
   ghost share my-database --json
@@ -43,11 +43,10 @@ ghost share <name-or-id> [flags]
 ### Options
 
 ```
-      --expires-at string     Absolute expiry as RFC3339 (e.g. 2026-05-01T00:00:00Z)
-      --expires-in duration   Relative expiry (e.g. 30m, 24h)
-  -h, --help                  help for share
-      --json                  Output in JSON format
-      --yaml                  Output in YAML format
+      --expires string   Expiry as a duration (e.g. 30m, 24h) or RFC3339 timestamp (e.g. 2026-05-01T00:00:00Z)
+  -h, --help             help for share
+      --json             Output in JSON format
+      --yaml             Output in YAML format
 ```
 
 ### Options inherited from parent commands
