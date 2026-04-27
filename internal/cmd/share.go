@@ -36,7 +36,7 @@ func buildShareCmd(app *common.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "share <name-or-id>",
 		Short: "Share a database",
-		Long: `Share a database so a recipient can create their own fork from a snapshot.
+		Long: `Share a database so a recipient can create their own database from a snapshot.
 
 The share URL can be handed to anyone — they don't need access to this space.
 Whoever opens the URL gets instructions to run 'ghost create --from-share-token <token>'
@@ -136,8 +136,6 @@ func outputShareText(cmd *cobra.Command, o Share) {
 	cmd.Printf("Token: %s\n", o.ShareToken)
 	if o.ExpiresAt != nil {
 		cmd.Printf("Expires: %s\n", o.ExpiresAt.Format(time.RFC3339))
-	} else {
-		cmd.Printf("Expires: never\n")
 	}
 }
 

@@ -10,7 +10,7 @@ Revoke a database share
 
 ### Synopsis
 
-Revoke a share so its URL can no longer be used to create new forks.
+Revoke a share so its URL can no longer be used to create new databases.
 
 ```
 ghost share revoke <share-token> [flags]

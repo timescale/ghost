@@ -10,7 +10,7 @@ Share a database
 
 ### Synopsis
 
-Share a database so a recipient can create their own fork from a snapshot.
+Share a database so a recipient can create their own database from a snapshot.
 
 The share URL can be handed to anyone — they don't need access to this space.
 Whoever opens the URL gets instructions to run 'ghost create --from-share-token <token>'

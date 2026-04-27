@@ -73,9 +73,9 @@ func newShareTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:  "ghost_share",
 		Title: "Share Database",
-		Description: `Share a database so a recipient can create their own fork from a snapshot.
+		Description: `Share a database so a recipient can create their own database from a snapshot.
 
-The share URL can be handed to anyone — they don't need access to this space. Pass the returned share_token to ghost_create (or ghost_create_dedicated) to create a database from the shared snapshot.`,
+The share URL can be handed to anyone — they don't need access to this space. Pass the returned share_token to ghost_create (or ghost_create_dedicated) to create a new database from the shared snapshot.`,
 		InputSchema:  ShareInput{}.Schema(),
 		OutputSchema: ShareOutput{}.Schema(),
 		Annotations: &mcp.ToolAnnotations{
@@ -153,7 +153,7 @@ func shareStatus(s api.DatabaseShare, now time.Time) string {
 // shareOutputProperties applies descriptions shared across share-related MCP outputs.
 func shareOutputProperties(schema *jsonschema.Schema) {
 	schema.Properties["url"].Description = "Landing-page URL a recipient opens to consume the share."
-	schema.Properties["share_token"].Description = "Token a recipient passes to ghost_create as share_token to fork the shared snapshot. Also pass this to ghost_share_revoke to revoke the share."
+	schema.Properties["share_token"].Description = "Token a recipient passes to ghost_create as share_token to create a new database from the shared snapshot. Also pass this to ghost_share_revoke to revoke the share."
 	schema.Properties["database_id"].Description = "Identifier of the shared database"
 	schema.Properties["database_name"].Description = "Name of the shared database"
 	schema.Properties["status"].Description = "Share status"

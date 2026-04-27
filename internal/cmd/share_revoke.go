@@ -19,7 +19,7 @@ func buildShareRevokeCmd(app *common.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "revoke <share-token>",
 		Short:             "Revoke a database share",
-		Long:              `Revoke a share so its URL can no longer be used to create new forks.`,
+		Long:              `Revoke a share so its URL can no longer be used to create new databases.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,

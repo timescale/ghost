@@ -32,7 +32,7 @@ func sizeInputProperties(schema *jsonschema.Schema) {
 }
 
 func shareTokenInputProperties(schema *jsonschema.Schema) {
-	schema.Properties["share_token"].Description = "Share token from a database share. When provided, creates a fork from the shared snapshot into this space."
+	schema.Properties["share_token"].Description = "Share token from a database share. When provided, creates the new database from the shared snapshot."
 }
 
 // Output property helpers

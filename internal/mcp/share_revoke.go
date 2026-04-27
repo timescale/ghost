@@ -29,7 +29,7 @@ func newShareRevokeTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:         "ghost_share_revoke",
 		Title:        "Revoke Database Share",
-		Description:  "Revoke a database share so its URL can no longer be used to create new forks.",
+		Description:  "Revoke a database share so its URL can no longer be used to create new databases.",
 		InputSchema:  ShareRevokeInput{}.Schema(),
 		OutputSchema: ShareOutput{}.Schema(),
 		Annotations: &mcp.ToolAnnotations{
