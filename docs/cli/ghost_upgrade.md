@@ -1,26 +1,32 @@
 ---
-title: "ghost update"
-slug: "ghost_update"
-description: "CLI reference for ghost update"
+title: "ghost upgrade"
+slug: "ghost_upgrade"
+description: "CLI reference for ghost upgrade"
 ---
 
-## ghost update
+## ghost upgrade
 
-Update the ghost CLI to the latest version
+Upgrade the ghost CLI to the latest version
 
 ### Synopsis
 
 Download and install the latest published version of the ghost CLI, replacing the currently running binary.
 
-Uses the same release archives as the install script. If ghost was installed via a package manager (Homebrew, apt, yum/dnf), the update will be refused with a suggestion to use that package manager instead.
+If ghost was installed via a package manager (Homebrew, apt, yum/dnf), the upgrade will be refused with a suggestion to use that package manager instead.
 
-```bash
-ghost update [flags]
+```
+ghost upgrade [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for upgrade
 ```
 
 ### Options inherited from parent commands
 
-```bash
+```
       --analytics           enable/disable usage analytics (default true)
       --color               enable colored output (default true)
       --config-dir string   config directory (default "~/.config/ghost")
@@ -29,4 +35,5 @@ ghost update [flags]
 
 ### SEE ALSO
 
-* [ghost](ghost.md) - CLI for managing Postgres databases
+* [ghost](ghost.md)	 - CLI for managing Postgres databases
+

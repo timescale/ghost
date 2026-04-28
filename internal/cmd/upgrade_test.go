@@ -25,21 +25,21 @@ func startFakeReleasesServer(t *testing.T, latestVersion string) *httptest.Serve
 	return server
 }
 
-func TestUpdateCmd(t *testing.T) {
+func TestUpgradeCmd(t *testing.T) {
 	releasesServer := startFakeReleasesServer(t, "v99.99.99")
 
 	tests := []cmdTest{
 		{
 			name: "rejects invalid --version",
-			args: []string{"update", "--version", "not-a-version"},
+			args: []string{"upgrade", "--version", "not-a-version"},
 			opts: []runOption{
 				withEnv("GHOST_RELEASES_URL", releasesServer.URL),
 			},
 			wantErr: `invalid version "not-a-version": must be a valid semver version (e.g. v1.2.3)`,
 		},
 		{
-			name: "upgrade alias rejects invalid --version",
-			args: []string{"upgrade", "--version", "1.2.3"},
+			name: "update alias rejects invalid --version",
+			args: []string{"update", "--version", "1.2.3"},
 			opts: []runOption{
 				withEnv("GHOST_RELEASES_URL", releasesServer.URL),
 			},
@@ -49,7 +49,7 @@ func TestUpdateCmd(t *testing.T) {
 			// config.Version is "dev" in tests, so every invocation without
 			// --force exercises the dev-build guard.
 			name: "refuses dev build without --force",
-			args: []string{"update"},
+			args: []string{"upgrade"},
 			opts: []runOption{
 				withEnv("GHOST_RELEASES_URL", releasesServer.URL),
 			},
@@ -60,9 +60,9 @@ func TestUpdateCmd(t *testing.T) {
 
 	// Error from a network failure is non-deterministic (depends on the net
 	// stack's exact wording), so we assert only the stable wrapping prefix
-	// that runUpdate adds.
+	// that runUpgrade adds.
 	t.Run("fails when latest version cannot be fetched", func(t *testing.T) {
-		result := runCommand(t, []string{"update"}, nil,
+		result := runCommand(t, []string{"upgrade"}, nil,
 			withEnv("GHOST_RELEASES_URL", "http://127.0.0.1:1"),
 		)
 		if result.err == nil {

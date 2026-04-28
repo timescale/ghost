@@ -33,22 +33,22 @@ func binaryFilename() string {
 	return "ghost"
 }
 
-func buildUpdateCmd(app *common.App) *cobra.Command {
+func buildUpgradeCmd(app *common.App) *cobra.Command {
 	var force bool
 	var requestedVersion string
 
 	cmd := &cobra.Command{
-		Use:     "update",
-		Aliases: []string{"upgrade"},
-		Short:   "Update the ghost CLI to the latest version",
+		Use:     "upgrade",
+		Aliases: []string{"update"},
+		Short:   "Upgrade the ghost CLI to the latest version",
 		Long: `Download and install the latest published version of the ghost CLI, replacing the currently running binary.
 
-If ghost was installed via a package manager (Homebrew, apt, yum/dnf), the update will be refused with a suggestion to use that package manager instead.`,
+If ghost was installed via a package manager (Homebrew, apt, yum/dnf), the upgrade will be refused with a suggestion to use that package manager instead.`,
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUpdate(cmd, app, requestedVersion, force)
+			return runUpgrade(cmd, app, requestedVersion, force)
 		},
 	}
 
@@ -64,7 +64,7 @@ If ghost was installed via a package manager (Homebrew, apt, yum/dnf), the updat
 	return cmd
 }
 
-func runUpdate(cmd *cobra.Command, app *common.App, requestedVersion string, force bool) error {
+func runUpgrade(cmd *cobra.Command, app *common.App, requestedVersion string, force bool) error {
 	ctx := cmd.Context()
 	cfg := app.GetConfig()
 	releasesURL := strings.TrimRight(cfg.ReleasesURL, "/")
@@ -91,11 +91,11 @@ func runUpdate(cmd *cobra.Command, app *common.App, requestedVersion string, for
 	}
 	currentVersion := versionCheckResult.CurrentVersion
 
-	// Package-manager-installed binaries should be updated via the package manager.
+	// Package-manager-installed binaries should be upgraded via the package manager.
 	switch versionCheckResult.InstallMethod {
 	case common.InstallMethodHomebrew, common.InstallMethodDeb, common.InstallMethodRPM:
 		if !force {
-			return fmt.Errorf("ghost appears to have been installed via %s; update it with:\n    %s",
+			return fmt.Errorf("ghost appears to have been installed via %s; upgrade it with:\n    %s",
 				versionCheckResult.InstallMethod, versionCheckResult.UpdateCommand)
 		}
 		cmd.PrintErrf("Warning: ghost appears to have been installed via %s; overwriting from release archive because --force was set\n", versionCheckResult.InstallMethod)
@@ -122,7 +122,7 @@ func runUpdate(cmd *cobra.Command, app *common.App, requestedVersion string, for
 		return err
 	}
 
-	tmpDir, err := os.MkdirTemp("", "ghost-update-*")
+	tmpDir, err := os.MkdirTemp("", "ghost-upgrade-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
@@ -136,7 +136,7 @@ func runUpdate(cmd *cobra.Command, app *common.App, requestedVersion string, for
 	archiveURL := fmt.Sprintf("%s/releases/%s/%s", releasesURL, targetVersion, archiveFilename)
 	checksumURL := archiveURL + ".sha256"
 
-	cmd.Printf("Updating ghost %s → %s\n", currentVersion, targetVersion)
+	cmd.Printf("Upgrading ghost %s → %s\n", currentVersion, targetVersion)
 	cmd.Printf("Downloading %s\n", archiveURL)
 	if err := downloadFile(ctx, archiveURL, archivePath); err != nil {
 		return fmt.Errorf("failed to download release archive: %w", err)
@@ -161,12 +161,12 @@ func runUpdate(cmd *cobra.Command, app *common.App, requestedVersion string, for
 		return err
 	}
 
-	cmd.Printf("ghost updated successfully to %s\n", targetVersion)
+	cmd.Printf("ghost upgraded successfully to %s\n", targetVersion)
 	return nil
 }
 
 // resolveCurrentBinaryPath returns the absolute path of the running binary,
-// resolving any symlinks so that updates target the actual file rather than
+// resolving any symlinks so that upgrades target the actual file rather than
 // replacing a symlink.
 func resolveCurrentBinaryPath() (string, error) {
 	exe, err := os.Executable()
@@ -177,7 +177,7 @@ func resolveCurrentBinaryPath() (string, error) {
 	if err != nil {
 		// Fall back to the un-resolved path; EvalSymlinks can fail in edge
 		// cases (e.g. on some Windows package paths) and we'd still like to
-		// attempt the update.
+		// attempt the upgrade.
 		return exe, nil
 	}
 	return resolved, nil
@@ -227,9 +227,9 @@ func buildReleaseArchiveName() (string, bool, error) {
 // than downloading a release archive only to discover we lack permission.
 func checkCanReplaceBinary(currentBinaryPath string) error {
 	parentDir := filepath.Dir(currentBinaryPath)
-	probe, err := os.CreateTemp(parentDir, ".ghost-update-writecheck-*")
+	probe, err := os.CreateTemp(parentDir, ".ghost-upgrade-writecheck-*")
 	if err != nil {
-		return fmt.Errorf("cannot write to %s (where ghost is installed): %w\nConsider re-running with elevated privileges, or updating via the install method originally used", parentDir, err)
+		return fmt.Errorf("cannot write to %s (where ghost is installed): %w\nConsider re-running with elevated privileges, or upgrading via the install method originally used", parentDir, err)
 	}
 	probePath := probe.Name()
 	defer os.Remove(probePath)
@@ -436,13 +436,13 @@ func writeExecutableFile(destPath string, src io.Reader) error {
 // On Windows a running executable cannot be deleted or overwritten, but it
 // can be renamed, so we move the existing binary aside (to ghost.exe.old.<pid>)
 // before installing the new one. Any accumulated .old.* files from previous
-// updates are cleaned up opportunistically.
+// upgrades are cleaned up opportunistically.
 func replaceRunningBinary(currentBinaryPath, newBinaryPath string) error {
 	targetDir := filepath.Dir(currentBinaryPath)
 
 	// Stage the new binary in the same directory so the final rename stays
 	// on the same filesystem (i.e. is atomic on POSIX).
-	stagedFile, err := os.CreateTemp(targetDir, ".ghost-update-staged-*")
+	stagedFile, err := os.CreateTemp(targetDir, ".ghost-upgrade-staged-*")
 	if err != nil {
 		return fmt.Errorf("failed to stage new binary in %s: %w", targetDir, err)
 	}
@@ -479,7 +479,7 @@ func replaceRunningBinary(currentBinaryPath, newBinaryPath string) error {
 			return fmt.Errorf("failed to install new binary: %w", err)
 		}
 		// oldPath remains on disk; Windows holds the file open until the
-		// current process exits, after which the next update invocation can
+		// current process exits, after which the next upgrade invocation can
 		// clean it up.
 		return nil
 	}
@@ -504,7 +504,7 @@ func copyFileContents(dest *os.File, srcPath string) error {
 }
 
 // cleanupStaleOldBinaries removes leftover ghost.exe.old.* files from previous
-// Windows updates. Files still held open by another process will silently fail
+// Windows upgrades. Files still held open by another process will silently fail
 // to delete; that's fine — they'll be cleaned up on a future invocation, so
 // Remove errors are intentionally not propagated.
 func cleanupStaleOldBinaries(currentBinaryPath string) {
