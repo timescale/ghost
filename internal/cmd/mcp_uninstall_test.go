@@ -86,7 +86,7 @@ func TestMCPUninstallCmd(t *testing.T) {
 		}
 	})
 
-	t.Run("unconfigured_cli_client_exits_one", func(t *testing.T) {
+	t.Run("unconfigured_cli_client_exits_two", func(t *testing.T) {
 		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
 			assertMCPClientCommand(t, command, args, "claude mcp get ghost")
 			return []byte(`No MCP server found with name: "ghost". No MCP servers are configured.`), executableNotFoundError(command)
@@ -176,7 +176,7 @@ func TestMCPUninstallCmd(t *testing.T) {
 		writeTestFile(t, cursorConfigPath, original)
 
 		result := runCommand(t, []string{"mcp", "uninstall", "cursor", "--no-backup"}, nil, withEnv("HOME", homeDir))
-		// Detection sees an unconfigured (unexpected command) entry, so we exit 1 without modifying the file.
+		// Detection sees an unconfigured (unexpected command) entry, so we exit 2 without modifying the file.
 		assertExitCode(t, result.err, mcpExitNoneConfigured)
 		assertOutput(t, result.stdout, "CLIENT  STATUS        DETAIL                              \nCursor  unconfigured  ghost entry has unexpected command  \n")
 		assertOutput(t, result.stderr, "")

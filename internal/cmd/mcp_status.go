@@ -24,8 +24,8 @@ const (
 	mcpStatusConfigured   = "configured"
 	mcpStatusUnconfigured = "unconfigured"
 	mcpStatusError        = "error"
-	mcpExitNoneConfigured = 1
-	mcpExitDetectionError = 2
+	mcpExitDetectionError = common.ExitGeneralError
+	mcpExitNoneConfigured = 2
 )
 
 // MCPClientStatusOutput represents a single client row in `ghost mcp status` output.

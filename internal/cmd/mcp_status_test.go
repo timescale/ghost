@@ -32,7 +32,7 @@ func TestMCPStatusCmd(t *testing.T) {
 		assertOutput(t, result.stderr, "")
 	})
 
-	t.Run("unconfigured_cli_client_exits_one", func(t *testing.T) {
+	t.Run("unconfigured_cli_client_exits_two", func(t *testing.T) {
 		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
 			assertMCPClientCommand(t, command, args, "codex mcp list --json")
 			return []byte(`[]`), nil
@@ -56,7 +56,7 @@ func TestMCPStatusCmd(t *testing.T) {
 		assertOutput(t, result.stderr, "")
 	})
 
-	t.Run("detection_error_exits_two", func(t *testing.T) {
+	t.Run("detection_error_exits_one", func(t *testing.T) {
 		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
 			assertMCPClientCommand(t, command, args, "codex mcp list --json")
 			return []byte(`not json`), nil
@@ -177,7 +177,7 @@ func TestMCPStatusCmd(t *testing.T) {
 		assertOutput(t, result.stderr, "")
 	})
 
-	t.Run("all_clients_no_args_all_unconfigured_exits_one", func(t *testing.T) {
+	t.Run("all_clients_no_args_all_unconfigured_exits_two", func(t *testing.T) {
 		homeDir := t.TempDir()
 		// Stub all CLI-based clients to look unconfigured.
 		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
@@ -193,7 +193,7 @@ func TestMCPStatusCmd(t *testing.T) {
 		assertOutput(t, result.stderr, "")
 	})
 
-	t.Run("mixed_configured_and_error_exits_two", func(t *testing.T) {
+	t.Run("mixed_configured_and_error_exits_one", func(t *testing.T) {
 		homeDir := t.TempDir()
 		// Configure cursor (a JSON-file client).
 		cursorConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
