@@ -128,11 +128,22 @@ func TestMCPInstallCmd(t *testing.T) {
 			}
 		})
 
-		// Pre-create a Kiro mcp.json with the ghost entry so the file-level
-		// verification step in detectKiroMCPConfiguration also succeeds.
+		// Pre-create config files for clients that should be detected as already
+		// configured. Kiro's CLI status output does not include args, so the
+		// detector verifies the file too. VS Code installs through the `code` CLI,
+		// which is not available in CI, so keep it on the already-configured path.
 		kiroConfigPath := filepath.Join(homeDir, ".kiro", "settings", "mcp.json")
 		writeTestFile(t, kiroConfigPath, `{
   "mcpServers": {
+    "ghost": {
+      "command": "ghost",
+      "args": ["mcp", "start"]
+    }
+  }
+}`)
+		vscodeConfigPath := filepath.Join(homeDir, ".config", "Code", "User", "mcp.json")
+		writeTestFile(t, vscodeConfigPath, `{
+  "servers": {
     "ghost": {
       "command": "ghost",
       "args": ["mcp", "start"]
