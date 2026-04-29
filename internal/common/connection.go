@@ -28,15 +28,17 @@ func BuildConnectionString(args ConnectionStringArgs) (string, error) {
 		userInfo = args.Role
 	}
 
-	connStr := fmt.Sprintf("postgresql://%s@%s:%d/%s", userInfo, host, port, dbName)
+	// Timescale Cloud requires TLS; make that explicit so clients don't
+	// silently fall back to libpq's default sslmode=prefer.
+	query := "sslmode=require"
 
 	// If read-only mode is enabled, set the tsdb_admin.read_only_connection
 	// GUC as a startup parameter. This activates an immutable read-only
 	// connection that cannot be disabled for the session.
-	// Decoded: ?options=-c tsdb_admin.read_only_connection=true
+	// Decoded: options=-c tsdb_admin.read_only_connection=true
 	if args.ReadOnly {
-		connStr += "?options=-c%20tsdb_admin.read_only_connection%3Dtrue"
+		query += "&options=-c%20tsdb_admin.read_only_connection%3Dtrue"
 	}
 
-	return connStr, nil
+	return fmt.Sprintf("postgresql://%s@%s:%d/%s?%s", userInfo, host, port, dbName, query), nil
 }

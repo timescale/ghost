@@ -154,7 +154,7 @@ func TestForkCmd(t *testing.T) {
 				setupGetSource(m)
 				setupForkSuccess(nil)(m)
 			},
-			wantStdout: "Forked 'mydb' → 'mydb-fork'\nID: forked1234\nConnection: postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb\n",
+			wantStdout: "Forked 'mydb' → 'mydb-fork'\nID: forked1234\nConnection: postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb?sslmode=require\n",
 		},
 		{
 			name: "text output with custom name",
@@ -163,7 +163,7 @@ func TestForkCmd(t *testing.T) {
 				setupGetSource(m)
 				setupForkSuccess(new("custom-fork"))(m)
 			},
-			wantStdout: "Forked 'mydb' → 'mydb-fork'\nID: forked1234\nConnection: postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb\n",
+			wantStdout: "Forked 'mydb' → 'mydb-fork'\nID: forked1234\nConnection: postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb?sslmode=require\n",
 		},
 		{
 			name: "json output",
@@ -176,7 +176,7 @@ func TestForkCmd(t *testing.T) {
   "source_name": "mydb",
   "name": "mydb-fork",
   "id": "forked1234",
-  "connection": "postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb"
+  "connection": "postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb?sslmode=require"
 }
 `,
 		},
@@ -187,7 +187,7 @@ func TestForkCmd(t *testing.T) {
 				setupGetSource(m)
 				setupForkSuccess(nil)(m)
 			},
-			wantStdout: `connection: postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb
+			wantStdout: `connection: postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb?sslmode=require
 id: forked1234
 name: mydb-fork
 source_name: mydb

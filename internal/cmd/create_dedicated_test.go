@@ -91,7 +91,7 @@ func TestCreateDedicatedCmd(t *testing.T) {
 						JSON202:      &autoDb,
 					}, nil)
 			},
-			wantStdout: "Created dedicated database 'ghost-12345' (size: 1x)\nID: abc1234567\nConnection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb\n",
+			wantStdout: "Created dedicated database 'ghost-12345' (size: 1x)\nID: abc1234567\nConnection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb?sslmode=require\n",
 		},
 		{
 			name: "text output with default size",
@@ -105,7 +105,7 @@ func TestCreateDedicatedCmd(t *testing.T) {
 			},
 			wantStdout: `Created dedicated database 'mydb' (size: 1x)
 ID: abc1234567
-Connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb
+Connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb?sslmode=require
 `,
 		},
 		{
@@ -120,7 +120,7 @@ Connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb
 			},
 			wantStdout: `Created dedicated database 'mydb' (size: 4x)
 ID: abc1234567
-Connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb
+Connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb?sslmode=require
 `,
 		},
 		{
@@ -137,7 +137,7 @@ Connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb
   "name": "mydb",
   "id": "abc1234567",
   "size": "1x",
-  "connection": "postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb"
+  "connection": "postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb?sslmode=require"
 }
 `,
 		},
@@ -151,7 +151,7 @@ Connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb
 						JSON202:      &db,
 					}, nil)
 			},
-			wantStdout: `connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb
+			wantStdout: `connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb?sslmode=require
 id: abc1234567
 name: mydb
 size: 1x

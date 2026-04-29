@@ -69,7 +69,7 @@ func TestCreateCmd(t *testing.T) {
 						JSON202:      &autoDb,
 					}, nil)
 			},
-			wantStdout: "Created database 'ghost-12345'\nID: abc1234567\nConnection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb\n",
+			wantStdout: "Created database 'ghost-12345'\nID: abc1234567\nConnection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb?sslmode=require\n",
 		},
 		{
 			name: "text output",
@@ -83,7 +83,7 @@ func TestCreateCmd(t *testing.T) {
 			},
 			wantStdout: `Created database 'mydb'
 ID: abc1234567
-Connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb
+Connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb?sslmode=require
 `,
 		},
 		{
@@ -99,7 +99,7 @@ Connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb
 			wantStdout: `{
   "name": "mydb",
   "id": "abc1234567",
-  "connection": "postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb"
+  "connection": "postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb?sslmode=require"
 }
 `,
 		},
@@ -113,7 +113,7 @@ Connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb
 						JSON202:      &db,
 					}, nil)
 			},
-			wantStdout: `connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb
+			wantStdout: `connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb?sslmode=require
 id: abc1234567
 name: mydb
 `,

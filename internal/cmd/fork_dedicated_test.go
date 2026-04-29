@@ -165,7 +165,7 @@ func TestForkDedicatedCmd(t *testing.T) {
 				setupGetSource(m)
 				setupForkSuccess(nil)(m)
 			},
-			wantStdout: "Forked 'mydb' → dedicated 'mydb-fork' (size: 1x)\nID: forked1234\nConnection: postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb\n",
+			wantStdout: "Forked 'mydb' → dedicated 'mydb-fork' (size: 1x)\nID: forked1234\nConnection: postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb?sslmode=require\n",
 		},
 		{
 			name: "text output with custom name",
@@ -174,7 +174,7 @@ func TestForkDedicatedCmd(t *testing.T) {
 				setupGetSource(m)
 				setupForkSuccess(new("custom-fork"))(m)
 			},
-			wantStdout: "Forked 'mydb' → dedicated 'mydb-fork' (size: 1x)\nID: forked1234\nConnection: postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb\n",
+			wantStdout: "Forked 'mydb' → dedicated 'mydb-fork' (size: 1x)\nID: forked1234\nConnection: postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb?sslmode=require\n",
 		},
 		{
 			name: "text output with custom size",
@@ -190,7 +190,7 @@ func TestForkDedicatedCmd(t *testing.T) {
 					JSON202:      &db,
 				}, nil)
 			},
-			wantStdout: "Forked 'mydb' → dedicated 'mydb-fork' (size: 4x)\nID: forked1234\nConnection: postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb\n",
+			wantStdout: "Forked 'mydb' → dedicated 'mydb-fork' (size: 4x)\nID: forked1234\nConnection: postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb?sslmode=require\n",
 		},
 		{
 			name: "json output",
@@ -204,7 +204,7 @@ func TestForkDedicatedCmd(t *testing.T) {
   "name": "mydb-fork",
   "id": "forked1234",
   "size": "1x",
-  "connection": "postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb"
+  "connection": "postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb?sslmode=require"
 }
 `,
 		},
@@ -215,7 +215,7 @@ func TestForkDedicatedCmd(t *testing.T) {
 				setupGetSource(m)
 				setupForkSuccess(nil)(m)
 			},
-			wantStdout: `connection: postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb
+			wantStdout: `connection: postgresql://tsdbadmin:forkpass@fork.example.com:5432/tsdb?sslmode=require
 id: forked1234
 name: mydb-fork
 size: 1x

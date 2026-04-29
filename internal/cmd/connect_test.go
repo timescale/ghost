@@ -64,7 +64,7 @@ func TestConnectCmd(t *testing.T) {
 					}, nil)
 			},
 			wantStderr: "Warning: failed to get password: password not found\n",
-			wantStdout: "postgresql://tsdbadmin@no-pgpass-match.example.com:5432/tsdb\n",
+			wantStdout: "postgresql://tsdbadmin@no-pgpass-match.example.com:5432/tsdb?sslmode=require\n",
 		},
 		{
 			name: "read-only flag",
@@ -80,7 +80,7 @@ func TestConnectCmd(t *testing.T) {
 					}, nil)
 			},
 			wantStderr: "Warning: failed to get password: password not found\n",
-			wantStdout: "postgresql://tsdbadmin@no-pgpass-match.example.com:5432/tsdb?options=-c%20tsdb_admin.read_only_connection%3Dtrue\n",
+			wantStdout: "postgresql://tsdbadmin@no-pgpass-match.example.com:5432/tsdb?sslmode=require&options=-c%20tsdb_admin.read_only_connection%3Dtrue\n",
 		},
 	}
 
