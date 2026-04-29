@@ -94,7 +94,7 @@ func TestShareRevokeCmd(t *testing.T) {
 			args:  []string{"share", "revoke", "tok_xyz", "--json"},
 			setup: setupRevokeSuccess,
 			wantStdout: `{
-  "url": "https://ghost.build/share/tok_xyz",
+  "url": "https://ghost.build/share/tok_xyz?name=mydb",
   "share_token": "tok_xyz",
   "database_id": "abc1234567",
   "database_name": "mydb",
@@ -114,7 +114,7 @@ database_name: mydb
 revoked_at: "2026-04-24T09:00:00Z"
 share_token: tok_xyz
 status: revoked
-url: https://ghost.build/share/tok_xyz
+url: https://ghost.build/share/tok_xyz?name=mydb
 `,
 		},
 	}

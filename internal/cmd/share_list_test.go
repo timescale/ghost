@@ -119,7 +119,7 @@ func TestShareListCmd(t *testing.T) {
 			},
 			wantStdout: `[
   {
-    "url": "https://ghost.build/share/tok_a",
+    "url": "https://ghost.build/share/tok_a?name=mydb",
     "share_token": "tok_a",
     "database_id": "abc1234567",
     "database_name": "mydb",
@@ -147,7 +147,7 @@ func TestShareListCmd(t *testing.T) {
   expires_at: "2099-01-01T00:00:00Z"
   share_token: tok_a
   status: active
-  url: https://ghost.build/share/tok_a
+  url: https://ghost.build/share/tok_a?name=mydb
 `,
 		},
 		{

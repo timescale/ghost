@@ -53,7 +53,7 @@ func (ShareOutput) Schema() *jsonschema.Schema {
 // toShareOutput converts an API share into the MCP output shape, computing the
 // status relative to now.
 func toShareOutput(s api.DatabaseShare, baseURL string, now time.Time) (ShareOutput, error) {
-	u, err := common.ShareURL(baseURL, s.ShareToken)
+	u, err := common.ShareURL(baseURL, s.ShareToken, s.DatabaseName)
 	if err != nil {
 		return ShareOutput{}, err
 	}
