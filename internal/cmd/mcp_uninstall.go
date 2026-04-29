@@ -327,7 +327,7 @@ func mcpUninstallExitCode(results []mcpClientUninstallResult) int {
 		}
 	}
 	if anyError {
-		return mcpExitDetectionError
+		return common.ExitGeneralError
 	}
 	if anyUninstalled {
 		return 0

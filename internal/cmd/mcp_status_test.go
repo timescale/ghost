@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/timescale/ghost/internal/common"
 )
 
 func TestMCPStatusCmd(t *testing.T) {
@@ -63,7 +65,7 @@ func TestMCPStatusCmd(t *testing.T) {
 		})
 
 		result := runCommand(t, []string{"mcp", "status", "codex"}, nil)
-		assertExitCode(t, result.err, mcpExitDetectionError)
+		assertExitCode(t, result.err, common.ExitGeneralError)
 		assertOutput(t, result.stdout, "CLIENT  STATUS  DETAIL                                                                                        \nCodex   error   failed to parse codex mcp list output: invalid character 'o' in literal null (expecting 'u')  \n")
 		assertOutput(t, result.stderr, "")
 	})
@@ -75,7 +77,7 @@ func TestMCPStatusCmd(t *testing.T) {
 		})
 
 		result := runCommand(t, []string{"mcp", "status", "claude-code"}, nil)
-		assertExitCode(t, result.err, mcpExitDetectionError)
+		assertExitCode(t, result.err, common.ExitGeneralError)
 		assertOutput(t, result.stdout, "CLIENT       STATUS  DETAIL          \nClaude Code  error   signal: killed  \n")
 		assertOutput(t, result.stderr, "")
 	})
@@ -215,7 +217,7 @@ func TestMCPStatusCmd(t *testing.T) {
 
 		result := runCommand(t, []string{"mcp", "status"}, nil, withEnv("HOME", homeDir))
 		// Configured + error → detection error (not 0), per mcpStatusExitCode.
-		assertExitCode(t, result.err, mcpExitDetectionError)
+		assertExitCode(t, result.err, common.ExitGeneralError)
 		assertOutput(t, result.stderr, "")
 	})
 }

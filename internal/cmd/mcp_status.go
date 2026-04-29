@@ -24,7 +24,6 @@ const (
 	mcpStatusConfigured   = "configured"
 	mcpStatusUnconfigured = "unconfigured"
 	mcpStatusError        = "error"
-	mcpExitDetectionError = common.ExitGeneralError
 	mcpExitNoneConfigured = 2
 )
 
@@ -176,7 +175,7 @@ func mcpStatusExitCode(results []mcpClientStatusResult) int {
 		}
 	}
 	if anyError {
-		return mcpExitDetectionError
+		return common.ExitGeneralError
 	}
 	if anyConfigured {
 		return 0

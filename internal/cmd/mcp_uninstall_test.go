@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/timescale/ghost/internal/common"
 )
 
 func TestMCPUninstallCmd(t *testing.T) {
@@ -105,7 +107,7 @@ func TestMCPUninstallCmd(t *testing.T) {
 		})
 
 		result := runCommand(t, []string{"mcp", "uninstall", "codex"}, nil)
-		assertExitCode(t, result.err, mcpExitDetectionError)
+		assertExitCode(t, result.err, common.ExitGeneralError)
 		assertOutput(t, result.stdout, "CLIENT  STATUS  DETAIL                                                                                        \nCodex   error   failed to parse codex mcp list output: invalid character 'o' in literal null (expecting 'u')  \n")
 		assertOutput(t, result.stderr, "")
 	})
@@ -127,7 +129,7 @@ func TestMCPUninstallCmd(t *testing.T) {
 		})
 
 		result := runCommand(t, []string{"mcp", "uninstall", "claude-code", "--no-backup"}, nil)
-		assertExitCode(t, result.err, mcpExitDetectionError)
+		assertExitCode(t, result.err, common.ExitGeneralError)
 		assertOutput(t, result.stdout, "CLIENT       STATUS  DETAIL          \nClaude Code  error   signal: killed  \n")
 		assertOutput(t, result.stderr, "")
 	})
