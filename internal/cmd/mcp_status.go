@@ -24,13 +24,8 @@ const (
 	mcpStatusConfigured   = "configured"
 	mcpStatusUnconfigured = "unconfigured"
 	mcpStatusError        = "error"
-	// mcpExitNotConfigured is the exit code returned by `ghost mcp status` and
-	// `ghost mcp uninstall` when no clients are in a successful state
-	// (configured / uninstalled), or when one or more clients failed detection.
-	// We deliberately do not reuse common.ExitGeneralError (1) so callers can
-	// distinguish "ghost ran fine but didn't find a configured client" from a
-	// genuine ghost CLI failure.
-	mcpExitNotConfigured = 2
+	mcpExitNoneConfigured = 1
+	mcpExitDetectionError = 2
 )
 
 // MCPClientStatusOutput represents a single client row in `ghost mcp status` output.
@@ -180,10 +175,13 @@ func mcpStatusExitCode(results []mcpClientStatusResult) int {
 			anyError = true
 		}
 	}
-	if anyConfigured && !anyError {
+	if anyError {
+		return mcpExitDetectionError
+	}
+	if anyConfigured {
 		return 0
 	}
-	return mcpExitNotConfigured
+	return mcpExitNoneConfigured
 }
 
 func outputMCPClientStatuses(w io.Writer, statuses []MCPClientStatusOutput) error {

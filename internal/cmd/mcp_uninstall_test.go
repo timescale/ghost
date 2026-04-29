@@ -86,14 +86,14 @@ func TestMCPUninstallCmd(t *testing.T) {
 		}
 	})
 
-	t.Run("unconfigured_cli_client_exits_two", func(t *testing.T) {
+	t.Run("unconfigured_cli_client_exits_one", func(t *testing.T) {
 		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
 			assertMCPClientCommand(t, command, args, "claude mcp get ghost")
 			return []byte(`No MCP server found with name: "ghost". No MCP servers are configured.`), executableNotFoundError(command)
 		})
 
 		result := runCommand(t, []string{"mcp", "uninstall", "claude-code"}, nil)
-		assertExitCode(t, result.err, mcpExitNotConfigured)
+		assertExitCode(t, result.err, mcpExitNoneConfigured)
 		assertOutput(t, result.stdout, "CLIENT       STATUS        DETAIL  \nClaude Code  unconfigured          \n")
 		assertOutput(t, result.stderr, "")
 	})
@@ -105,7 +105,7 @@ func TestMCPUninstallCmd(t *testing.T) {
 		})
 
 		result := runCommand(t, []string{"mcp", "uninstall", "codex"}, nil)
-		assertExitCode(t, result.err, mcpExitNotConfigured)
+		assertExitCode(t, result.err, mcpExitDetectionError)
 		assertOutput(t, result.stdout, "CLIENT  STATUS  DETAIL                                                                                        \nCodex   error   failed to parse codex mcp list output: invalid character 'o' in literal null (expecting 'u')  \n")
 		assertOutput(t, result.stderr, "")
 	})
@@ -127,7 +127,7 @@ func TestMCPUninstallCmd(t *testing.T) {
 		})
 
 		result := runCommand(t, []string{"mcp", "uninstall", "claude-code", "--no-backup"}, nil)
-		assertExitCode(t, result.err, mcpExitNotConfigured)
+		assertExitCode(t, result.err, mcpExitDetectionError)
 		assertOutput(t, result.stdout, "CLIENT       STATUS  DETAIL          \nClaude Code  error   signal: killed  \n")
 		assertOutput(t, result.stderr, "")
 	})
@@ -176,8 +176,8 @@ func TestMCPUninstallCmd(t *testing.T) {
 		writeTestFile(t, cursorConfigPath, original)
 
 		result := runCommand(t, []string{"mcp", "uninstall", "cursor", "--no-backup"}, nil, withEnv("HOME", homeDir))
-		// Detection sees an unconfigured (unexpected command) entry, so we exit 2 without modifying the file.
-		assertExitCode(t, result.err, mcpExitNotConfigured)
+		// Detection sees an unconfigured (unexpected command) entry, so we exit 1 without modifying the file.
+		assertExitCode(t, result.err, mcpExitNoneConfigured)
 		assertOutput(t, result.stdout, "CLIENT  STATUS        DETAIL                              \nCursor  unconfigured  ghost entry has unexpected command  \n")
 		assertOutput(t, result.stderr, "")
 

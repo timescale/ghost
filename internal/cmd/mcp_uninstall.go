@@ -326,10 +326,13 @@ func mcpUninstallExitCode(results []mcpClientUninstallResult) int {
 			anyError = true
 		}
 	}
-	if anyUninstalled && !anyError {
+	if anyError {
+		return mcpExitDetectionError
+	}
+	if anyUninstalled {
 		return 0
 	}
-	return mcpExitNotConfigured
+	return mcpExitNoneConfigured
 }
 
 func outputMCPClientUninstallResults(w io.Writer, results []MCPClientUninstallOutput) error {
