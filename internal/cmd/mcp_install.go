@@ -43,7 +43,7 @@ The command will:
 - Merge with existing MCP server configurations (doesn't overwrite other servers)
 - Validate the configuration after installation
 
-If no client is specified, you'll be prompted to select one interactively.`, generateSupportedEditorsHelp()),
+Pass "all" to configure every supported client. If no client is specified, you'll be prompted to select one interactively.`, generateSupportedEditorsHelp()),
 		Example: `  # Interactive client selection
   ghost mcp install
 
@@ -53,19 +53,22 @@ If no client is specified, you'll be prompted to select one interactively.`, gen
   # Install for Cursor IDE
   ghost mcp install cursor
 
+  # Install for all supported clients
+  ghost mcp install all
+
   # Install without creating backup
   ghost mcp install claude-code --no-backup
 
   # Use custom configuration file path
   ghost mcp install claude-code --config-path ~/custom/config.json`,
 		Args:         cobra.MaximumNArgs(1),
-		ValidArgs:    getValidEditorNames(),
+		ValidArgs:    getValidInstallTargetNames(),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var clientName string
 			if len(args) == 0 {
 				if !util.IsTerminal(cmd.InOrStdin()) {
-					return errors.New("no client specified and stdin is not a terminal; pass the client name as an argument")
+					return errors.New("no client specified and stdin is not a terminal; pass the client name or 'all' as an argument")
 				}
 				// No client specified, prompt user to select one
 				var err error
@@ -80,6 +83,9 @@ If no client is specified, you'll be prompted to select one interactively.`, gen
 				clientName = args[0]
 			}
 
+			if strings.EqualFold(clientName, mcpAllTarget) {
+				return installGhostMCPForAllClients(cmd, !noBackup, configPath)
+			}
 			return installGhostMCPForClient(cmd, clientName, !noBackup, configPath)
 		},
 	}
@@ -232,9 +238,10 @@ var supportedClients = []clientConfig{
 		},
 	},
 	{
-		ClientType:  KiroCLI,
-		Name:        "Kiro CLI",
-		EditorNames: []string{"kiro-cli"},
+		ClientType:           KiroCLI,
+		Name:                 "Kiro CLI",
+		EditorNames:          []string{"kiro-cli"},
+		MCPServersPathPrefix: "/mcpServers",
 		ConfigPaths: []string{
 			"~/.kiro/settings/mcp.json",
 		},
@@ -251,6 +258,11 @@ func getValidEditorNames() []string {
 		validNames = append(validNames, client.EditorNames...)
 	}
 	return validNames
+}
+
+func getValidInstallTargetNames() []string {
+	validNames := getValidEditorNames()
+	return append(validNames, mcpAllTarget)
 }
 
 // ClientInfo contains information about a supported MCP client.
@@ -342,39 +354,9 @@ func InstallMCPForClient(opts InstallOptions) error {
 // installGhostMCPForClient installs the Ghost MCP server configuration for the specified client.
 // This is the Ghost-specific wrapper used by the CLI that handles defaults and success messages.
 func installGhostMCPForClient(cmd *cobra.Command, clientName string, createBackup bool, customConfigPath string) error {
-	// Get the Ghost executable path
-	command, err := getGhostExecutablePath()
+	configPath, err := installGhostMCPForClientWithoutOutput(clientName, createBackup, customConfigPath)
 	if err != nil {
-		return fmt.Errorf("failed to get executable path: %w", err)
-	}
-
-	opts := InstallOptions{
-		ClientName:       clientName,
-		ServerName:       mcp.ServerName,
-		Command:          command,
-		Args:             []string{"mcp", "start"},
-		CreateBackup:     createBackup,
-		CustomConfigPath: customConfigPath,
-	}
-
-	if err := InstallMCPForClient(opts); err != nil {
 		return err
-	}
-
-	// Print Ghost-specific success messages
-	configPath := customConfigPath
-	if configPath == "" {
-		clientCfg, err := findClientConfig(clientName)
-		if err != nil {
-			return err
-		}
-
-		if clientCfg != nil && len(clientCfg.ConfigPaths) > 0 {
-			configPath, err = findClientConfigFile(clientCfg.ConfigPaths)
-			if err != nil {
-				return err
-			}
-		}
 	}
 
 	cmd.Printf("Successfully installed Ghost MCP server configuration for %s\n", clientName)
@@ -389,6 +371,87 @@ func installGhostMCPForClient(cmd *cobra.Command, clientName string, createBacku
 	cmd.Printf("   2. The Ghost MCP server will be available as '%s'\n", mcp.ServerName)
 
 	return nil
+}
+
+func installGhostMCPForAllClients(cmd *cobra.Command, createBackup bool, customConfigPath string) error {
+	if customConfigPath != "" {
+		return errors.New("--config-path cannot be used with 'all'")
+	}
+
+	rows := make([]mcpClientResultRow, len(supportedClients))
+	anyError := false
+	for i, clientCfg := range supportedClients {
+		status, detail := detectMCPClientConfiguration(cmd.Context(), clientCfg)
+		if status == mcpStatusConfigured {
+			rows[i] = mcpClientResultRow{Client: clientCfg.Name, Status: "already configured"}
+			continue
+		}
+		if status == mcpStatusError {
+			rows[i] = mcpClientResultRow{Client: clientCfg.Name, Status: mcpStatusError, Detail: detail}
+			anyError = true
+			continue
+		}
+
+		configPath, err := installGhostMCPForClientWithoutOutput(clientCfg.EditorNames[0], createBackup, "")
+		if err != nil {
+			rows[i] = mcpClientResultRow{Client: clientCfg.Name, Status: mcpStatusError, Detail: err.Error()}
+			anyError = true
+			continue
+		}
+		rows[i] = mcpClientResultRow{Client: clientCfg.Name, Status: "installed", Detail: formatMCPInstallDetail(clientCfg.EditorNames[0], configPath)}
+	}
+
+	if err := outputMCPClientResultTable(cmd.OutOrStdout(), rows); err != nil {
+		return err
+	}
+	if anyError {
+		return common.ExitWithCode(common.ExitGeneralError, errors.New("failed to install Ghost MCP server for one or more clients"))
+	}
+	return nil
+}
+
+func installGhostMCPForClientWithoutOutput(clientName string, createBackup bool, customConfigPath string) (string, error) {
+	command, err := getGhostExecutablePath()
+	if err != nil {
+		return "", fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	opts := InstallOptions{
+		ClientName:       clientName,
+		ServerName:       mcp.ServerName,
+		Command:          command,
+		Args:             []string{"mcp", "start"},
+		CreateBackup:     createBackup,
+		CustomConfigPath: customConfigPath,
+	}
+
+	if err := InstallMCPForClient(opts); err != nil {
+		return "", err
+	}
+
+	configPath := customConfigPath
+	if configPath == "" {
+		clientCfg, err := findClientConfig(clientName)
+		if err != nil {
+			return "", err
+		}
+
+		if clientCfg != nil && len(clientCfg.ConfigPaths) > 0 {
+			configPath, err = findClientConfigFile(clientCfg.ConfigPaths)
+			if err != nil {
+				return "", err
+			}
+		}
+	}
+
+	return configPath, nil
+}
+
+func formatMCPInstallDetail(clientName, configPath string) string {
+	if configPath != "" {
+		return configPath
+	}
+	return "managed by " + clientName
 }
 
 // findClientConfig finds the client configuration for a given client name
@@ -477,20 +540,21 @@ type ClientOption struct {
 // selectClientInteractively prompts the user to select a client using Bubble Tea
 func selectClientInteractively(cmd *cobra.Command) (string, error) {
 	// Build client options from supportedClients
-	var options []ClientOption
+	clientOptions := make([]ClientOption, 0, len(supportedClients))
 	for _, cfg := range supportedClients {
 		// Use the first client name as the primary identifier
 		primaryName := cfg.EditorNames[0]
-		options = append(options, ClientOption{
+		clientOptions = append(clientOptions, ClientOption{
 			Name:       cfg.Name,
 			ClientName: primaryName,
 		})
 	}
 
-	// Sort options alphabetically by name
-	sort.Slice(options, func(i, j int) bool {
-		return options[i].Name < options[j].Name
+	// Sort options alphabetically by name, with "all" pinned at the top.
+	sort.Slice(clientOptions, func(i, j int) bool {
+		return clientOptions[i].Name < clientOptions[j].Name
 	})
+	options := append([]ClientOption{{Name: "All supported clients", ClientName: mcpAllTarget}}, clientOptions...)
 
 	model := clientSelectModel{
 		options: options,

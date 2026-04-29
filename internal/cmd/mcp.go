@@ -18,6 +18,8 @@ Exposes Ghost CLI functionality as MCP tools for Claude and other AI assistants.
 
 	// Add subcommands
 	cmd.AddCommand(buildMCPInstallCmd(app))
+	cmd.AddCommand(buildMCPUninstallCmd(app))
+	cmd.AddCommand(buildMCPStatusCmd(app))
 	cmd.AddCommand(buildMCPStartCmd(app))
 	cmd.AddCommand(buildMCPListCmd(app))
 	cmd.AddCommand(buildMCPGetCmd(app))

@@ -36,4 +36,6 @@ Exposes Ghost CLI functionality as MCP tools for Claude and other AI assistants.
 * [ghost mcp install](ghost_mcp_install.md)	 - Install and configure Ghost MCP server for a client
 * [ghost mcp list](ghost_mcp_list.md)	 - List available MCP tools, prompts, and resources
 * [ghost mcp start](ghost_mcp_start.md)	 - Start the Ghost MCP server
+* [ghost mcp status](ghost_mcp_status.md)	 - Show Ghost MCP configuration status for supported clients
+* [ghost mcp uninstall](ghost_mcp_uninstall.md)	 - Uninstall Ghost MCP server configuration from a client
 
