@@ -65,7 +65,9 @@ ghost mcp install [client] [flags]
 ```
       --config-path string   Custom path to configuration file (overrides default locations)
   -h, --help                 help for install
+      --json                 Output in JSON format
       --no-backup            Skip creating backup of existing configuration (default: create backup)
+      --yaml                 Output in YAML format
 ```
 
 ### Options inherited from parent commands

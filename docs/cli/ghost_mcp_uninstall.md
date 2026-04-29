@@ -39,7 +39,9 @@ ghost mcp uninstall [client] [flags]
 
 ```
   -h, --help        help for uninstall
+      --json        Output in JSON format
       --no-backup   Skip creating backup of existing configuration files (default: create backup)
+      --yaml        Output in YAML format
 ```
 
 ### Options inherited from parent commands

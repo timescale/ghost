@@ -20,9 +20,9 @@ import (
 
 // MCPClientUninstallOutput represents a single client row in `ghost mcp uninstall` output.
 type MCPClientUninstallOutput struct {
-	Client string
-	Status string
-	Detail string
+	Client string `json:"client"`
+	Status string `json:"status"`
+	Detail string `json:"detail,omitempty"`
 }
 
 type mcpClientUninstallResult struct {
@@ -31,8 +31,18 @@ type mcpClientUninstallResult struct {
 	Detail string
 }
 
+const mcpStatusUninstalled = "uninstalled"
+
+// uninstallTargetSelector is the function used to select an uninstall target
+// interactively when no client argument is provided. It is a package-level
+// variable so tests can override it without spinning up a real Bubble Tea
+// program (which requires a TTY).
+var uninstallTargetSelector = selectUninstallTargetInteractively
+
 func buildMCPUninstallCmd(_ *common.App) *cobra.Command {
 	var noBackup bool
+	var jsonOutput bool
+	var yamlOutput bool
 
 	cmd := &cobra.Command{
 		Use:   "uninstall [client]",
@@ -72,7 +82,15 @@ Only the Ghost MCP server entry named "ghost" is removed; other MCP server entri
 				output[i] = MCPClientUninstallOutput(result)
 			}
 
-			if err := outputMCPClientUninstallResults(cmd.OutOrStdout(), output); err != nil {
+			switch {
+			case jsonOutput:
+				err = util.SerializeToJSON(cmd.OutOrStdout(), output)
+			case yamlOutput:
+				err = util.SerializeToYAML(cmd.OutOrStdout(), output)
+			default:
+				err = outputMCPClientUninstallResults(cmd.OutOrStdout(), output)
+			}
+			if err != nil {
 				return err
 			}
 
@@ -86,6 +104,9 @@ Only the Ghost MCP server entry named "ghost" is removed; other MCP server entri
 	}
 
 	cmd.Flags().BoolVar(&noBackup, "no-backup", false, "Skip creating backup of existing configuration files (default: create backup)")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	cmd.Flags().BoolVar(&yamlOutput, "yaml", false, "Output in YAML format")
+	cmd.MarkFlagsMutuallyExclusive("json", "yaml")
 
 	return cmd
 }
@@ -103,7 +124,7 @@ func selectedMCPUninstallTarget(cmd *cobra.Command, args []string) (string, erro
 		return "", errors.New("no client specified and stdin is not a terminal; pass the client name or 'all' as an argument")
 	}
 
-	targetName, err := selectUninstallTargetInteractively(cmd)
+	targetName, err := uninstallTargetSelector(cmd)
 	if err != nil {
 		return "", fmt.Errorf("failed to select client: %w", err)
 	}
@@ -147,6 +168,27 @@ func uninstallGhostMCPFromClient(ctx context.Context, clientCfg clientConfig, cr
 	}
 
 	switch clientCfg.ClientType {
+	case ClaudeCode, Codex, Gemini, KiroCLI:
+		return uninstallGhostMCPViaCLIWithBackup(ctx, clientCfg, createBackup)
+	case VSCode:
+		return uninstallGhostMCPFromJSONFiles(clientCfg, vscodeMCPServersPathPrefix(), createBackup)
+	default:
+		return uninstallGhostMCPFromJSONFiles(clientCfg, clientCfg.MCPServersPathPrefix, createBackup)
+	}
+}
+
+// uninstallGhostMCPViaCLIWithBackup backs up the underlying config file (when
+// known and createBackup is true) before invoking the external CLI to remove
+// the Ghost MCP server entry. This keeps `--no-backup` behaviour symmetric
+// between install and uninstall for CLI-managed clients.
+func uninstallGhostMCPViaCLIWithBackup(ctx context.Context, clientCfg clientConfig, createBackup bool) (string, string) {
+	if createBackup {
+		if backupErr := backupExistingConfigFiles(clientCfg.ConfigPaths); backupErr != nil {
+			return mcpStatusError, backupErr.Error()
+		}
+	}
+
+	switch clientCfg.ClientType {
 	case ClaudeCode:
 		return uninstallGhostMCPViaCLI(ctx, "claude", "mcp", "remove", "-s", "user", mcp.ServerName)
 	case Codex:
@@ -155,23 +197,39 @@ func uninstallGhostMCPFromClient(ctx context.Context, clientCfg clientConfig, cr
 		return uninstallGhostMCPViaCLI(ctx, "gemini", "mcp", "remove", "-s", "user", mcp.ServerName)
 	case KiroCLI:
 		return uninstallGhostMCPViaCLI(ctx, "kiro-cli", "mcp", "remove", "--name", mcp.ServerName, "--scope", "global")
-	case VSCode:
-		return uninstallGhostMCPFromJSONFiles(clientCfg, vscodeMCPServersPathPrefix(), createBackup)
 	default:
-		return uninstallGhostMCPFromJSONFiles(clientCfg, clientCfg.MCPServersPathPrefix, createBackup)
+		return mcpStatusError, fmt.Sprintf("no CLI uninstall command configured for %s", clientCfg.Name)
 	}
+}
+
+// backupExistingConfigFiles backs up every existing file in configPaths.
+// Missing files are skipped silently. The first error encountered is returned.
+func backupExistingConfigFiles(configPaths []string) error {
+	for _, configPath := range configPaths {
+		expandedConfigPath := util.ExpandPath(configPath)
+		if _, err := os.Stat(expandedConfigPath); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("failed to stat %s: %w", expandedConfigPath, err)
+		}
+		if _, err := createConfigBackup(expandedConfigPath); err != nil {
+			return fmt.Errorf("failed to create backup for %s: %w", expandedConfigPath, err)
+		}
+	}
+	return nil
 }
 
 func uninstallGhostMCPViaCLI(ctx context.Context, command string, args ...string) (string, string) {
 	output, err := runMCPClientCommand(ctx, command, args...)
 	if err == nil {
-		return "uninstalled", mcpStatusDetailMissing
+		return mcpStatusUninstalled, ""
 	}
 	outputString := string(output)
 	if isExecutableNotFound(err) || strings.Contains(outputString, "No MCP server found") || strings.Contains(outputString, "No MCP servers are configured") || strings.Contains(outputString, "No MCP server named") {
-		return mcpStatusUnconfigured, mcpStatusDetailMissing
+		return mcpStatusUnconfigured, ""
 	}
-	return mcpStatusError, strings.TrimSpace(outputString)
+	return mcpStatusError, errorDetail(err, outputString)
 }
 
 func uninstallGhostMCPFromJSONFiles(clientCfg clientConfig, mcpServersPathPrefix string, createBackup bool) (string, string) {
@@ -197,9 +255,9 @@ func uninstallGhostMCPFromJSONFiles(clientCfg clientConfig, mcpServersPathPrefix
 	}
 
 	if removedAny {
-		return "uninstalled", mcpStatusDetailMissing
+		return mcpStatusUninstalled, ""
 	}
-	return mcpStatusUnconfigured, mcpStatusDetailMissing
+	return mcpStatusUnconfigured, ""
 }
 
 func removeGhostMCPFromJSONFile(configPath, mcpServersPathPrefix string, createBackup bool) (bool, error) {
@@ -262,19 +320,16 @@ func mcpUninstallExitCode(results []mcpClientUninstallResult) int {
 	anyError := false
 	for _, result := range results {
 		switch result.Status {
-		case "uninstalled":
+		case mcpStatusUninstalled:
 			anyUninstalled = true
 		case mcpStatusError:
 			anyError = true
 		}
 	}
-	if anyError {
-		return mcpExitDetectionError
-	}
-	if anyUninstalled {
+	if anyUninstalled && !anyError {
 		return 0
 	}
-	return mcpExitNoneConfigured
+	return mcpExitNotConfigured
 }
 
 func outputMCPClientUninstallResults(w io.Writer, results []MCPClientUninstallOutput) error {
@@ -301,7 +356,10 @@ func selectUninstallTargetInteractively(cmd *cobra.Command) (string, error) {
 		return "", fmt.Errorf("failed to run client selection: %w", err)
 	}
 
-	result := finalModel.(clientSelectModel)
+	result, ok := finalModel.(clientSelectModel)
+	if !ok {
+		return "", fmt.Errorf("unexpected model type from client selection: %T", finalModel)
+	}
 	if result.selected == "" {
 		return "", errors.New("no client selected")
 	}

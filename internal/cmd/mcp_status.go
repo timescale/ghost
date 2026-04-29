@@ -21,12 +21,16 @@ import (
 )
 
 const (
-	mcpStatusConfigured    = "configured"
-	mcpStatusUnconfigured  = "unconfigured"
-	mcpStatusError         = "error"
-	mcpExitNoneConfigured  = 1
-	mcpExitDetectionError  = 2
-	mcpStatusDetailMissing = ""
+	mcpStatusConfigured   = "configured"
+	mcpStatusUnconfigured = "unconfigured"
+	mcpStatusError        = "error"
+	// mcpExitNotConfigured is the exit code returned by `ghost mcp status` and
+	// `ghost mcp uninstall` when no clients are in a successful state
+	// (configured / uninstalled), or when one or more clients failed detection.
+	// We deliberately do not reuse common.ExitGeneralError (1) so callers can
+	// distinguish "ghost ran fine but didn't find a configured client" from a
+	// genuine ghost CLI failure.
+	mcpExitNotConfigured = 2
 )
 
 // MCPClientStatusOutput represents a single client row in `ghost mcp status` output.
@@ -176,13 +180,10 @@ func mcpStatusExitCode(results []mcpClientStatusResult) int {
 			anyError = true
 		}
 	}
-	if anyError {
-		return mcpExitDetectionError
-	}
-	if anyConfigured {
+	if anyConfigured && !anyError {
 		return 0
 	}
-	return mcpExitNoneConfigured
+	return mcpExitNotConfigured
 }
 
 func outputMCPClientStatuses(w io.Writer, statuses []MCPClientStatusOutput) error {
@@ -202,15 +203,15 @@ func detectClaudeCodeMCPConfiguration(ctx context.Context) (string, string) {
 	outputString := string(output)
 	if err != nil {
 		if isExecutableNotFound(err) || strings.Contains(outputString, "No MCP server found") || strings.Contains(outputString, "No MCP servers are configured") {
-			return mcpStatusUnconfigured, mcpStatusDetailMissing
+			return mcpStatusUnconfigured, ""
 		}
-		return mcpStatusError, strings.TrimSpace(outputString)
+		return mcpStatusError, errorDetail(err, outputString)
 	}
 
 	command := extractNamedValue(outputString, "Command")
 	args := strings.Fields(extractNamedValue(outputString, "Args"))
 	if isExpectedGhostMCPCommand(command, args) {
-		return mcpStatusConfigured, mcpStatusDetailMissing
+		return mcpStatusConfigured, ""
 	}
 	return mcpStatusUnconfigured, "ghost entry has unexpected command"
 }
@@ -219,9 +220,9 @@ func detectCodexMCPConfiguration(ctx context.Context) (string, string) {
 	output, err := runMCPClientCommand(ctx, "codex", "mcp", "list", "--json")
 	if err != nil {
 		if isExecutableNotFound(err) {
-			return mcpStatusUnconfigured, mcpStatusDetailMissing
+			return mcpStatusUnconfigured, ""
 		}
-		return mcpStatusError, strings.TrimSpace(string(output))
+		return mcpStatusError, errorDetail(err, string(output))
 	}
 
 	var servers []struct {
@@ -240,11 +241,11 @@ func detectCodexMCPConfiguration(ctx context.Context) (string, string) {
 			continue
 		}
 		if isExpectedGhostMCPCommand(server.Transport.Command, server.Transport.Args) {
-			return mcpStatusConfigured, mcpStatusDetailMissing
+			return mcpStatusConfigured, ""
 		}
 		return mcpStatusUnconfigured, "ghost entry has unexpected command"
 	}
-	return mcpStatusUnconfigured, mcpStatusDetailMissing
+	return mcpStatusUnconfigured, ""
 }
 
 func detectGeminiMCPConfiguration(ctx context.Context) (string, string) {
@@ -254,21 +255,21 @@ func detectGeminiMCPConfiguration(ctx context.Context) (string, string) {
 	outputString := string(output)
 	if err != nil {
 		if isExecutableNotFound(err) {
-			return mcpStatusUnconfigured, mcpStatusDetailMissing
+			return mcpStatusUnconfigured, ""
 		}
-		return mcpStatusError, strings.TrimSpace(outputString)
+		return mcpStatusError, errorDetail(err, outputString)
 	}
 	if strings.Contains(outputString, "No MCP servers configured") {
-		return mcpStatusUnconfigured, mcpStatusDetailMissing
+		return mcpStatusUnconfigured, ""
 	}
 
 	commandLine, ok := extractGeminiGhostCommandLine(outputString)
 	if !ok {
-		return mcpStatusUnconfigured, mcpStatusDetailMissing
+		return mcpStatusUnconfigured, ""
 	}
 	fields := strings.Fields(commandLine)
 	if len(fields) >= 1 && isExpectedGhostMCPCommand(fields[0], fields[1:]) {
-		return mcpStatusConfigured, mcpStatusDetailMissing
+		return mcpStatusConfigured, ""
 	}
 	return mcpStatusUnconfigured, "ghost entry has unexpected command"
 }
@@ -278,9 +279,9 @@ func detectKiroMCPConfiguration(ctx context.Context, clientCfg clientConfig) (st
 	outputString := string(output)
 	if err != nil {
 		if isExecutableNotFound(err) || strings.Contains(outputString, "No MCP server named") {
-			return mcpStatusUnconfigured, mcpStatusDetailMissing
+			return mcpStatusUnconfigured, ""
 		}
-		return mcpStatusError, strings.TrimSpace(outputString)
+		return mcpStatusError, errorDetail(err, outputString)
 	}
 
 	command := extractNamedValue(outputString, "Command")
@@ -292,7 +293,7 @@ func detectKiroMCPConfiguration(ctx context.Context, clientCfg clientConfig) (st
 	// config file to verify the complete `ghost mcp start` command.
 	fileStatus, detail := detectMCPConfigurationInJSONFiles(clientCfg, clientCfg.MCPServersPathPrefix)
 	if fileStatus == mcpStatusConfigured {
-		return mcpStatusConfigured, mcpStatusDetailMissing
+		return mcpStatusConfigured, ""
 	}
 	if fileStatus == mcpStatusError {
 		return fileStatus, detail
@@ -331,12 +332,12 @@ func detectMCPConfigurationInJSONFiles(clientCfg clientConfig, mcpServersPathPre
 	}
 
 	if configured {
-		return mcpStatusConfigured, mcpStatusDetailMissing
+		return mcpStatusConfigured, ""
 	}
 	if unexpectedCommand {
 		return mcpStatusUnconfigured, "ghost entry has unexpected command"
 	}
-	return mcpStatusUnconfigured, mcpStatusDetailMissing
+	return mcpStatusUnconfigured, ""
 }
 
 func readMCPServerConfigFromJSONFile(configPath, mcpServersPathPrefix string) (MCPServerConfig, bool, error) {
@@ -395,6 +396,18 @@ func isGhostExecutableCommand(command string) bool {
 func isExecutableNotFound(err error) bool {
 	var execErr *exec.Error
 	return errors.As(err, &execErr) && errors.Is(execErr.Err, exec.ErrNotFound)
+}
+
+// errorDetail returns a human-readable detail string for a failed external
+// command invocation. It prefers the command's stdout/stderr output when
+// non-empty, otherwise falls back to the underlying Go error so the user is
+// never left with an empty detail column.
+func errorDetail(err error, output string) string {
+	detail := strings.TrimSpace(output)
+	if err != nil && detail == "" {
+		return err.Error()
+	}
+	return detail
 }
 
 func vscodeMCPServersPathPrefix() string {

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,15 +32,27 @@ func TestMCPStatusCmd(t *testing.T) {
 		assertOutput(t, result.stderr, "")
 	})
 
-	t.Run("unconfigured_cli_client_exits_one", func(t *testing.T) {
+	t.Run("unconfigured_cli_client_exits_two", func(t *testing.T) {
 		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
 			assertMCPClientCommand(t, command, args, "codex mcp list --json")
 			return []byte(`[]`), nil
 		})
 
 		result := runCommand(t, []string{"mcp", "status", "codex"}, nil)
-		assertExitCode(t, result.err, mcpExitNoneConfigured)
+		assertExitCode(t, result.err, mcpExitNotConfigured)
 		assertOutput(t, result.stdout, "CLIENT  STATUS        DETAIL  \nCodex   unconfigured          \n")
+		assertOutput(t, result.stderr, "")
+	})
+
+	t.Run("executable_not_found_is_unconfigured", func(t *testing.T) {
+		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
+			assertMCPClientCommand(t, command, args, "claude mcp get ghost")
+			return nil, executableNotFoundError(command)
+		})
+
+		result := runCommand(t, []string{"mcp", "status", "claude-code"}, nil)
+		assertExitCode(t, result.err, mcpExitNotConfigured)
+		assertOutput(t, result.stdout, "CLIENT       STATUS        DETAIL  \nClaude Code  unconfigured          \n")
 		assertOutput(t, result.stderr, "")
 	})
 
@@ -50,12 +63,42 @@ func TestMCPStatusCmd(t *testing.T) {
 		})
 
 		result := runCommand(t, []string{"mcp", "status", "codex"}, nil)
-		assertExitCode(t, result.err, mcpExitDetectionError)
+		assertExitCode(t, result.err, mcpExitNotConfigured)
 		assertOutput(t, result.stdout, "CLIENT  STATUS  DETAIL                                                                                        \nCodex   error   failed to parse codex mcp list output: invalid character 'o' in literal null (expecting 'u')  \n")
 		assertOutput(t, result.stderr, "")
 	})
 
-	t.Run("configured_json_file_client", func(t *testing.T) {
+	t.Run("detection_error_with_no_output_falls_back_to_err_message", func(t *testing.T) {
+		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
+			assertMCPClientCommand(t, command, args, "claude mcp get ghost")
+			return nil, errors.New("signal: killed")
+		})
+
+		result := runCommand(t, []string{"mcp", "status", "claude-code"}, nil)
+		assertExitCode(t, result.err, mcpExitNotConfigured)
+		assertOutput(t, result.stdout, "CLIENT       STATUS  DETAIL          \nClaude Code  error   signal: killed  \n")
+		assertOutput(t, result.stderr, "")
+	})
+
+	t.Run("unexpected_command_in_json_file_is_unconfigured_with_detail", func(t *testing.T) {
+		homeDir := t.TempDir()
+		cursorConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
+		writeTestFile(t, cursorConfigPath, `{
+  "mcpServers": {
+    "ghost": {
+      "command": "/some/other/binary",
+      "args": ["mcp", "start"]
+    }
+  }
+}`)
+
+		result := runCommand(t, []string{"mcp", "status", "cursor"}, nil, withEnv("HOME", homeDir))
+		assertExitCode(t, result.err, mcpExitNotConfigured)
+		assertOutput(t, result.stdout, "CLIENT  STATUS        DETAIL                              \nCursor  unconfigured  ghost entry has unexpected command  \n")
+		assertOutput(t, result.stderr, "")
+	})
+
+	t.Run("configured_json_file_client_json_output", func(t *testing.T) {
 		homeDir := t.TempDir()
 		cursorConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
 		writeTestFile(t, cursorConfigPath, `{
@@ -79,6 +122,100 @@ func TestMCPStatusCmd(t *testing.T) {
   }
 ]
 `)
+		assertOutput(t, result.stderr, "")
+	})
+
+	t.Run("configured_json_file_client_yaml_output", func(t *testing.T) {
+		homeDir := t.TempDir()
+		cursorConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
+		writeTestFile(t, cursorConfigPath, `{
+  "mcpServers": {
+    "ghost": {
+      "command": "/opt/bin/ghost",
+      "args": ["mcp", "start"]
+    }
+  }
+}`)
+
+		result := runCommand(t, []string{"mcp", "status", "cursor", "--yaml"}, nil, withEnv("HOME", homeDir))
+		if result.err != nil {
+			t.Fatalf("unexpected error: %v", result.err)
+		}
+		assertOutput(t, result.stdout, `- client: Cursor
+  client_name: cursor
+  status: configured
+`)
+		assertOutput(t, result.stderr, "")
+	})
+
+	t.Run("all_clients_mixed_some_configured_exits_zero", func(t *testing.T) {
+		homeDir := t.TempDir()
+		// Configure cursor; leave other JSON-file clients absent.
+		cursorConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
+		writeTestFile(t, cursorConfigPath, `{
+  "mcpServers": {
+    "ghost": {
+      "command": "ghost",
+      "args": ["mcp", "start"]
+    }
+  }
+}`)
+		// Stub the CLI-based clients to all return "not found" so they show as unconfigured.
+		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
+			return nil, executableNotFoundError(command)
+		})
+
+		result := runCommand(t, []string{"mcp", "status"}, nil, withEnv("HOME", homeDir))
+		if result.err != nil {
+			t.Fatalf("unexpected error: %v", result.err)
+		}
+		// Exact rendering covers every supported client; we only assert that
+		// at least one row says "configured" and the exit code was zero.
+		if !strings.Contains(result.stdout, "Cursor") || !strings.Contains(result.stdout, "configured") {
+			t.Fatalf("expected stdout to mention a configured Cursor client, got:\n%s", result.stdout)
+		}
+		assertOutput(t, result.stderr, "")
+	})
+
+	t.Run("all_clients_no_args_all_unconfigured_exits_two", func(t *testing.T) {
+		homeDir := t.TempDir()
+		// Stub all CLI-based clients to look unconfigured.
+		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
+			return nil, executableNotFoundError(command)
+		})
+
+		result := runCommand(t, []string{"mcp", "status", "--json"}, nil, withEnv("HOME", homeDir))
+		assertExitCode(t, result.err, mcpExitNotConfigured)
+		// Every row should be "unconfigured"; verify by checking we have no "configured" or "error" status.
+		if strings.Contains(result.stdout, `"status": "configured"`) || strings.Contains(result.stdout, `"status": "error"`) {
+			t.Fatalf("expected all rows unconfigured, got:\n%s", result.stdout)
+		}
+		assertOutput(t, result.stderr, "")
+	})
+
+	t.Run("mixed_configured_and_error_exits_two", func(t *testing.T) {
+		homeDir := t.TempDir()
+		// Configure cursor (a JSON-file client).
+		cursorConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
+		writeTestFile(t, cursorConfigPath, `{
+  "mcpServers": {
+    "ghost": {
+      "command": "ghost",
+      "args": ["mcp", "start"]
+    }
+  }
+}`)
+		// Make codex detection fail with an error.
+		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
+			if command == "codex" {
+				return []byte(`not json`), nil
+			}
+			return nil, executableNotFoundError(command)
+		})
+
+		result := runCommand(t, []string{"mcp", "status"}, nil, withEnv("HOME", homeDir))
+		// Configured + error → exit 2 (not 0), per mcpStatusExitCode.
+		assertExitCode(t, result.err, mcpExitNotConfigured)
 		assertOutput(t, result.stderr, "")
 	})
 }
