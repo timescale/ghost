@@ -132,11 +132,13 @@ func runShareCreate(cmd *cobra.Command, app *common.App, databaseRef string, exp
 
 func outputShareText(cmd *cobra.Command, o Share) {
 	cmd.Printf("Shared '%s'\n", o.DatabaseName)
-	cmd.Printf("URL: %s\n", o.URL)
 	cmd.Printf("Token: %s\n", o.ShareToken)
 	if o.ExpiresAt != nil {
 		cmd.Printf("Expires: %s\n", o.ExpiresAt.Format(time.RFC3339))
 	}
+	cmd.Println()
+	cmd.Println("Send this URL to a human or agent to let them spin up their own copy of the database:")
+	cmd.Println(o.URL)
 }
 
 func shareStatus(s api.DatabaseShare, now time.Time) string {

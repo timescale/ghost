@@ -169,7 +169,7 @@ func TestShareCmd(t *testing.T) {
 				setupGet(m)
 				setupShareSuccess(nil, false)(m)
 			},
-			wantStdout: "Shared 'mydb'\nURL: https://ghost.build/share/tok_xyz\nToken: tok_xyz\n",
+			wantStdout: "Shared 'mydb'\nToken: tok_xyz\n\nSend this URL to a human or agent to let them spin up their own copy of the database:\nhttps://ghost.build/share/tok_xyz\n",
 		},
 		{
 			name: "text output with --expires (RFC3339)",
@@ -178,7 +178,7 @@ func TestShareCmd(t *testing.T) {
 				setupGet(m)
 				setupShareSuccess(&expiresAt, true)(m)
 			},
-			wantStdout: "Shared 'mydb'\nURL: https://ghost.build/share/tok_xyz\nToken: tok_xyz\nExpires: 2026-05-01T00:00:00Z\n",
+			wantStdout: "Shared 'mydb'\nToken: tok_xyz\nExpires: 2026-05-01T00:00:00Z\n\nSend this URL to a human or agent to let them spin up their own copy of the database:\nhttps://ghost.build/share/tok_xyz\n",
 		},
 		{
 			name: "json output",
