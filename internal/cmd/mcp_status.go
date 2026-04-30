@@ -71,7 +71,7 @@ A configured client must have a Ghost MCP server entry named "ghost" that runs "
   # Output as JSON
   ghost mcp status --json`,
 		Args:         cobra.MaximumNArgs(1),
-		ValidArgs:    getValidEditorNames(),
+		ValidArgs:    getValidMCPClientTargetNames(),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clients, err := selectedMCPStatusClients(args)
@@ -115,16 +115,9 @@ A configured client must have a Ghost MCP server entry named "ghost" that runs "
 
 func selectedMCPStatusClients(args []string) ([]clientConfig, error) {
 	if len(args) == 0 {
-		clients := make([]clientConfig, len(supportedClients))
-		copy(clients, supportedClients)
-		return clients, nil
+		return allMCPClientConfigs(), nil
 	}
-
-	clientCfg, err := findClientConfig(args[0])
-	if err != nil {
-		return nil, err
-	}
-	return []clientConfig{*clientCfg}, nil
+	return mcpClientConfigsForTargetName(args[0])
 }
 
 func detectMCPClientStatuses(ctx context.Context, clients []clientConfig) []mcpClientStatusResult {

@@ -78,7 +78,7 @@ Pass "all" to configure every supported client. If no client is specified, you'l
   # Use custom configuration file path
   ghost mcp install claude-code --config-path ~/custom/config.json`,
 		Args:         cobra.MaximumNArgs(1),
-		ValidArgs:    getValidInstallTargetNames(),
+		ValidArgs:    getValidMCPClientTargetNames(),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var clientName string
@@ -283,9 +283,27 @@ func getValidEditorNames() []string {
 	return validNames
 }
 
-func getValidInstallTargetNames() []string {
+func getValidMCPClientTargetNames() []string {
 	validNames := getValidEditorNames()
 	return append(validNames, mcpAllTarget)
+}
+
+func allMCPClientConfigs() []clientConfig {
+	clients := make([]clientConfig, len(supportedClients))
+	copy(clients, supportedClients)
+	return clients
+}
+
+func mcpClientConfigsForTargetName(targetName string) ([]clientConfig, error) {
+	if strings.EqualFold(targetName, mcpAllTarget) {
+		return allMCPClientConfigs(), nil
+	}
+
+	clientCfg, err := findClientConfig(targetName)
+	if err != nil {
+		return nil, err
+	}
+	return []clientConfig{*clientCfg}, nil
 }
 
 // ClientInfo contains information about a supported MCP client.

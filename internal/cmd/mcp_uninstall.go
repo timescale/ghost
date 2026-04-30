@@ -63,7 +63,7 @@ Only the Ghost MCP server entry named "ghost" is removed; other MCP server entri
   # Skip backups when modifying config files
   ghost mcp uninstall cursor --no-backup`,
 		Args:         cobra.MaximumNArgs(1),
-		ValidArgs:    getValidUninstallTargetNames(),
+		ValidArgs:    getValidMCPClientTargetNames(),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			targetName, err := selectedMCPUninstallTarget(cmd, args)
@@ -71,7 +71,7 @@ Only the Ghost MCP server entry named "ghost" is removed; other MCP server entri
 				return err
 			}
 
-			clients, err := mcpUninstallTargetClients(targetName)
+			clients, err := mcpClientConfigsForTargetName(targetName)
 			if err != nil {
 				return err
 			}
@@ -111,11 +111,6 @@ Only the Ghost MCP server entry named "ghost" is removed; other MCP server entri
 	return cmd
 }
 
-func getValidUninstallTargetNames() []string {
-	validNames := getValidEditorNames()
-	return append(validNames, mcpAllTarget)
-}
-
 func selectedMCPUninstallTarget(cmd *cobra.Command, args []string) (string, error) {
 	if len(args) > 0 {
 		return args[0], nil
@@ -132,20 +127,6 @@ func selectedMCPUninstallTarget(cmd *cobra.Command, args []string) (string, erro
 		return "", errors.New("no client selected")
 	}
 	return targetName, nil
-}
-
-func mcpUninstallTargetClients(targetName string) ([]clientConfig, error) {
-	if strings.EqualFold(targetName, mcpAllTarget) {
-		clients := make([]clientConfig, len(supportedClients))
-		copy(clients, supportedClients)
-		return clients, nil
-	}
-
-	clientCfg, err := findClientConfig(targetName)
-	if err != nil {
-		return nil, err
-	}
-	return []clientConfig{*clientCfg}, nil
 }
 
 func uninstallGhostMCPFromClients(ctx context.Context, clients []clientConfig, createBackup bool) []mcpClientUninstallResult {

@@ -195,6 +195,22 @@ func TestMCPStatusCmd(t *testing.T) {
 		assertOutput(t, result.stderr, "")
 	})
 
+	t.Run("explicit_all_target_all_unconfigured_exits_two", func(t *testing.T) {
+		homeDir := t.TempDir()
+		// Stub all CLI-based clients to look unconfigured.
+		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
+			return nil, executableNotFoundError(command)
+		})
+
+		result := runCommand(t, []string{"mcp", "status", "all", "--json"}, nil, withEnv("HOME", homeDir))
+		assertExitCode(t, result.err, mcpExitNoneConfigured)
+		// Every row should be "unconfigured"; verify by checking we have no "configured" or "error" status.
+		if strings.Contains(result.stdout, `"status": "configured"`) || strings.Contains(result.stdout, `"status": "error"`) {
+			t.Fatalf("expected all rows unconfigured, got:\n%s", result.stdout)
+		}
+		assertOutput(t, result.stderr, "")
+	})
+
 	t.Run("mixed_configured_and_error_exits_one", func(t *testing.T) {
 		homeDir := t.TempDir()
 		// Configure cursor (a JSON-file client).
