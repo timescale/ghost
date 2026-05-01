@@ -165,6 +165,9 @@ type clientConfig struct {
 	// buildInstallCommand builds the CLI install command for CLI-based clients
 	// Parameters: serverName (name to register), command (binary path), args (arguments to binary)
 	buildInstallCommand func(serverName, command string, args []string) ([]string, error)
+	// Optionally provide the check function for status detection (via CLI or other means)
+	// If not provided, will default to JSON config detection
+	detectInstallStatus func(ctx context.Context) (MCPClientStatus, string)
 }
 
 // BuildInstallCommand constructs the install command with the given parameters
@@ -187,6 +190,7 @@ var supportedClients = []clientConfig{
 		buildInstallCommand: func(serverName, command string, args []string) ([]string, error) {
 			return append([]string{"claude", "mcp", "add", "-s", "user", serverName, command}, args...), nil
 		},
+		detectInstallStatus: detectClaudeCodeMCPConfiguration,
 	},
 	{
 		ClientType:           Cursor,
@@ -217,6 +221,7 @@ var supportedClients = []clientConfig{
 		buildInstallCommand: func(serverName, command string, args []string) ([]string, error) {
 			return append([]string{"codex", "mcp", "add", serverName, command}, args...), nil
 		},
+		detectInstallStatus: detectCodexMCPConfiguration,
 	},
 	{
 		ClientType:  Gemini,
@@ -228,6 +233,7 @@ var supportedClients = []clientConfig{
 		buildInstallCommand: func(serverName, command string, args []string) ([]string, error) {
 			return append([]string{"gemini", "mcp", "add", "-s", "user", serverName, command}, args...), nil
 		},
+		detectInstallStatus: detectGeminiMCPConfiguration,
 	},
 	{
 		ClientType:  VSCode,
@@ -238,6 +244,7 @@ var supportedClients = []clientConfig{
 			"~/Library/Application Support/Code/User/mcp.json",
 			"~/AppData/Roaming/Code/User/mcp.json",
 		},
+		MCPServersPathPrefix: "/servers",
 		buildInstallCommand: func(serverName, command string, args []string) ([]string, error) {
 			j, err := json.Marshal(map[string]any{
 				"name":    serverName,

@@ -136,8 +136,6 @@ func uninstallGhostMCPFromClient(ctx context.Context, clientCfg clientConfig, cr
 	switch clientCfg.ClientType {
 	case ClaudeCode, Codex, Gemini, KiroCLI:
 		return uninstallGhostMCPViaCLIWithBackup(ctx, clientCfg, createBackup)
-	case VSCode:
-		return uninstallGhostMCPFromJSONFiles(clientCfg, vscodeMCPServersPathPrefix(), createBackup)
 	default:
 		return uninstallGhostMCPFromJSONFiles(clientCfg, clientCfg.MCPServersPathPrefix, createBackup)
 	}

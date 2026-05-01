@@ -113,20 +113,10 @@ func detectMCPClientStatus(ctx context.Context, clientCfg clientConfig) MCPClien
 }
 
 func detectMCPClientConfiguration(ctx context.Context, clientCfg clientConfig) (MCPClientStatus, string) {
-	switch clientCfg.ClientType {
-	case ClaudeCode:
-		return detectClaudeCodeMCPConfiguration(ctx)
-	case Codex:
-		return detectCodexMCPConfiguration(ctx)
-	case Gemini:
-		return detectGeminiMCPConfiguration(ctx)
-	case KiroCLI:
-		return detectKiroMCPConfiguration(ctx, clientCfg)
-	case VSCode:
-		return detectMCPConfigurationInJSONFiles(clientCfg, vscodeMCPServersPathPrefix())
-	default:
-		return detectMCPConfigurationInJSONFiles(clientCfg, clientCfg.MCPServersPathPrefix)
+	if clientCfg.detectInstallStatus != nil {
+		return clientCfg.detectInstallStatus(ctx)
 	}
+	return detectMCPConfigurationInJSONFiles(clientCfg, clientCfg.MCPServersPathPrefix)
 }
 
 func mcpStatusExitCode(results []MCPClientStatusOutput) int {
@@ -233,33 +223,6 @@ func detectGeminiMCPConfiguration(ctx context.Context) (MCPClientStatus, string)
 	fields := strings.Fields(commandLine)
 	if len(fields) >= 1 && isExpectedGhostMCPCommand(fields[0], fields[1:]) {
 		return mcpStatusConfigured, ""
-	}
-	return mcpStatusNotConfigured, "ghost entry has unexpected command"
-}
-
-func detectKiroMCPConfiguration(ctx context.Context, clientCfg clientConfig) (MCPClientStatus, string) {
-	output, err := runMCPClientCommand(ctx, "kiro-cli", "mcp", "status", "--name", mcp.ServerName)
-	outputString := string(output)
-	if err != nil {
-		if isExecutableNotFound(err) || strings.Contains(outputString, "No MCP server named") {
-			return mcpStatusNotConfigured, ""
-		}
-		return mcpStatusError, errorDetail(err, outputString)
-	}
-
-	command := extractNamedValue(outputString, "Command")
-	if !isGhostExecutableCommand(command) {
-		return mcpStatusNotConfigured, "ghost entry has unexpected command"
-	}
-
-	// Kiro's status output includes the command but not the args. Read Kiro's MCP
-	// config file to verify the complete `ghost mcp start` command.
-	fileStatus, detail := detectMCPConfigurationInJSONFiles(clientCfg, clientCfg.MCPServersPathPrefix)
-	if fileStatus == mcpStatusConfigured {
-		return mcpStatusConfigured, ""
-	}
-	if fileStatus == mcpStatusError {
-		return fileStatus, detail
 	}
 	return mcpStatusNotConfigured, "ghost entry has unexpected command"
 }
@@ -371,8 +334,4 @@ func errorDetail(err error, output string) string {
 		return err.Error()
 	}
 	return detail
-}
-
-func vscodeMCPServersPathPrefix() string {
-	return "/servers"
 }
