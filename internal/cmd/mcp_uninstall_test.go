@@ -14,130 +14,19 @@ import (
 )
 
 func TestMCPUninstallCmd(t *testing.T) {
-	t.Run("configured_cli_client", func(t *testing.T) {
-		var removeCalled bool
-		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
-			switch got := commandWithArgs(command, args); got {
-			case "claude mcp get ghost":
-				return []byte(`ghost:
-  Command: ghost
-  Args: mcp start
-`), nil
-			case "claude mcp remove -s user ghost":
-				removeCalled = true
-				return []byte("Removed MCP server ghost from user config\n"), nil
-			default:
-				t.Fatalf("unexpected command: %s", got)
-				return nil, nil
-			}
-		})
+	falseVal := false
+	trueVal := true
 
-		result := runCommand(t, []string{"mcp", "uninstall", "claude-code", "--no-backup"}, nil)
-		if result.err != nil {
-			t.Fatalf("unexpected error: %v", result.err)
-		}
-		if !removeCalled {
-			t.Fatal("expected remove command to be called")
-		}
-		assertOutput(t, result.stdout, "CLIENT       STATUS       \nClaude Code  uninstalled  \n")
-		assertOutput(t, result.stderr, "")
-	})
+	cursorConfiguredFile := `{
+  "mcpServers": {
+    "ghost": {
+      "command": "ghost",
+      "args": ["mcp", "start"]
+    }
+  }
+}`
 
-	t.Run("configured_cli_client_creates_backup_by_default", func(t *testing.T) {
-		homeDir := t.TempDir()
-		claudeConfigPath := filepath.Join(homeDir, ".claude.json")
-		writeTestFile(t, claudeConfigPath, `{"mcpServers":{"ghost":{"command":"ghost","args":["mcp","start"]}}}`)
-
-		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
-			switch got := commandWithArgs(command, args); got {
-			case "claude mcp get ghost":
-				return []byte(`ghost:
-  Command: ghost
-  Args: mcp start
-`), nil
-			case "claude mcp remove -s user ghost":
-				return []byte("Removed MCP server ghost from user config\n"), nil
-			default:
-				t.Fatalf("unexpected command: %s", got)
-				return nil, nil
-			}
-		})
-
-		result := runCommand(t, []string{"mcp", "uninstall", "claude-code"}, nil, withEnv("HOME", homeDir))
-		if result.err != nil {
-			t.Fatalf("unexpected error: %v", result.err)
-		}
-
-		entries, err := os.ReadDir(homeDir)
-		if err != nil {
-			t.Fatalf("failed to read home dir: %v", err)
-		}
-		var backupFound bool
-		for _, e := range entries {
-			if strings.HasPrefix(e.Name(), ".claude.json.backup.") {
-				backupFound = true
-				break
-			}
-		}
-		if !backupFound {
-			names := make([]string, len(entries))
-			for i, e := range entries {
-				names[i] = e.Name()
-			}
-			t.Fatalf("expected a backup of .claude.json to be created, got entries: %v", names)
-		}
-	})
-
-	t.Run("unconfigured_cli_client_exits_two", func(t *testing.T) {
-		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
-			assertMCPClientCommand(t, command, args, "claude mcp get ghost")
-			return []byte(`No MCP server found with name: "ghost". No MCP servers are configured.`), executableNotFoundError(command)
-		})
-
-		result := runCommand(t, []string{"mcp", "uninstall", "claude-code"}, nil)
-		assertExitCode(t, result.err, mcpExitNoneConfigured)
-		assertOutput(t, result.stdout, "CLIENT       STATUS          \nClaude Code  not configured  \n")
-		assertOutput(t, result.stderr, "")
-	})
-
-	t.Run("detection_error_propagates", func(t *testing.T) {
-		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
-			assertMCPClientCommand(t, command, args, "codex mcp list --json")
-			return []byte(`not json`), nil
-		})
-
-		result := runCommand(t, []string{"mcp", "uninstall", "codex"}, nil)
-		assertExitCode(t, result.err, common.ExitGeneralError)
-		assertOutput(t, result.stdout, "CLIENT  STATUS  DETAIL                                                                                        \nCodex   error   failed to parse codex mcp list output: invalid character 'o' in literal null (expecting 'u')  \n")
-		assertOutput(t, result.stderr, "")
-	})
-
-	t.Run("cli_uninstall_with_no_output_falls_back_to_err_message", func(t *testing.T) {
-		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
-			switch got := commandWithArgs(command, args); got {
-			case "claude mcp get ghost":
-				return []byte(`ghost:
-  Command: ghost
-  Args: mcp start
-`), nil
-			case "claude mcp remove -s user ghost":
-				return nil, errors.New("signal: killed")
-			default:
-				t.Fatalf("unexpected command: %s", got)
-				return nil, nil
-			}
-		})
-
-		result := runCommand(t, []string{"mcp", "uninstall", "claude-code", "--no-backup"}, nil)
-		assertExitCode(t, result.err, common.ExitGeneralError)
-		assertOutput(t, result.stdout, "CLIENT       STATUS  DETAIL          \nClaude Code  error   signal: killed  \n")
-		assertOutput(t, result.stderr, "")
-	})
-
-	t.Run("configured_json_file_client", func(t *testing.T) {
-		homeDir := t.TempDir()
-		cursorConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
-		writeTestFile(t, cursorConfigPath, `{
+	cursorConfiguredWithOtherFile := `{
   "mcpServers": {
     "ghost": {
       "command": "ghost",
@@ -148,26 +37,9 @@ func TestMCPUninstallCmd(t *testing.T) {
       "args": []
     }
   }
-}`)
+}`
 
-		result := runCommand(t, []string{"mcp", "uninstall", "cursor", "--no-backup"}, nil, withEnv("HOME", homeDir))
-		if result.err != nil {
-			t.Fatalf("unexpected error: %v", result.err)
-		}
-		assertOutput(t, result.stdout, "CLIENT  STATUS       \nCursor  uninstalled  \n")
-		assertOutput(t, result.stderr, "")
-
-		content, err := os.ReadFile(cursorConfigPath)
-		if err != nil {
-			t.Fatalf("failed to read cursor config: %v", err)
-		}
-		assertOutput(t, string(content), "{\n\t\"mcpServers\": {\n\t\t\"other\": {\n\t\t\t\"command\": \"other\",\n\t\t\t\"args\":    []\n\t\t}\n\t}\n}\n")
-	})
-
-	t.Run("unexpected_command_in_json_file_is_left_alone", func(t *testing.T) {
-		homeDir := t.TempDir()
-		cursorConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
-		original := `{
+	cursorUnexpectedCommandFile := `{
   "mcpServers": {
     "ghost": {
       "command": "/some/other/binary",
@@ -175,144 +47,254 @@ func TestMCPUninstallCmd(t *testing.T) {
     }
   }
 }`
-		writeTestFile(t, cursorConfigPath, original)
 
-		result := runCommand(t, []string{"mcp", "uninstall", "cursor", "--no-backup"}, nil, withEnv("HOME", homeDir))
-		// Detection sees a not configured (unexpected command) entry, so we exit 2 without modifying the file.
-		assertExitCode(t, result.err, mcpExitNoneConfigured)
-		assertOutput(t, result.stdout, "CLIENT  STATUS          DETAIL                              \nCursor  not configured  ghost entry has unexpected command  \n")
-		assertOutput(t, result.stderr, "")
+	// configuredCLIRemoveCalled is set true by the "configured cli client"
+	// test's runner when the production code invokes
+	// `claude mcp remove -s user ghost`. Only that test reads/writes it; other
+	// test cases use their own runners and never touch it.
+	var configuredCLIRemoveCalled bool
 
-		content, err := os.ReadFile(cursorConfigPath)
-		if err != nil {
-			t.Fatalf("failed to read cursor config: %v", err)
-		}
-		// File must be byte-for-byte unchanged.
-		if string(content) != original {
-			t.Fatalf("expected config to be unchanged, got:\n%s", string(content))
-		}
-	})
+	tests := []mcpCmdTest{
+		{
+			name: "configured cli client",
+			args: []string{"mcp", "uninstall", "claude-code", "--no-backup"},
+			runner: func(ctx context.Context, command string, args ...string) ([]byte, error) {
+				switch got := commandWithArgs(command, args); got {
+				case "claude mcp get ghost":
+					return []byte(`ghost:
+  Command: ghost
+  Args: mcp start
+`), nil
+				case "claude mcp remove -s user ghost":
+					configuredCLIRemoveCalled = true
+					return []byte("Removed MCP server ghost from user config\n"), nil
+				default:
+					t.Fatalf("unexpected command: %s", got)
+					return nil, nil
+				}
+			},
+			wantStdout: "CLIENT       STATUS       \n" +
+				"Claude Code  uninstalled  \n",
+			after: func(t *testing.T, _ string) {
+				if !configuredCLIRemoveCalled {
+					t.Fatal("expected remove command to be called")
+				}
+			},
+		},
+		{
+			name: "configured cli client creates backup by default",
+			args: []string{"mcp", "uninstall", "claude-code"},
+			files: map[string]string{
+				".claude.json": `{"mcpServers":{"ghost":{"command":"ghost","args":["mcp","start"]}}}`,
+			},
+			runner: func(ctx context.Context, command string, args ...string) ([]byte, error) {
+				switch got := commandWithArgs(command, args); got {
+				case "claude mcp get ghost":
+					return []byte(`ghost:
+  Command: ghost
+  Args: mcp start
+`), nil
+				case "claude mcp remove -s user ghost":
+					return []byte("Removed MCP server ghost from user config\n"), nil
+				default:
+					t.Fatalf("unexpected command: %s", got)
+					return nil, nil
+				}
+			},
+			wantStdout: "CLIENT       STATUS       \n" +
+				"Claude Code  uninstalled  \n",
+			after: func(t *testing.T, homeDir string) {
+				entries, err := os.ReadDir(homeDir)
+				if err != nil {
+					t.Fatalf("failed to read home dir: %v", err)
+				}
+				for _, e := range entries {
+					if strings.HasPrefix(e.Name(), ".claude.json.backup.") {
+						return
+					}
+				}
+				names := make([]string, len(entries))
+				for i, e := range entries {
+					names[i] = e.Name()
+				}
+				t.Fatalf("expected a backup of .claude.json to be created, got entries: %v", names)
+			},
+		},
+		{
+			name: "unconfigured cli client exits two",
+			args: []string{"mcp", "uninstall", "claude-code"},
+			runner: func(ctx context.Context, command string, args ...string) ([]byte, error) {
+				assertMCPClientCommand(t, command, args, "claude mcp get ghost")
+				return []byte(`No MCP server found with name: "ghost". No MCP servers are configured.`), executableNotFoundError(command)
+			},
+			wantExitCode: mcpExitNoneConfigured,
+			wantStdout: "CLIENT       STATUS          \n" +
+				"Claude Code  not configured  \n",
+		},
+		{
+			name: "detection error propagates",
+			args: []string{"mcp", "uninstall", "codex"},
+			runner: func(ctx context.Context, command string, args ...string) ([]byte, error) {
+				assertMCPClientCommand(t, command, args, "codex mcp list --json")
+				return []byte(`not json`), nil
+			},
+			wantExitCode: common.ExitGeneralError,
+			wantStdout: "CLIENT  STATUS  DETAIL                                                                                        \n" +
+				"Codex   error   failed to parse codex mcp list output: invalid character 'o' in literal null (expecting 'u')  \n",
+		},
+		{
+			name: "cli uninstall with no output falls back to err message",
+			args: []string{"mcp", "uninstall", "claude-code", "--no-backup"},
+			runner: func(ctx context.Context, command string, args ...string) ([]byte, error) {
+				switch got := commandWithArgs(command, args); got {
+				case "claude mcp get ghost":
+					return []byte(`ghost:
+  Command: ghost
+  Args: mcp start
+`), nil
+				case "claude mcp remove -s user ghost":
+					return nil, errors.New("signal: killed")
+				default:
+					t.Fatalf("unexpected command: %s", got)
+					return nil, nil
+				}
+			},
+			wantExitCode: common.ExitGeneralError,
+			wantStdout: "CLIENT       STATUS  DETAIL          \n" +
+				"Claude Code  error   signal: killed  \n",
+		},
+		{
+			name: "configured json file client",
+			args: []string{"mcp", "uninstall", "cursor", "--no-backup"},
+			files: map[string]string{
+				".cursor/mcp.json": cursorConfiguredWithOtherFile,
+			},
+			wantStdout: "CLIENT  STATUS       \n" +
+				"Cursor  uninstalled  \n",
+			after: func(t *testing.T, homeDir string) {
+				content, err := os.ReadFile(filepath.Join(homeDir, ".cursor", "mcp.json"))
+				if err != nil {
+					t.Fatalf("failed to read cursor config: %v", err)
+				}
+				want := "{\n\t\"mcpServers\": {\n\t\t\"other\": {\n\t\t\t\"command\": \"other\",\n\t\t\t\"args\":    []\n\t\t}\n\t}\n}\n"
+				assertOutput(t, string(content), want)
+			},
+		},
+		{
+			name: "unexpected command in json file is left alone",
+			args: []string{"mcp", "uninstall", "cursor", "--no-backup"},
+			files: map[string]string{
+				".cursor/mcp.json": cursorUnexpectedCommandFile,
+			},
+			// Detection sees a not-configured (unexpected command) entry, so
+			// we exit 2 without modifying the file.
+			wantExitCode: mcpExitNoneConfigured,
+			wantStdout: "CLIENT  STATUS          DETAIL                              \n" +
+				"Cursor  not configured  ghost entry has unexpected command  \n",
+			after: func(t *testing.T, homeDir string) {
+				content, err := os.ReadFile(filepath.Join(homeDir, ".cursor", "mcp.json"))
+				if err != nil {
+					t.Fatalf("failed to read cursor config: %v", err)
+				}
+				if string(content) != cursorUnexpectedCommandFile {
+					t.Fatalf("expected config to be unchanged, got:\n%s", string(content))
+				}
+			},
+		},
+		{
+			name: "json output",
+			args: []string{"mcp", "uninstall", "cursor", "--no-backup", "--json"},
+			files: map[string]string{
+				".cursor/mcp.json": cursorConfiguredFile,
+			},
+			wantStdout: "[\n" +
+				"  {\n" +
+				`    "client": "cursor",` + "\n" +
+				`    "status": "uninstalled"` + "\n" +
+				"  }\n" +
+				"]\n",
+		},
+		{
+			name: "yaml output",
+			args: []string{"mcp", "uninstall", "cursor", "--no-backup", "--yaml"},
+			files: map[string]string{
+				".cursor/mcp.json": cursorConfiguredFile,
+			},
+			wantStdout: "- client: cursor\n  status: uninstalled\n",
+		},
+		{
+			name: "all target uninstalls configured clients",
+			args: []string{"mcp", "uninstall", "all", "--no-backup", "--json"},
+			files: map[string]string{
+				".cursor/mcp.json": cursorConfiguredFile,
+			},
+			runner: func(ctx context.Context, command string, args ...string) ([]byte, error) {
+				return nil, executableNotFoundError(command)
+			},
+			wantStdout: "[\n" +
+				"  {\n" +
+				`    "client": "claude-code",` + "\n" +
+				`    "status": "not configured"` + "\n" +
+				"  },\n" +
+				"  {\n" +
+				`    "client": "cursor",` + "\n" +
+				`    "status": "uninstalled"` + "\n" +
+				"  },\n" +
+				"  {\n" +
+				`    "client": "windsurf",` + "\n" +
+				`    "status": "not configured"` + "\n" +
+				"  },\n" +
+				"  {\n" +
+				`    "client": "codex",` + "\n" +
+				`    "status": "not configured"` + "\n" +
+				"  },\n" +
+				"  {\n" +
+				`    "client": "gemini",` + "\n" +
+				`    "status": "not configured"` + "\n" +
+				"  },\n" +
+				"  {\n" +
+				`    "client": "vscode",` + "\n" +
+				`    "status": "not configured"` + "\n" +
+				"  },\n" +
+				"  {\n" +
+				`    "client": "antigravity",` + "\n" +
+				`    "status": "not configured"` + "\n" +
+				"  },\n" +
+				"  {\n" +
+				`    "client": "kiro-cli",` + "\n" +
+				`    "status": "not configured"` + "\n" +
+				"  }\n" +
+				"]\n",
+			after: func(t *testing.T, homeDir string) {
+				content, err := os.ReadFile(filepath.Join(homeDir, ".cursor", "mcp.json"))
+				if err != nil {
+					t.Fatalf("failed to read cursor config: %v", err)
+				}
+				if strings.Contains(string(content), "ghost") {
+					t.Fatalf("expected ghost entry to be removed from cursor config, got:\n%s", string(content))
+				}
+			},
+		},
+		{
+			name: "interactive selection via stub",
+			args: []string{"mcp", "uninstall", "--no-backup"},
+			files: map[string]string{
+				".cursor/mcp.json": cursorConfiguredFile,
+			},
+			uninstallSelector: func(_ *cobra.Command) (string, error) {
+				return "cursor", nil
+			},
+			isTerminal: &trueVal,
+			wantStdout: "CLIENT  STATUS       \n" +
+				"Cursor  uninstalled  \n",
+		},
+		{
+			name:       "no client non terminal",
+			args:       []string{"mcp", "uninstall"},
+			isTerminal: &falseVal,
+			wantErr:    "no client specified and stdin is not a terminal; pass the client name or 'all' as an argument",
+		},
+	}
 
-	t.Run("json_output", func(t *testing.T) {
-		homeDir := t.TempDir()
-		cursorConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
-		writeTestFile(t, cursorConfigPath, `{
-  "mcpServers": {
-    "ghost": {
-      "command": "ghost",
-      "args": ["mcp", "start"]
-    }
-  }
-}`)
-
-		result := runCommand(t, []string{"mcp", "uninstall", "cursor", "--no-backup", "--json"}, nil, withEnv("HOME", homeDir))
-		if result.err != nil {
-			t.Fatalf("unexpected error: %v", result.err)
-		}
-		assertOutput(t, result.stdout, `[
-  {
-    "client": "cursor",
-    "status": "uninstalled"
-  }
-]
-`)
-		assertOutput(t, result.stderr, "")
-	})
-
-	t.Run("yaml_output", func(t *testing.T) {
-		homeDir := t.TempDir()
-		cursorConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
-		writeTestFile(t, cursorConfigPath, `{
-  "mcpServers": {
-    "ghost": {
-      "command": "ghost",
-      "args": ["mcp", "start"]
-    }
-  }
-}`)
-
-		result := runCommand(t, []string{"mcp", "uninstall", "cursor", "--no-backup", "--yaml"}, nil, withEnv("HOME", homeDir))
-		if result.err != nil {
-			t.Fatalf("unexpected error: %v", result.err)
-		}
-		assertOutput(t, result.stdout, `- client: cursor
-  status: uninstalled
-`)
-		assertOutput(t, result.stderr, "")
-	})
-
-	t.Run("all_target_uninstalls_configured_clients", func(t *testing.T) {
-		homeDir := t.TempDir()
-		// Configure cursor only; everything else looks absent.
-		cursorConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
-		writeTestFile(t, cursorConfigPath, `{
-  "mcpServers": {
-    "ghost": {
-      "command": "ghost",
-      "args": ["mcp", "start"]
-    }
-  }
-}`)
-		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
-			return nil, executableNotFoundError(command)
-		})
-
-		result := runCommand(t, []string{"mcp", "uninstall", "all", "--no-backup", "--json"}, nil, withEnv("HOME", homeDir))
-		if result.err != nil {
-			t.Fatalf("unexpected error: %v", result.err)
-		}
-		// Cursor should be "uninstalled"; all other clients should be "not configured".
-		if !strings.Contains(result.stdout, `"client": "cursor"`) || !strings.Contains(result.stdout, `"status": "uninstalled"`) {
-			t.Fatalf("expected Cursor to be uninstalled, got:\n%s", result.stdout)
-		}
-		// Confirm cursor's ghost entry was removed.
-		content, err := os.ReadFile(cursorConfigPath)
-		if err != nil {
-			t.Fatalf("failed to read cursor config: %v", err)
-		}
-		if strings.Contains(string(content), "ghost") {
-			t.Fatalf("expected ghost entry to be removed from cursor config, got:\n%s", string(content))
-		}
-	})
-
-	t.Run("interactive_selection_via_stub", func(t *testing.T) {
-		// Override the interactive selector so we don't need a TTY.
-		originalSelector := uninstallTargetSelector
-		uninstallTargetSelector = func(_ *cobra.Command) (string, error) {
-			return "cursor", nil
-		}
-		t.Cleanup(func() { uninstallTargetSelector = originalSelector })
-
-		homeDir := t.TempDir()
-		cursorConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
-		writeTestFile(t, cursorConfigPath, `{
-  "mcpServers": {
-    "ghost": {
-      "command": "ghost",
-      "args": ["mcp", "start"]
-    }
-  }
-}`)
-
-		result := runCommand(t, []string{"mcp", "uninstall", "--no-backup"}, nil,
-			withEnv("HOME", homeDir),
-			withStdin(""),
-			withIsTerminal(true),
-		)
-		if result.err != nil {
-			t.Fatalf("unexpected error: %v", result.err)
-		}
-		assertOutput(t, result.stdout, "CLIENT  STATUS       \nCursor  uninstalled  \n")
-	})
-
-	t.Run("no_client_non_terminal", func(t *testing.T) {
-		result := runCommand(t, []string{"mcp", "uninstall"}, nil, withStdin(""), withIsTerminal(false))
-		assertOutput(t, result.err.Error(), "no client specified and stdin is not a terminal; pass the client name or 'all' as an argument")
-		assertOutput(t, result.stdout, "")
-		assertOutput(t, result.stderr, "Error: no client specified and stdin is not a terminal; pass the client name or 'all' as an argument\n")
-	})
-}
-
-func commandWithArgs(command string, args []string) string {
-	return strings.Join(append([]string{command}, args...), " ")
+	runMCPCmdTests(t, tests)
 }
