@@ -315,7 +315,7 @@ func installGhostMCPForClient(cmd *cobra.Command, clientName string, createBacku
 		return err
 	}
 
-	statusOutput, err := installGhostMCPForClientWithoutOutput(cmd.Context(), clientCfg, createBackup, customConfigPath)
+	statusOutput, err := installGhostMCPForClientWithoutOutput(cmd.Context(), *clientCfg, createBackup, customConfigPath)
 	if jsonOutput || yamlOutput {
 		if outputErr := writeMCPInstallOutput(cmd, []MCPClientStatusOutput{statusOutput}, jsonOutput, yamlOutput); outputErr != nil {
 			return outputErr
@@ -327,6 +327,11 @@ func installGhostMCPForClient(cmd *cobra.Command, clientName string, createBacku
 	}
 	if err != nil {
 		return err
+	}
+
+	if statusOutput.Status == mcpStatusAlreadyConfigured {
+		cmd.Printf("Ghost MCP server configuration for %s is already present\n", clientName)
+		return nil
 	}
 
 	cmd.Printf("Successfully installed Ghost MCP server configuration for %s\n", clientName)
@@ -347,18 +352,7 @@ func installGhostMCPForAllClients(cmd *cobra.Command, createBackup bool, customC
 	rows := make([]MCPClientStatusOutput, len(supportedClients))
 	anyError := false
 	for i, clientCfg := range supportedClients {
-		status, detail := detectMCPClientConfiguration(cmd.Context(), clientCfg)
-		if status == mcpStatusConfigured {
-			rows[i] = MCPClientStatusOutput{Client: clientCfg.ClientType, Status: mcpStatusAlreadyConfigured}
-			continue
-		}
-		if status == mcpStatusError {
-			rows[i] = MCPClientStatusOutput{Client: clientCfg.ClientType, Status: mcpStatusError, Detail: detail}
-			anyError = true
-			continue
-		}
-
-		row, err := installGhostMCPForClientWithoutOutput(cmd.Context(), &clientCfg, createBackup, "")
+		row, err := installGhostMCPForClientWithoutOutput(cmd.Context(), clientCfg, createBackup, "")
 		rows[i] = row
 		if err != nil {
 			anyError = true
@@ -431,7 +425,7 @@ func outputMCPClientResultTable(w io.Writer, rows []MCPClientStatusOutput) error
 	return table.Render()
 }
 
-func installGhostMCPForClientWithoutOutput(ctx context.Context, clientCfg *clientConfig, createBackup bool, customConfigPath string) (MCPClientStatusOutput, error) {
+func installGhostMCPForClientWithoutOutput(ctx context.Context, clientCfg clientConfig, createBackup bool, customConfigPath string) (MCPClientStatusOutput, error) {
 
 	makeErrorResult := func(err error) (MCPClientStatusOutput, error) {
 		return MCPClientStatusOutput{
@@ -439,6 +433,14 @@ func installGhostMCPForClientWithoutOutput(ctx context.Context, clientCfg *clien
 			Status: mcpStatusError,
 			Detail: err.Error(),
 		}, err
+	}
+
+	status, detail := detectMCPClientConfiguration(ctx, clientCfg)
+	if status == mcpStatusConfigured {
+		return MCPClientStatusOutput{Client: clientCfg.ClientType, Status: mcpStatusAlreadyConfigured}, nil
+	}
+	if status == mcpStatusError {
+		return MCPClientStatusOutput{Client: clientCfg.ClientType, Status: mcpStatusError, Detail: detail}, fmt.Errorf("failed to detect configuration: %s", detail)
 	}
 
 	command, err := getGhostExecutablePath()
@@ -502,12 +504,10 @@ func formatMCPInstallDetail(clientName, configPath string) string {
 // findClientConfig finds the client configuration for a given client name
 // This consolidates the logic of mapping client names to client types and finding the config
 func findClientConfig(clientName string) (*clientConfig, error) {
-	normalizedName := strings.ToLower(clientName)
-
 	// Look up in our supported clients config
 	for i := range supportedClients {
 		for _, name := range supportedClients[i].EditorNames {
-			if strings.ToLower(name) == normalizedName {
+			if strings.EqualFold(name, clientName) {
 				return &supportedClients[i], nil
 			}
 		}
@@ -714,7 +714,7 @@ func (m clientSelectModel) View() tea.View {
 // addMCPServerViaCLI adds an MCP server using a CLI command configured in clientConfig.
 // The provided context is forwarded to the subprocess so it can be cancelled by
 // Ctrl+C / SIGINT / SIGTERM via the propagated command context.
-func addMCPServerViaCLI(ctx context.Context, clientCfg *clientConfig, serverName, command string, args []string) error {
+func addMCPServerViaCLI(ctx context.Context, clientCfg clientConfig, serverName, command string, args []string) error {
 	if clientCfg.buildInstallCommand == nil {
 		return fmt.Errorf("no install command configured for client %s", clientCfg.Name)
 	}
