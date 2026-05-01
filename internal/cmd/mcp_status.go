@@ -22,9 +22,7 @@ import (
 
 type mcpClientCommandRunner func(ctx context.Context, command string, args ...string) ([]byte, error)
 
-var runMCPClientCommand = defaultRunMCPClientCommand
-
-func defaultRunMCPClientCommand(ctx context.Context, command string, args ...string) ([]byte, error) {
+var runMCPClientCommand = func(ctx context.Context, command string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
 	return cmd.CombinedOutput()
 }
