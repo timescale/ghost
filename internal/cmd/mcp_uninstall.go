@@ -29,8 +29,9 @@ func buildMCPUninstallCmd(_ *common.App) *cobra.Command {
 	var yamlOutput bool
 
 	cmd := &cobra.Command{
-		Use:   "uninstall [client]",
-		Short: "Uninstall Ghost MCP server configuration from a client",
+		Use:     "uninstall [client]",
+		Aliases: []string{"remove", "rm"},
+		Short:   "Uninstall Ghost MCP server configuration from a client",
 		Long: `Uninstall the Ghost MCP server configuration from a supported MCP client.
 
 If no client is specified, you'll be prompted to select one interactively, including an "all" option.

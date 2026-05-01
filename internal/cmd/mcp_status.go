@@ -34,8 +34,9 @@ func buildMCPStatusCmd(_ *common.App) *cobra.Command {
 	var yamlOutput bool
 
 	cmd := &cobra.Command{
-		Use:   "status [client]",
-		Short: "Show Ghost MCP configuration status for supported clients",
+		Use:     "status [client]",
+		Aliases: []string{"stat"},
+		Short:   "Show Ghost MCP configuration status for supported clients",
 		Long: `Show whether the Ghost MCP server is configured for supported MCP clients.
 
 The command checks the selected client, or all supported clients when no client is specified.

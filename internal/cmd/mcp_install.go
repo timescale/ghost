@@ -62,8 +62,9 @@ func buildMCPInstallCmd(app *common.App) *cobra.Command {
 	var yamlOutput bool
 
 	cmd := &cobra.Command{
-		Use:   "install [client]",
-		Short: "Install and configure Ghost MCP server for a client",
+		Use:     "install [client]",
+		Aliases: []string{"add"},
+		Short:   "Install and configure Ghost MCP server for a client",
 		Long: fmt.Sprintf(`Install and configure the Ghost MCP server for a specific MCP client or AI assistant.
 
 This command automates the configuration process by modifying the appropriate
