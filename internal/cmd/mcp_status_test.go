@@ -30,7 +30,7 @@ func TestMCPStatusCmd(t *testing.T) {
 		if result.err != nil {
 			t.Fatalf("unexpected error: %v", result.err)
 		}
-		assertOutput(t, result.stdout, "CLIENT       STATUS      DETAIL  \nClaude Code  configured          \n")
+		assertOutput(t, result.stdout, "CLIENT       STATUS      \nClaude Code  configured  \n")
 		assertOutput(t, result.stderr, "")
 	})
 
@@ -42,7 +42,7 @@ func TestMCPStatusCmd(t *testing.T) {
 
 		result := runCommand(t, []string{"mcp", "status", "codex"}, nil)
 		assertExitCode(t, result.err, mcpExitNoneConfigured)
-		assertOutput(t, result.stdout, "CLIENT  STATUS        DETAIL  \nCodex   unconfigured          \n")
+		assertOutput(t, result.stdout, "CLIENT  STATUS          \nCodex   not configured  \n")
 		assertOutput(t, result.stderr, "")
 	})
 
@@ -54,7 +54,7 @@ func TestMCPStatusCmd(t *testing.T) {
 
 		result := runCommand(t, []string{"mcp", "status", "claude-code"}, nil)
 		assertExitCode(t, result.err, mcpExitNoneConfigured)
-		assertOutput(t, result.stdout, "CLIENT       STATUS        DETAIL  \nClaude Code  unconfigured          \n")
+		assertOutput(t, result.stdout, "CLIENT       STATUS          \nClaude Code  not configured  \n")
 		assertOutput(t, result.stderr, "")
 	})
 
@@ -96,7 +96,7 @@ func TestMCPStatusCmd(t *testing.T) {
 
 		result := runCommand(t, []string{"mcp", "status", "cursor"}, nil, withEnv("HOME", homeDir))
 		assertExitCode(t, result.err, mcpExitNoneConfigured)
-		assertOutput(t, result.stdout, "CLIENT  STATUS        DETAIL                              \nCursor  unconfigured  ghost entry has unexpected command  \n")
+		assertOutput(t, result.stdout, "CLIENT  STATUS          DETAIL                              \nCursor  not configured  ghost entry has unexpected command  \n")
 		assertOutput(t, result.stderr, "")
 	})
 
@@ -118,8 +118,7 @@ func TestMCPStatusCmd(t *testing.T) {
 		}
 		assertOutput(t, result.stdout, `[
   {
-    "client": "Cursor",
-    "client_name": "cursor",
+    "client": "cursor",
     "status": "configured"
   }
 ]
@@ -143,8 +142,7 @@ func TestMCPStatusCmd(t *testing.T) {
 		if result.err != nil {
 			t.Fatalf("unexpected error: %v", result.err)
 		}
-		assertOutput(t, result.stdout, `- client: Cursor
-  client_name: cursor
+		assertOutput(t, result.stdout, `- client: cursor
   status: configured
 `)
 		assertOutput(t, result.stderr, "")
@@ -162,7 +160,7 @@ func TestMCPStatusCmd(t *testing.T) {
     }
   }
 }`)
-		// Stub the CLI-based clients to all return "not found" so they show as unconfigured.
+		// Stub the CLI-based clients to all return "not found" so they show as "not configured".
 		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
 			return nil, executableNotFoundError(command)
 		})
@@ -181,32 +179,32 @@ func TestMCPStatusCmd(t *testing.T) {
 
 	t.Run("all_clients_no_args_all_unconfigured_exits_two", func(t *testing.T) {
 		homeDir := t.TempDir()
-		// Stub all CLI-based clients to look unconfigured.
+		// Stub all CLI-based clients to look not configured.
 		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
 			return nil, executableNotFoundError(command)
 		})
 
 		result := runCommand(t, []string{"mcp", "status", "--json"}, nil, withEnv("HOME", homeDir))
 		assertExitCode(t, result.err, mcpExitNoneConfigured)
-		// Every row should be "unconfigured"; verify by checking we have no "configured" or "error" status.
+		// Every row should be "not configured"; verify by checking we have no "configured" or "error" status.
 		if strings.Contains(result.stdout, `"status": "configured"`) || strings.Contains(result.stdout, `"status": "error"`) {
-			t.Fatalf("expected all rows unconfigured, got:\n%s", result.stdout)
+			t.Fatalf("expected all rows not configured, got:\n%s", result.stdout)
 		}
 		assertOutput(t, result.stderr, "")
 	})
 
 	t.Run("explicit_all_target_all_unconfigured_exits_two", func(t *testing.T) {
 		homeDir := t.TempDir()
-		// Stub all CLI-based clients to look unconfigured.
+		// Stub all CLI-based clients to look not configured.
 		withMCPClientCommandRunner(t, func(ctx context.Context, command string, args ...string) ([]byte, error) {
 			return nil, executableNotFoundError(command)
 		})
 
 		result := runCommand(t, []string{"mcp", "status", "all", "--json"}, nil, withEnv("HOME", homeDir))
 		assertExitCode(t, result.err, mcpExitNoneConfigured)
-		// Every row should be "unconfigured"; verify by checking we have no "configured" or "error" status.
+		// Every row should be "not configured"; verify by checking we have no "configured" or "error" status.
 		if strings.Contains(result.stdout, `"status": "configured"`) || strings.Contains(result.stdout, `"status": "error"`) {
-			t.Fatalf("expected all rows unconfigured, got:\n%s", result.stdout)
+			t.Fatalf("expected all rows not configured, got:\n%s", result.stdout)
 		}
 		assertOutput(t, result.stderr, "")
 	})

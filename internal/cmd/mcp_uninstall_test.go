@@ -39,7 +39,7 @@ func TestMCPUninstallCmd(t *testing.T) {
 		if !removeCalled {
 			t.Fatal("expected remove command to be called")
 		}
-		assertOutput(t, result.stdout, "CLIENT       STATUS       DETAIL  \nClaude Code  uninstalled          \n")
+		assertOutput(t, result.stdout, "CLIENT       STATUS       \nClaude Code  uninstalled  \n")
 		assertOutput(t, result.stderr, "")
 	})
 
@@ -96,7 +96,7 @@ func TestMCPUninstallCmd(t *testing.T) {
 
 		result := runCommand(t, []string{"mcp", "uninstall", "claude-code"}, nil)
 		assertExitCode(t, result.err, mcpExitNoneConfigured)
-		assertOutput(t, result.stdout, "CLIENT       STATUS        DETAIL  \nClaude Code  unconfigured          \n")
+		assertOutput(t, result.stdout, "CLIENT       STATUS          \nClaude Code  not configured  \n")
 		assertOutput(t, result.stderr, "")
 	})
 
@@ -154,7 +154,7 @@ func TestMCPUninstallCmd(t *testing.T) {
 		if result.err != nil {
 			t.Fatalf("unexpected error: %v", result.err)
 		}
-		assertOutput(t, result.stdout, "CLIENT  STATUS       DETAIL  \nCursor  uninstalled          \n")
+		assertOutput(t, result.stdout, "CLIENT  STATUS       \nCursor  uninstalled  \n")
 		assertOutput(t, result.stderr, "")
 
 		content, err := os.ReadFile(cursorConfigPath)
@@ -178,9 +178,9 @@ func TestMCPUninstallCmd(t *testing.T) {
 		writeTestFile(t, cursorConfigPath, original)
 
 		result := runCommand(t, []string{"mcp", "uninstall", "cursor", "--no-backup"}, nil, withEnv("HOME", homeDir))
-		// Detection sees an unconfigured (unexpected command) entry, so we exit 2 without modifying the file.
+		// Detection sees a not configured (unexpected command) entry, so we exit 2 without modifying the file.
 		assertExitCode(t, result.err, mcpExitNoneConfigured)
-		assertOutput(t, result.stdout, "CLIENT  STATUS        DETAIL                              \nCursor  unconfigured  ghost entry has unexpected command  \n")
+		assertOutput(t, result.stdout, "CLIENT  STATUS          DETAIL                              \nCursor  not configured  ghost entry has unexpected command  \n")
 		assertOutput(t, result.stderr, "")
 
 		content, err := os.ReadFile(cursorConfigPath)
@@ -211,7 +211,7 @@ func TestMCPUninstallCmd(t *testing.T) {
 		}
 		assertOutput(t, result.stdout, `[
   {
-    "client": "Cursor",
+    "client": "cursor",
     "status": "uninstalled"
   }
 ]
@@ -235,7 +235,7 @@ func TestMCPUninstallCmd(t *testing.T) {
 		if result.err != nil {
 			t.Fatalf("unexpected error: %v", result.err)
 		}
-		assertOutput(t, result.stdout, `- client: Cursor
+		assertOutput(t, result.stdout, `- client: cursor
   status: uninstalled
 `)
 		assertOutput(t, result.stderr, "")
@@ -261,8 +261,8 @@ func TestMCPUninstallCmd(t *testing.T) {
 		if result.err != nil {
 			t.Fatalf("unexpected error: %v", result.err)
 		}
-		// Cursor should be "uninstalled"; all other clients should be "unconfigured".
-		if !strings.Contains(result.stdout, `"client": "Cursor"`) || !strings.Contains(result.stdout, `"status": "uninstalled"`) {
+		// Cursor should be "uninstalled"; all other clients should be "not configured".
+		if !strings.Contains(result.stdout, `"client": "cursor"`) || !strings.Contains(result.stdout, `"status": "uninstalled"`) {
 			t.Fatalf("expected Cursor to be uninstalled, got:\n%s", result.stdout)
 		}
 		// Confirm cursor's ghost entry was removed.
@@ -302,7 +302,7 @@ func TestMCPUninstallCmd(t *testing.T) {
 		if result.err != nil {
 			t.Fatalf("unexpected error: %v", result.err)
 		}
-		assertOutput(t, result.stdout, "CLIENT  STATUS       DETAIL  \nCursor  uninstalled          \n")
+		assertOutput(t, result.stdout, "CLIENT  STATUS       \nCursor  uninstalled  \n")
 	})
 
 	t.Run("no_client_non_terminal", func(t *testing.T) {

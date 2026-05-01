@@ -57,7 +57,7 @@ func TestMCPInstallCmd(t *testing.T) {
 		expectedConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
 		expectedJSON := `[
   {
-    "client": "Cursor",
+    "client": "cursor",
     "status": "installed",
     "detail": "` + expectedConfigPath + `"
   }
@@ -76,7 +76,7 @@ func TestMCPInstallCmd(t *testing.T) {
 			t.Fatalf("unexpected error: %v", result.err)
 		}
 		expectedConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
-		expectedYAML := "- client: Cursor\n  detail: " + expectedConfigPath + "\n  status: installed\n"
+		expectedYAML := "- client: cursor\n  detail: " + expectedConfigPath + "\n  status: installed\n"
 		assertOutput(t, result.stdout, expectedYAML)
 		assertOutput(t, result.stderr, "")
 	})
@@ -157,7 +157,7 @@ func TestMCPInstallCmd(t *testing.T) {
 		}
 
 		// Cursor / Windsurf / Antigravity are JSON-config clients with no CLI
-		// detection, so detection returns "unconfigured" and install proceeds.
+		// detection, so detection returns "not configured" and install proceeds.
 		cursorConfigPath := filepath.Join(homeDir, ".cursor", "mcp.json")
 		content, err := os.ReadFile(cursorConfigPath)
 		if err != nil {
@@ -168,11 +168,11 @@ func TestMCPInstallCmd(t *testing.T) {
 		}
 
 		stdout := result.stdout
-		if !strings.Contains(stdout, `"client": "Cursor"`) || !strings.Contains(stdout, `"status": "installed"`) {
+		if !strings.Contains(stdout, `"client": "cursor"`) || !strings.Contains(stdout, `"status": "installed"`) {
 			t.Fatalf("expected installed row for Cursor, got: %s", stdout)
 		}
 		// Claude Code / Codex / Gemini / Kiro CLI all detected as configured.
-		if !strings.Contains(stdout, `"client": "Claude Code"`) || !strings.Contains(stdout, `"status": "already configured"`) {
+		if !strings.Contains(stdout, `"client": "claude-code"`) || !strings.Contains(stdout, `"status": "already configured"`) {
 			t.Fatalf("expected already-configured row for Claude Code, got: %s", stdout)
 		}
 	})

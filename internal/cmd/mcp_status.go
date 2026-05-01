@@ -20,28 +20,6 @@ import (
 	"github.com/timescale/ghost/internal/util"
 )
 
-const (
-	mcpStatusConfigured   = "configured"
-	mcpStatusUnconfigured = "unconfigured"
-	mcpStatusError        = "error"
-	mcpExitNoneConfigured = 2
-)
-
-// MCPClientStatusOutput represents a single client row in `ghost mcp status` output.
-type MCPClientStatusOutput struct {
-	Client     string `json:"client"`
-	ClientName string `json:"client_name"`
-	Status     string `json:"status"`
-	Detail     string `json:"detail,omitempty"`
-}
-
-type mcpClientStatusResult struct {
-	Client     string
-	ClientName string
-	Status     string
-	Detail     string
-}
-
 type mcpClientCommandRunner func(ctx context.Context, command string, args ...string) ([]byte, error)
 
 var runMCPClientCommand = defaultRunMCPClientCommand
@@ -74,7 +52,11 @@ A configured client must have a Ghost MCP server entry named "ghost" that runs "
 		ValidArgs:    getValidMCPClientTargetNames(),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			clients, err := selectedMCPStatusClients(args)
+			target := mcpAllTarget
+			if len(args) > 0 {
+				target = args[0]
+			}
+			clients, err := mcpClientConfigsForTargetName(target)
 			if err != nil {
 				return err
 			}
@@ -113,15 +95,8 @@ A configured client must have a Ghost MCP server entry named "ghost" that runs "
 	return cmd
 }
 
-func selectedMCPStatusClients(args []string) ([]clientConfig, error) {
-	if len(args) == 0 {
-		return allMCPClientConfigs(), nil
-	}
-	return mcpClientConfigsForTargetName(args[0])
-}
-
-func detectMCPClientStatuses(ctx context.Context, clients []clientConfig) []mcpClientStatusResult {
-	results := make([]mcpClientStatusResult, len(clients))
+func detectMCPClientStatuses(ctx context.Context, clients []clientConfig) []MCPClientStatusOutput {
+	results := make([]MCPClientStatusOutput, len(clients))
 	for i, clientCfg := range clients {
 		result := detectMCPClientStatus(ctx, clientCfg)
 		results[i] = result
@@ -129,17 +104,16 @@ func detectMCPClientStatuses(ctx context.Context, clients []clientConfig) []mcpC
 	return results
 }
 
-func detectMCPClientStatus(ctx context.Context, clientCfg clientConfig) mcpClientStatusResult {
+func detectMCPClientStatus(ctx context.Context, clientCfg clientConfig) MCPClientStatusOutput {
 	status, detail := detectMCPClientConfiguration(ctx, clientCfg)
-	return mcpClientStatusResult{
-		Client:     clientCfg.Name,
-		ClientName: clientCfg.EditorNames[0],
-		Status:     status,
-		Detail:     detail,
+	return MCPClientStatusOutput{
+		Client: clientCfg.ClientType,
+		Status: status,
+		Detail: detail,
 	}
 }
 
-func detectMCPClientConfiguration(ctx context.Context, clientCfg clientConfig) (string, string) {
+func detectMCPClientConfiguration(ctx context.Context, clientCfg clientConfig) (MCPClientStatus, string) {
 	switch clientCfg.ClientType {
 	case ClaudeCode:
 		return detectClaudeCodeMCPConfiguration(ctx)
@@ -156,7 +130,7 @@ func detectMCPClientConfiguration(ctx context.Context, clientCfg clientConfig) (
 	}
 }
 
-func mcpStatusExitCode(results []mcpClientStatusResult) int {
+func mcpStatusExitCode(results []MCPClientStatusOutput) int {
 	anyConfigured := false
 	anyError := false
 	for _, result := range results {
@@ -177,9 +151,9 @@ func mcpStatusExitCode(results []mcpClientStatusResult) int {
 }
 
 func outputMCPClientStatuses(w io.Writer, statuses []MCPClientStatusOutput) error {
-	rows := make([]mcpClientResultRow, len(statuses))
+	rows := make([]MCPClientStatusOutput, len(statuses))
 	for i, status := range statuses {
-		rows[i] = mcpClientResultRow{
+		rows[i] = MCPClientStatusOutput{
 			Client: status.Client,
 			Status: status.Status,
 			Detail: status.Detail,
@@ -188,12 +162,12 @@ func outputMCPClientStatuses(w io.Writer, statuses []MCPClientStatusOutput) erro
 	return outputMCPClientResultTable(w, rows)
 }
 
-func detectClaudeCodeMCPConfiguration(ctx context.Context) (string, string) {
+func detectClaudeCodeMCPConfiguration(ctx context.Context) (MCPClientStatus, string) {
 	output, err := runMCPClientCommand(ctx, "claude", "mcp", "get", mcp.ServerName)
 	outputString := string(output)
 	if err != nil {
 		if isExecutableNotFound(err) || strings.Contains(outputString, "No MCP server found") || strings.Contains(outputString, "No MCP servers are configured") {
-			return mcpStatusUnconfigured, ""
+			return mcpStatusNotConfigured, ""
 		}
 		return mcpStatusError, errorDetail(err, outputString)
 	}
@@ -203,14 +177,14 @@ func detectClaudeCodeMCPConfiguration(ctx context.Context) (string, string) {
 	if isExpectedGhostMCPCommand(command, args) {
 		return mcpStatusConfigured, ""
 	}
-	return mcpStatusUnconfigured, "ghost entry has unexpected command"
+	return mcpStatusNotConfigured, "ghost entry has unexpected command"
 }
 
-func detectCodexMCPConfiguration(ctx context.Context) (string, string) {
+func detectCodexMCPConfiguration(ctx context.Context) (MCPClientStatus, string) {
 	output, err := runMCPClientCommand(ctx, "codex", "mcp", "list", "--json")
 	if err != nil {
 		if isExecutableNotFound(err) {
-			return mcpStatusUnconfigured, ""
+			return mcpStatusNotConfigured, ""
 		}
 		return mcpStatusError, errorDetail(err, string(output))
 	}
@@ -233,50 +207,50 @@ func detectCodexMCPConfiguration(ctx context.Context) (string, string) {
 		if isExpectedGhostMCPCommand(server.Transport.Command, server.Transport.Args) {
 			return mcpStatusConfigured, ""
 		}
-		return mcpStatusUnconfigured, "ghost entry has unexpected command"
+		return mcpStatusNotConfigured, "ghost entry has unexpected command"
 	}
-	return mcpStatusUnconfigured, ""
+	return mcpStatusNotConfigured, ""
 }
 
-func detectGeminiMCPConfiguration(ctx context.Context) (string, string) {
+func detectGeminiMCPConfiguration(ctx context.Context) (MCPClientStatus, string) {
 	// `gemini mcp list` does not emit parseable output when stdout is not a TTY in the
 	// tested version. The debug flag keeps the same list command but prints the server rows.
 	output, err := runMCPClientCommand(ctx, "gemini", "mcp", "list", "--debug")
 	outputString := string(output)
 	if err != nil {
 		if isExecutableNotFound(err) {
-			return mcpStatusUnconfigured, ""
+			return mcpStatusNotConfigured, ""
 		}
 		return mcpStatusError, errorDetail(err, outputString)
 	}
 	if strings.Contains(outputString, "No MCP servers configured") {
-		return mcpStatusUnconfigured, ""
+		return mcpStatusNotConfigured, ""
 	}
 
 	commandLine, ok := extractGeminiGhostCommandLine(outputString)
 	if !ok {
-		return mcpStatusUnconfigured, ""
+		return mcpStatusNotConfigured, ""
 	}
 	fields := strings.Fields(commandLine)
 	if len(fields) >= 1 && isExpectedGhostMCPCommand(fields[0], fields[1:]) {
 		return mcpStatusConfigured, ""
 	}
-	return mcpStatusUnconfigured, "ghost entry has unexpected command"
+	return mcpStatusNotConfigured, "ghost entry has unexpected command"
 }
 
-func detectKiroMCPConfiguration(ctx context.Context, clientCfg clientConfig) (string, string) {
+func detectKiroMCPConfiguration(ctx context.Context, clientCfg clientConfig) (MCPClientStatus, string) {
 	output, err := runMCPClientCommand(ctx, "kiro-cli", "mcp", "status", "--name", mcp.ServerName)
 	outputString := string(output)
 	if err != nil {
 		if isExecutableNotFound(err) || strings.Contains(outputString, "No MCP server named") {
-			return mcpStatusUnconfigured, ""
+			return mcpStatusNotConfigured, ""
 		}
 		return mcpStatusError, errorDetail(err, outputString)
 	}
 
 	command := extractNamedValue(outputString, "Command")
 	if !isGhostExecutableCommand(command) {
-		return mcpStatusUnconfigured, "ghost entry has unexpected command"
+		return mcpStatusNotConfigured, "ghost entry has unexpected command"
 	}
 
 	// Kiro's status output includes the command but not the args. Read Kiro's MCP
@@ -288,10 +262,10 @@ func detectKiroMCPConfiguration(ctx context.Context, clientCfg clientConfig) (st
 	if fileStatus == mcpStatusError {
 		return fileStatus, detail
 	}
-	return mcpStatusUnconfigured, "ghost entry has unexpected command"
+	return mcpStatusNotConfigured, "ghost entry has unexpected command"
 }
 
-func detectMCPConfigurationInJSONFiles(clientCfg clientConfig, mcpServersPathPrefix string) (string, string) {
+func detectMCPConfigurationInJSONFiles(clientCfg clientConfig, mcpServersPathPrefix string) (MCPClientStatus, string) {
 	if mcpServersPathPrefix == "" {
 		return mcpStatusError, fmt.Sprintf("missing MCP servers path for %s", clientCfg.Name)
 	}
@@ -325,9 +299,9 @@ func detectMCPConfigurationInJSONFiles(clientCfg clientConfig, mcpServersPathPre
 		return mcpStatusConfigured, ""
 	}
 	if unexpectedCommand {
-		return mcpStatusUnconfigured, "ghost entry has unexpected command"
+		return mcpStatusNotConfigured, "ghost entry has unexpected command"
 	}
-	return mcpStatusUnconfigured, ""
+	return mcpStatusNotConfigured, ""
 }
 
 func readMCPServerConfigFromJSONFile(configPath, mcpServersPathPrefix string) (MCPServerConfig, bool, error) {
