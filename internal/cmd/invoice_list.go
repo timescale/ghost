@@ -118,10 +118,10 @@ func outputInvoices(w io.Writer, invoices []InvoiceOutput) error {
 		}),
 	)
 
-	table.Header("INVOICE #", "DATE", "TOTAL", "STATUS", "ID")
+	table.Header("ID", "DATE", "TOTAL", "STATUS")
 	for _, inv := range invoices {
 		total := fmt.Sprintf("$%.2f", inv.Total)
-		table.Append(inv.InvoiceNumber, inv.InvoiceDate, total, inv.Status, inv.ID)
+		table.Append(inv.ID, inv.InvoiceDate, total, inv.Status)
 	}
 
 	return table.Render()

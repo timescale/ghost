@@ -99,7 +99,7 @@ func TestInvoiceListCmd(t *testing.T) {
 					}, nil)
 			},
 			opts:       []runOption{experimental},
-			wantStdout: "INVOICE  #  DATE        TOTAL   STATUS  ID                \nINV-12345   2026-04-01  $27.50  paid    BJ9xX3JDEzMQ9vCx  \nINV-12344   2026-03-01  $24.10  paid    k2mN7pQrS4tLvZwY  \n",
+			wantStdout: "ID                DATE        TOTAL   STATUS  \nBJ9xX3JDEzMQ9vCx  2026-04-01  $27.50  paid    \nk2mN7pQrS4tLvZwY  2026-03-01  $24.10  paid    \n",
 		},
 		{
 			name: "json output",
@@ -164,7 +164,7 @@ func TestInvoiceListCmd(t *testing.T) {
 					}, nil)
 			},
 			opts:       []runOption{experimental},
-			wantStdout: "INVOICE  #  DATE        TOTAL   STATUS  ID                \nINV-12345   2026-04-01  $27.50  paid    BJ9xX3JDEzMQ9vCx  \nINV-12344   2026-03-01  $24.10  paid    k2mN7pQrS4tLvZwY  \n",
+			wantStdout: "ID                DATE        TOTAL   STATUS  \nBJ9xX3JDEzMQ9vCx  2026-04-01  $27.50  paid    \nk2mN7pQrS4tLvZwY  2026-03-01  $24.10  paid    \n",
 		},
 	}
 
