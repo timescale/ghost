@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"strings"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 	"github.com/tailscale/hujson"
 
@@ -22,7 +21,7 @@ import (
 // interactively when no client argument is provided. It is a package-level
 // variable so tests can override it without spinning up a real Bubble Tea
 // program (which requires a TTY).
-var uninstallTargetSelector = selectUninstallTargetInteractively
+var uninstallTargetSelector = selectClientInteractively
 
 func buildMCPUninstallCmd(_ *common.App) *cobra.Command {
 	var noBackup bool
@@ -262,30 +261,4 @@ func mcpUninstallExitCode(results []MCPClientStatusOutput) int {
 		return 0
 	}
 	return mcpExitNoneConfigured
-}
-
-func selectUninstallTargetInteractively(cmd *cobra.Command) (string, error) {
-	options := []ClientOption{{Name: "All supported clients", ClientName: mcpAllTarget}}
-	for _, cfg := range supportedClients {
-		options = append(options, ClientOption{
-			Name:       cfg.Name,
-			ClientName: cfg.EditorNames[0],
-		})
-	}
-
-	model := clientSelectModel{options: options, cursor: 0}
-	program := tea.NewProgram(model, tea.WithInput(cmd.InOrStdin()), tea.WithOutput(cmd.OutOrStdout()))
-	finalModel, err := program.Run()
-	if err != nil {
-		return "", fmt.Errorf("failed to run client selection: %w", err)
-	}
-
-	result, ok := finalModel.(clientSelectModel)
-	if !ok {
-		return "", fmt.Errorf("unexpected model type from client selection: %T", finalModel)
-	}
-	if result.selected == "" {
-		return "", errors.New("no client selected")
-	}
-	return result.selected, nil
 }
