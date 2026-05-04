@@ -133,59 +133,23 @@ func uninstallGhostMCPFromClient(ctx context.Context, clientCfg clientConfig, cr
 		return status, detail
 	}
 
-	switch clientCfg.ClientType {
-	case ClaudeCode, Codex, Gemini, KiroCLI:
-		return uninstallGhostMCPViaCLIWithBackup(ctx, clientCfg, createBackup)
-	default:
+	if clientCfg.buildUninstallCommand == nil {
 		return uninstallGhostMCPFromJSONFiles(clientCfg, clientCfg.MCPServersPathPrefix, createBackup)
 	}
-}
 
-// uninstallGhostMCPViaCLIWithBackup backs up the underlying config file (when
-// known and createBackup is true) before invoking the external CLI to remove
-// the Ghost MCP server entry. This keeps `--no-backup` behaviour symmetric
-// between install and uninstall for CLI-managed clients.
-func uninstallGhostMCPViaCLIWithBackup(ctx context.Context, clientCfg clientConfig, createBackup bool) (MCPClientStatus, string) {
+	// uninstall via CLI command
+
 	if createBackup {
 		if backupErr := backupExistingConfigFiles(clientCfg.ConfigPaths); backupErr != nil {
 			return mcpStatusError, backupErr.Error()
 		}
 	}
 
-	switch clientCfg.ClientType {
-	case ClaudeCode:
-		return uninstallGhostMCPViaCLI(ctx, "claude", "mcp", "remove", "-s", "user", mcp.ServerName)
-	case Codex:
-		return uninstallGhostMCPViaCLI(ctx, "codex", "mcp", "remove", mcp.ServerName)
-	case Gemini:
-		return uninstallGhostMCPViaCLI(ctx, "gemini", "mcp", "remove", "-s", "user", mcp.ServerName)
-	case KiroCLI:
-		return uninstallGhostMCPViaCLI(ctx, "kiro-cli", "mcp", "remove", "--name", mcp.ServerName, "--scope", "global")
-	default:
-		return mcpStatusError, fmt.Sprintf("no CLI uninstall command configured for %s", clientCfg.Name)
+	args, err := clientCfg.buildUninstallCommand(mcp.ServerName)
+	if err != nil {
+		return mcpStatusError, fmt.Sprintf("failed to build uninstall command for %s: %v", clientCfg.Name, err)
 	}
-}
-
-// backupExistingConfigFiles backs up every existing file in configPaths.
-// Missing files are skipped silently. The first error encountered is returned.
-func backupExistingConfigFiles(configPaths []string) error {
-	for _, configPath := range configPaths {
-		expandedConfigPath := util.ExpandPath(configPath)
-		if _, err := os.Stat(expandedConfigPath); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			return fmt.Errorf("failed to stat %s: %w", expandedConfigPath, err)
-		}
-		if _, err := createConfigBackup(expandedConfigPath); err != nil {
-			return fmt.Errorf("failed to create backup for %s: %w", expandedConfigPath, err)
-		}
-	}
-	return nil
-}
-
-func uninstallGhostMCPViaCLI(ctx context.Context, command string, args ...string) (MCPClientStatus, string) {
-	output, err := runMCPClientCommand(ctx, command, args...)
+	output, err := runMCPClientCommand(ctx, args[0], args[1:]...)
 	if err == nil {
 		return mcpStatusUninstalled, ""
 	}

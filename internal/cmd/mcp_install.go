@@ -164,18 +164,11 @@ type clientConfig struct {
 	ConfigPaths          []string // Config file locations - used for backup on all clients, and for JSON manipulation on JSON-config clients
 	// buildInstallCommand builds the CLI install command for CLI-based clients
 	// Parameters: serverName (name to register), command (binary path), args (arguments to binary)
-	buildInstallCommand func(serverName, command string, args []string) ([]string, error)
+	buildInstallCommand   func(serverName, command string, args []string) ([]string, error)
+	buildUninstallCommand func(serverName string) ([]string, error)
 	// Optionally provide the check function for status detection (via CLI or other means)
 	// If not provided, will default to JSON config detection
 	detectInstallStatus func(ctx context.Context) (MCPClientStatus, string)
-}
-
-// BuildInstallCommand constructs the install command with the given parameters
-func (c *clientConfig) BuildInstallCommand(serverName, command string, args []string) ([]string, error) {
-	if c.buildInstallCommand == nil {
-		return nil, nil
-	}
-	return c.buildInstallCommand(serverName, command, args)
 }
 
 // supportedClients defines the clients we support for Ghost MCP installation
@@ -189,6 +182,9 @@ var supportedClients = []clientConfig{
 		},
 		buildInstallCommand: func(serverName, command string, args []string) ([]string, error) {
 			return append([]string{"claude", "mcp", "add", "-s", "user", serverName, command}, args...), nil
+		},
+		buildUninstallCommand: func(serverName string) ([]string, error) {
+			return []string{"claude", "mcp", "remove", "-s", "user", serverName}, nil
 		},
 		detectInstallStatus: detectClaudeCodeMCPConfiguration,
 	},
@@ -221,6 +217,9 @@ var supportedClients = []clientConfig{
 		buildInstallCommand: func(serverName, command string, args []string) ([]string, error) {
 			return append([]string{"codex", "mcp", "add", serverName, command}, args...), nil
 		},
+		buildUninstallCommand: func(serverName string) ([]string, error) {
+			return []string{"codex", "mcp", "remove", serverName}, nil
+		},
 		detectInstallStatus: detectCodexMCPConfiguration,
 	},
 	{
@@ -232,6 +231,9 @@ var supportedClients = []clientConfig{
 		},
 		buildInstallCommand: func(serverName, command string, args []string) ([]string, error) {
 			return append([]string{"gemini", "mcp", "add", "-s", "user", serverName, command}, args...), nil
+		},
+		buildUninstallCommand: func(serverName string) ([]string, error) {
+			return []string{"gemini", "mcp", "remove", "-s", "user", serverName}, nil
 		},
 		detectInstallStatus: detectGeminiMCPConfiguration,
 	},
@@ -276,6 +278,9 @@ var supportedClients = []clientConfig{
 		},
 		buildInstallCommand: func(serverName, command string, args []string) ([]string, error) {
 			return []string{"kiro-cli", "mcp", "add", "--name", serverName, "--scope", "global", "--force", "--command", command, "--args", strings.Join(args, ",")}, nil
+		},
+		buildUninstallCommand: func(serverName string) ([]string, error) {
+			return []string{"kiro-cli", "mcp", "remove", "--name", serverName, "--scope", "global"}, nil
 		},
 	},
 }
@@ -727,7 +732,7 @@ func addMCPServerViaCLI(ctx context.Context, clientCfg clientConfig, serverName,
 	}
 
 	// Build the install command with the provided parameters
-	installCommand, err := clientCfg.BuildInstallCommand(serverName, command, args)
+	installCommand, err := clientCfg.buildInstallCommand(serverName, command, args)
 	if err != nil {
 		return fmt.Errorf("failed to build install command: %w", err)
 	}
@@ -745,6 +750,24 @@ func addMCPServerViaCLI(ctx context.Context, clientCfg clientConfig, serverName,
 		return fmt.Errorf("failed to run %s installation command: %w\nCommand: %s", clientCfg.Name, err, cmdStr)
 	}
 
+	return nil
+}
+
+// backupExistingConfigFiles backs up every existing file in configPaths.
+// Missing files are skipped silently. The first error encountered is returned.
+func backupExistingConfigFiles(configPaths []string) error {
+	for _, configPath := range configPaths {
+		expandedConfigPath := util.ExpandPath(configPath)
+		if _, err := os.Stat(expandedConfigPath); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("failed to stat %s: %w", expandedConfigPath, err)
+		}
+		if _, err := createConfigBackup(expandedConfigPath); err != nil {
+			return fmt.Errorf("failed to create backup for %s: %w", expandedConfigPath, err)
+		}
+	}
 	return nil
 }
 
