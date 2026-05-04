@@ -55,15 +55,11 @@ ghost mcp install [client] [flags]
 
   # Install without creating backup
   ghost mcp install claude-code --no-backup
-
-  # Use custom configuration file path
-  ghost mcp install claude-code --config-path ~/custom/config.json
 ```
 
 ### Options
 
 ```
-      --config-path string   Custom path to configuration file (overrides default locations)
   -h, --help                 help for install
       --json                 Output in JSON format
       --no-backup            Skip creating backup of existing configuration (default: create backup)
@@ -82,4 +78,3 @@ ghost mcp install [client] [flags]
 ### SEE ALSO
 
 * [ghost mcp](ghost_mcp.md)	 - Ghost Model Context Protocol (MCP) server
-

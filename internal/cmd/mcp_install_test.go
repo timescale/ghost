@@ -115,11 +115,6 @@ func TestMCPInstallCmd(t *testing.T) {
 			wantErr:    "no client specified and stdin is not a terminal; pass the client name or 'all' as an argument",
 		},
 		{
-			name:    "all with config path errors",
-			args:    []string{"mcp", "install", "all", "--config-path", "/tmp/foo.json"},
-			wantErr: "--config-path cannot be used with 'all'",
-		},
-		{
 			name:      "all target skips already configured and installs json clients",
 			args:      []string{"mcp", "install", "all", "--no-backup", "--json"},
 			ghostPath: "/opt/bin/ghost",

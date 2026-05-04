@@ -135,7 +135,7 @@ func uninstallGhostMCPFromClient(ctx context.Context, clientCfg clientConfig, cr
 	}
 
 	if clientCfg.buildUninstallCommand == nil {
-		return uninstallGhostMCPFromJSONFiles(clientCfg, clientCfg.MCPServersPathPrefix, createBackup)
+		return uninstallGhostMCPFromJSONFiles(clientCfg, createBackup)
 	}
 
 	// uninstall via CLI command
@@ -161,8 +161,8 @@ func uninstallGhostMCPFromClient(ctx context.Context, clientCfg clientConfig, cr
 	return mcpStatusError, errorDetail(err, outputString)
 }
 
-func uninstallGhostMCPFromJSONFiles(clientCfg clientConfig, mcpServersPathPrefix string, createBackup bool) (MCPClientStatus, string) {
-	if mcpServersPathPrefix == "" {
+func uninstallGhostMCPFromJSONFiles(clientCfg clientConfig, createBackup bool) (MCPClientStatus, string) {
+	if clientCfg.MCPServersPathPrefix == "" {
 		return mcpStatusError, fmt.Sprintf("missing MCP servers path for %s", clientCfg.Name)
 	}
 
@@ -176,7 +176,7 @@ func uninstallGhostMCPFromJSONFiles(clientCfg clientConfig, mcpServersPathPrefix
 			return mcpStatusError, fmt.Sprintf("failed to stat %s: %v", expandedConfigPath, err)
 		}
 
-		removed, err := removeGhostMCPFromJSONFile(expandedConfigPath, mcpServersPathPrefix, createBackup)
+		removed, err := removeGhostMCPFromJSONFile(expandedConfigPath, clientCfg.MCPServersPathPrefix, createBackup)
 		if err != nil {
 			return mcpStatusError, err.Error()
 		}

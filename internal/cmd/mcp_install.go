@@ -57,7 +57,6 @@ const (
 // buildMCPInstallCmd creates the install subcommand for configuring editors
 func buildMCPInstallCmd(app *common.App) *cobra.Command {
 	var noBackup bool
-	var configPath string
 	var jsonOutput bool
 	var yamlOutput bool
 
@@ -92,10 +91,7 @@ Pass "all" to configure every supported client. If no client is specified, you'l
   ghost mcp install all
 
   # Install without creating backup
-  ghost mcp install claude-code --no-backup
-
-  # Use custom configuration file path
-  ghost mcp install claude-code --config-path ~/custom/config.json`,
+  ghost mcp install claude-code --no-backup`,
 		Args:         cobra.MaximumNArgs(1),
 		ValidArgs:    getValidMCPClientTargetNames(),
 		SilenceUsage: true,
@@ -119,15 +115,14 @@ Pass "all" to configure every supported client. If no client is specified, you'l
 			}
 
 			if strings.EqualFold(clientName, mcpAllTarget) {
-				return installGhostMCPForAllClients(cmd, !noBackup, configPath, jsonOutput, yamlOutput)
+				return installGhostMCPForAllClients(cmd, !noBackup, jsonOutput, yamlOutput)
 			}
-			return installGhostMCPForClient(cmd, clientName, !noBackup, configPath, jsonOutput, yamlOutput)
+			return installGhostMCPForClient(cmd, clientName, !noBackup, jsonOutput, yamlOutput)
 		},
 	}
 
 	// Add flags
 	cmd.Flags().BoolVar(&noBackup, "no-backup", false, "Skip creating backup of existing configuration (default: create backup)")
-	cmd.Flags().StringVar(&configPath, "config-path", "", "Custom path to configuration file (overrides default locations)")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	cmd.Flags().BoolVar(&yamlOutput, "yaml", false, "Output in YAML format")
 	cmd.MarkFlagsMutuallyExclusive("json", "yaml")
@@ -321,13 +316,13 @@ func mcpClientConfigsForTargetName(targetName string) ([]clientConfig, error) {
 
 // installGhostMCPForClient installs the Ghost MCP server configuration for the specified client.
 // This is the Ghost-specific wrapper used by the CLI that handles defaults and success messages.
-func installGhostMCPForClient(cmd *cobra.Command, clientName string, createBackup bool, customConfigPath string, jsonOutput, yamlOutput bool) error {
+func installGhostMCPForClient(cmd *cobra.Command, clientName string, createBackup bool, jsonOutput, yamlOutput bool) error {
 	clientCfg, err := findClientConfig(clientName)
 	if err != nil {
 		return err
 	}
 
-	statusOutput, err := installGhostMCPForClientWithoutOutput(cmd.Context(), *clientCfg, createBackup, customConfigPath)
+	statusOutput, err := installGhostMCPForClientWithoutOutput(cmd.Context(), *clientCfg, createBackup)
 	if jsonOutput || yamlOutput {
 		if outputErr := writeMCPInstallOutput(cmd, []MCPClientStatusOutput{statusOutput}, jsonOutput, yamlOutput); outputErr != nil {
 			return outputErr
@@ -356,15 +351,11 @@ func installGhostMCPForClient(cmd *cobra.Command, clientName string, createBacku
 	return nil
 }
 
-func installGhostMCPForAllClients(cmd *cobra.Command, createBackup bool, customConfigPath string, jsonOutput, yamlOutput bool) error {
-	if customConfigPath != "" {
-		return errors.New("--config-path cannot be used with 'all'")
-	}
-
+func installGhostMCPForAllClients(cmd *cobra.Command, createBackup bool, jsonOutput, yamlOutput bool) error {
 	rows := make([]MCPClientStatusOutput, len(supportedClients))
 	anyError := false
 	for i, clientCfg := range supportedClients {
-		row, err := installGhostMCPForClientWithoutOutput(cmd.Context(), clientCfg, createBackup, "")
+		row, err := installGhostMCPForClientWithoutOutput(cmd.Context(), clientCfg, createBackup)
 		rows[i] = row
 		if err != nil {
 			anyError = true
@@ -437,7 +428,7 @@ func outputMCPClientResultTable(w io.Writer, rows []MCPClientStatusOutput) error
 	return table.Render()
 }
 
-func installGhostMCPForClientWithoutOutput(ctx context.Context, clientCfg clientConfig, createBackup bool, customConfigPath string) (MCPClientStatusOutput, error) {
+func installGhostMCPForClientWithoutOutput(ctx context.Context, clientCfg clientConfig, createBackup bool) (MCPClientStatusOutput, error) {
 
 	makeErrorResult := func(err error) (MCPClientStatusOutput, error) {
 		return MCPClientStatusOutput{
@@ -463,12 +454,9 @@ func installGhostMCPForClientWithoutOutput(ctx context.Context, clientCfg client
 	args := []string{"mcp", "start"}
 
 	var configPath string
-	if customConfigPath != "" {
-		// Expand custom config path for ~ and environment variables, then use it directly
-		configPath = util.ExpandPath(customConfigPath)
-	} else if len(clientCfg.ConfigPaths) > 0 {
+	if len(clientCfg.ConfigPaths) > 0 {
 		// Use manual config path discovery for clients with configured paths
-		configPath, err = findClientConfigFile(clientCfg.ConfigPaths)
+		configPath, err = findClientConfigFile(clientCfg)
 		if err != nil {
 			return makeErrorResult(fmt.Errorf("failed to find configuration for %s: %w", clientCfg.ClientType, err))
 		}
@@ -544,8 +532,12 @@ func generateSupportedEditorsHelp() string {
 }
 
 // findClientConfigFile finds a client configuration file from a list of possible paths
-func findClientConfigFile(configPaths []string) (string, error) {
-	for _, path := range configPaths {
+func findClientConfigFile(clientCfg clientConfig) (string, error) {
+	if len(clientCfg.ConfigPaths) == 0 {
+		return "", errors.New("no config paths provided")
+	}
+
+	for _, path := range clientCfg.ConfigPaths {
 		// Expand environment variables and home directory
 		expandedPath := util.ExpandPath(path)
 
@@ -556,12 +548,7 @@ func findClientConfigFile(configPaths []string) (string, error) {
 	}
 
 	// If no existing config found, use the first path as default
-	if len(configPaths) == 0 {
-		return "", errors.New("no config paths provided")
-	}
-
-	defaultPath := util.ExpandPath(configPaths[0]) // Use first path as default
-	return defaultPath, nil
+	return util.ExpandPath(clientCfg.ConfigPaths[0]), nil
 }
 
 // ghostExecutablePathFunc can be overridden in tests to return a fixed path

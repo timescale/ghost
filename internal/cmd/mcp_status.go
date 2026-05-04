@@ -116,7 +116,7 @@ func detectMCPClientConfiguration(ctx context.Context, clientCfg clientConfig) (
 	if clientCfg.detectInstallStatus != nil {
 		return clientCfg.detectInstallStatus(ctx)
 	}
-	return detectMCPConfigurationInJSONFiles(clientCfg, clientCfg.MCPServersPathPrefix)
+	return detectMCPConfigurationInJSONFiles(clientCfg)
 }
 
 func mcpStatusExitCode(results []MCPClientStatusOutput) int {
@@ -227,15 +227,15 @@ func detectGeminiMCPConfiguration(ctx context.Context) (MCPClientStatus, string)
 	return mcpStatusNotConfigured, "ghost entry has unexpected command"
 }
 
-func detectMCPConfigurationInJSONFiles(clientCfg clientConfig, mcpServersPathPrefix string) (MCPClientStatus, string) {
-	if mcpServersPathPrefix == "" {
+func detectMCPConfigurationInJSONFiles(clientCfg clientConfig) (MCPClientStatus, string) {
+	if clientCfg.MCPServersPathPrefix == "" {
 		return mcpStatusError, fmt.Sprintf("missing MCP servers path for %s", clientCfg.Name)
 	}
 
 	unexpectedCommand := false
 	for _, configPath := range clientCfg.ConfigPaths {
 		expandedConfigPath := util.ExpandPath(configPath)
-		serverConfig, exists, err := readMCPServerConfigFromJSONFile(expandedConfigPath, mcpServersPathPrefix)
+		serverConfig, exists, err := readMCPServerConfigFromJSONFile(expandedConfigPath, clientCfg.MCPServersPathPrefix)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
