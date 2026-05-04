@@ -155,7 +155,7 @@ func detectClaudeCodeMCPConfiguration(ctx context.Context) (MCPClientStatus, str
 	output, err := runMCPClientCommand(ctx, "claude", "mcp", "get", mcp.ServerName)
 	outputString := string(output)
 	if err != nil {
-		if isExecutableNotFound(err) || strings.Contains(outputString, "No MCP server found") || strings.Contains(outputString, "No MCP servers are configured") {
+		if errors.Is(err, exec.ErrNotFound) || strings.Contains(outputString, "No MCP server found") || strings.Contains(outputString, "No MCP servers are configured") {
 			return mcpStatusNotConfigured, ""
 		}
 		return mcpStatusError, errorDetail(err, outputString)
@@ -172,7 +172,7 @@ func detectClaudeCodeMCPConfiguration(ctx context.Context) (MCPClientStatus, str
 func detectCodexMCPConfiguration(ctx context.Context) (MCPClientStatus, string) {
 	output, err := runMCPClientCommand(ctx, "codex", "mcp", "list", "--json")
 	if err != nil {
-		if isExecutableNotFound(err) {
+		if errors.Is(err, exec.ErrNotFound) {
 			return mcpStatusNotConfigured, ""
 		}
 		return mcpStatusError, errorDetail(err, string(output))
@@ -207,7 +207,7 @@ func detectGeminiMCPConfiguration(ctx context.Context) (MCPClientStatus, string)
 	output, err := runMCPClientCommand(ctx, "gemini", "mcp", "list", "--debug")
 	outputString := string(output)
 	if err != nil {
-		if isExecutableNotFound(err) {
+		if errors.Is(err, exec.ErrNotFound) {
 			return mcpStatusNotConfigured, ""
 		}
 		return mcpStatusError, errorDetail(err, outputString)
@@ -309,11 +309,6 @@ func isExpectedGhostMCPCommand(command string, args []string) bool {
 func isGhostExecutableCommand(command string) bool {
 	base := strings.ToLower(filepath.Base(command))
 	return base == "ghost" || base == "ghost.exe"
-}
-
-func isExecutableNotFound(err error) bool {
-	var execErr *exec.Error
-	return errors.As(err, &execErr) && errors.Is(execErr.Err, exec.ErrNotFound)
 }
 
 // errorDetail returns a human-readable detail string for a failed external

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -154,7 +155,7 @@ func uninstallGhostMCPFromClient(ctx context.Context, clientCfg clientConfig, cr
 		return mcpStatusUninstalled, ""
 	}
 	outputString := string(output)
-	if isExecutableNotFound(err) || strings.Contains(outputString, "No MCP server found") || strings.Contains(outputString, "No MCP servers are configured") || strings.Contains(outputString, "No MCP server named") {
+	if errors.Is(err, exec.ErrNotFound) || strings.Contains(outputString, "No MCP server found") || strings.Contains(outputString, "No MCP servers are configured") || strings.Contains(outputString, "No MCP server named") {
 		return mcpStatusNotConfigured, ""
 	}
 	return mcpStatusError, errorDetail(err, outputString)
