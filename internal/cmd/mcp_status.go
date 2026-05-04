@@ -232,7 +232,6 @@ func detectMCPConfigurationInJSONFiles(clientCfg clientConfig, mcpServersPathPre
 		return mcpStatusError, fmt.Sprintf("missing MCP servers path for %s", clientCfg.Name)
 	}
 
-	configured := false
 	unexpectedCommand := false
 	for _, configPath := range clientCfg.ConfigPaths {
 		expandedConfigPath := util.ExpandPath(configPath)
@@ -247,15 +246,12 @@ func detectMCPConfigurationInJSONFiles(clientCfg clientConfig, mcpServersPathPre
 			continue
 		}
 		if isExpectedGhostMCPCommand(serverConfig.Command, serverConfig.Args) {
-			configured = true
+			return mcpStatusConfigured, ""
 		} else {
 			unexpectedCommand = true
 		}
 	}
 
-	if configured {
-		return mcpStatusConfigured, ""
-	}
 	if unexpectedCommand {
 		return mcpStatusNotConfigured, "ghost entry has unexpected command"
 	}
