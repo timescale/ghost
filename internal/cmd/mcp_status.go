@@ -285,6 +285,10 @@ func readMCPServerConfigFromJSONFile(configPath, mcpServersPathPrefix string) (M
 }
 
 func extractNamedValue(output, name string) string {
+	// Match a line of the form `  <name>: <value>` (e.g. `Command: ghost` or
+	// `Args: mcp start`) anywhere in the output. Leading whitespace and
+	// whitespace around the colon are tolerated; the value (group 1) is the
+	// remainder of the line with surrounding whitespace trimmed.
 	pattern := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*:\s*(.*?)\s*$`)
 	match := pattern.FindStringSubmatch(output)
 	if len(match) < 2 {
@@ -294,6 +298,11 @@ func extractNamedValue(output, name string) string {
 }
 
 func extractGeminiGhostCommandLine(output string) (string, bool) {
+	// Match a line from `gemini mcp list --debug` describing the ghost server,
+	// which looks like `... ghost: <command and args> (stdio) ...`. The server
+	// name is anchored on a word boundary so it does not match a substring of
+	// another name, and group 1 captures everything between `ghost:` and the
+	// trailing `(stdio)` marker, trimmed of surrounding whitespace.
 	pattern := regexp.MustCompile(`(?m)^.*\b` + regexp.QuoteMeta(mcp.ServerName) + `:\s*(.*?)\s*\(stdio\).*$`)
 	match := pattern.FindStringSubmatch(output)
 	if len(match) < 2 {
