@@ -236,15 +236,11 @@ func detectMCPConfigurationInJSONFiles(clientCfg clientConfig, mcpServersPathPre
 	unexpectedCommand := false
 	for _, configPath := range clientCfg.ConfigPaths {
 		expandedConfigPath := util.ExpandPath(configPath)
-		if _, err := os.Stat(expandedConfigPath); err != nil {
+		serverConfig, exists, err := readMCPServerConfigFromJSONFile(expandedConfigPath, mcpServersPathPrefix)
+		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
-			return mcpStatusError, fmt.Sprintf("failed to stat %s: %v", expandedConfigPath, err)
-		}
-
-		serverConfig, exists, err := readMCPServerConfigFromJSONFile(expandedConfigPath, mcpServersPathPrefix)
-		if err != nil {
 			return mcpStatusError, err.Error()
 		}
 		if !exists {
