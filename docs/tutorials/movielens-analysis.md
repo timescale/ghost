@@ -18,9 +18,11 @@ You'll need:
 
 ## What is Ghost
 
-**Ghost is Postgres for tinkerers, agent-first.** Unlimited databases, metered by hours of active compute. Create one in seconds, fork it like git when you want to try something risky, throw it away when you're done. The free tier covers 100 active compute hours per month and 1TB of storage, with hard spending caps and unlimited forks. Paused databases stop burning compute hours. And it ships with first-class CLI and MCP, which is what makes it easy to hand to an agent.
+**Ghost is Postgres for builders and their agents.** Unlimited databases, metered by hours of active compute. All via CLI and MCP, no GUI required.
 
-You could do all of this manually with local Postgres, schema dumps, and cleanup scripts. Ghost makes it disposable: install the CLI, point your agent at the MCP server, and the agent has tools to create, query, fork, and delete databases on demand.
+Create one in seconds, fork it like git when you want to experiment safely, share it with a simple link like a Google doc. Graduate to production with one command or throw it away when you're done.
+
+The free tier covers 100 active compute hours per month and 1TB of storage. Compute is metered when something actually queries the database, in 15 minute intervals. Unused databases automatically stop burning compute hours. 
 
 ## What you will do
 
@@ -34,8 +36,6 @@ In this guide, we will analyze MovieLens movie-ratings data using Ghost and an A
 6. **Clean up (agent):** delete the database.
 
 ## Step 1 — Bootstrap Ghost (you, one-time)
-
-This is the only part you can't delegate. The agent can't install itself.
 
 Install the `ghost` CLI:
 
@@ -72,7 +72,9 @@ Backup saved to ~/.claude.json.bak
 
 Tell the agent:
 
-> Make a working directory called `movielens-tutorial` and `cd` into it. Download the MovieLens 100K dataset from `https://files.grouplens.org/datasets/movielens/ml-latest-small.zip` with `curl`, then extract it. If `unzip` isn't available, fall back to `python3 -m zipfile -e ml-latest-small.zip .`. Confirm the four CSVs (`movies.csv`, `ratings.csv`, `tags.csv`, `links.csv`) are present.
+```
+Make a working directory called `movielens-tutorial` and `cd` into it. Download the MovieLens 100K dataset from `https://files.grouplens.org/datasets/movielens/ml-latest-small.zip` with `curl`, then extract it. If `unzip` isn't available, fall back to `python3 -m zipfile -e ml-latest-small.zip .`. Confirm the four CSVs (`movies.csv`, `ratings.csv`, `tags.csv`, `links.csv`) are present.
+```
 
 The agent will use its Bash tool to run `curl -O ...` and `unzip ...` (or the Python fallback), then `ls` to confirm.
 
@@ -90,13 +92,16 @@ You'll need `psql`, the Postgres command-line client, for the load step.
 
 Tell the agent:
 
-> Check if `psql` is installed by running `psql --version`. If it's missing, detect my platform (use `uname -s`, plus `/etc/os-release` if Linux) and install the right client:
-> - macOS: `brew install libpq && brew link --force libpq`
-> - Debian/Ubuntu: `sudo apt update && sudo apt install -y postgresql-client`
-> - Fedora/RHEL: `sudo dnf install -y postgresql`
-> - Windows: `winget install PostgreSQL.PostgreSQL`
->
-> Re-run `psql --version` to confirm.
+```
+Check if `psql` is installed by running `psql --version`. If it's missing, detect my platform (use `uname -s`, plus `/etc/os-release` if Linux) and install the right client:
+
+- macOS: `brew install libpq && brew link --force libpq`
+- Debian/Ubuntu: `sudo apt update && sudo apt install -y postgresql-client`
+- Fedora/RHEL: `sudo dnf install -y postgresql`
+- Windows: `winget install PostgreSQL.PostgreSQL`
+
+Re-run `psql --version` to confirm.
+```
 
 **Expected output** (the version doesn't matter — anything 13 or newer works):
 
@@ -104,13 +109,15 @@ Tell the agent:
 psql (PostgreSQL) 16.4
 ```
 
-Why `psql` and not just the agent's MCP tools? `psql`'s `\copy` meta-command streams a local file to the server in one operation. The agent's `ghost_sql` tool runs SQL on the server, so it can't see files on your local disk. We use the right tool for each job.
+Why `psql` and not just the agent's MCP tools? `psql`'s `\copy` meta-command streams a local file to the server in one operation. The agent's `ghost_sql` tool runs SQL on the server, so it can't see files on your local disk.
 
 ## Step 4 — Create the database and load the data
 
 Tell the agent:
 
-> Create a new Ghost database called `movielens` and wait for it to be ready. Then inspect the four CSVs in the `movielens-tutorial/` directory (`movies.csv`, `ratings.csv`, `tags.csv`, `links.csv`), infer an appropriate Postgres schema for each, and create the tables. Once the schema is in place, get the connection string with `ghost connect movielens` and load each CSV using `psql \copy ... WITH (FORMAT csv, HEADER true)` (run psql from inside `movielens-tutorial/` so the file paths resolve). Show me the row counts when you're done.
+```
+Create a new Ghost database called `movielens` and wait for it to be ready. Then inspect the four CSVs in the `movielens-tutorial/` directory (`movies.csv`, `ratings.csv`, `tags.csv`, `links.csv`), infer an appropriate Postgres schema for each, and create the tables. Once the schema is in place, get the connection string with `ghost connect movielens` and load each CSV using `psql \copy ... WITH (FORMAT csv, HEADER true)` (run psql from inside `movielens-tutorial/` so the file paths resolve). Show me the row counts when you're done.
+```
 
 The agent will:
 
@@ -151,7 +158,9 @@ This is the payoff. Each question is a separate prompt; the agent translates to 
 
 Tell the agent:
 
-> What are the top 10 movies by average rating, considering only movies with at least 50 ratings?
+```
+What are the top 10 movies by average rating, considering only movies with at least 50 ratings?
+```
 
 The agent will run something like:
 
@@ -182,7 +191,9 @@ LIMIT 10;
 
 Tell the agent:
 
-> Find the 10 most polarizing movies — the ones with the highest standard deviation in rating, with at least 100 ratings.
+```
+Find the 10 most polarizing movies — the ones with the highest standard deviation in rating, with at least 100 ratings.
+```
 
 The agent will run something like:
 
@@ -214,7 +225,9 @@ A high standard deviation means viewers split sharply for and against the movie 
 
 Tell the agent:
 
-> Find the top 5 movie pairs that are most often rated 4 or higher by the same user. Return both titles and the count of users who rated both highly.
+```
+Find the top 5 movie pairs that are most often rated 4 or higher by the same user. Return both titles and the count of users who rated both highly.
+```
 
 This is the hardest of the three — it requires a self-join on ratings, deduplicated so each pair (A, B) doesn't also show up as (B, A). The agent should produce something like:
 
@@ -258,7 +271,9 @@ If a result looks off, ask the agent to explain its query — that's part of the
 
 Tell the agent:
 
-> Delete the `movielens` Ghost database. Confirm with me first before running it.
+```
+Delete the `movielens` Ghost database. Confirm with me first before running it.
+```
 
 The agent will use `ghost_delete` with `confirm: true` after you OK the tool call.
 
@@ -272,11 +287,9 @@ You're done.
 
 ## Wrap-up
 
-You now have a repeatable workflow for letting an AI agent do real Postgres analysis end-to-end. After a one-time bootstrap, the agent handles everything: download, install, schema, load, query, cleanup. You learned how to:
+You now have a repeatable workflow for letting an AI agent do real Postgres analysis end-to-end. After a one-time bootstrap, the agent handles everything. You learned how to:
 
 - Install Ghost and configure its MCP server in your agent
-- Hand the agent a sequence of natural-language prompts and watch it do the work
-- Bridge the load step with `psql \copy` when an MCP tool can't reach local files
 - Ask analytical questions in plain English and have the agent run the SQL
 - Clean up cleanly when you're done
 
@@ -285,6 +298,14 @@ You now have a repeatable workflow for letting an AI agent do real Postgres anal
 - Try a larger dataset — the [full MovieLens dataset](https://grouplens.org/datasets/movielens/) is 33M ratings, or try [NYC taxi trips](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) for time-series and geo work.
 - Tell the agent to `ghost_fork` the database with a new name to try transformations on a copy without touching the original.
 - Ask the agent to build a materialized view or index for one of the slower queries above and measure the speedup.
+
+## Make Ghost your default database!
+
+Tell your agent:
+
+```
+Default Postgres to Ghost. Whenever you need a database for prototyping, tests, analysis, or schema experiments, create one in Ghost, fork it before risky changes, and delete it when you're done.
+```
 
 ## FAQ
 
