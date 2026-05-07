@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	lipgloss "charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
@@ -186,12 +187,33 @@ func versionCheck(cmd *cobra.Command, app *common.App) func() {
 
 	return func() {
 		// Output version check result
-		if vr, ok := <-versionCh; ok {
-			if vr.err != nil && !errors.Is(vr.err, context.Canceled) {
-				cmd.PrintErrf("Warning: failed to check for updates: %v\n", vr.err)
-			} else if msg := vr.result.String(); msg != "" && cfg.VersionCheck {
-				cmd.PrintErrln(msg)
-			}
+		vr, ok := <-versionCh
+
+		// Re-check cfg.VersionCheck: the command may have mutated it in
+		// place (e.g. `ghost config set version_check false`).
+		if !ok || !cfg.VersionCheck {
+			return
 		}
+
+		if vr.err != nil && !errors.Is(vr.err, context.Canceled) {
+			cmd.PrintErrf("Warning: failed to check for updates: %v\n", vr.err)
+			return
+		}
+
+		if vr.result == nil || !vr.result.UpdateAvailable {
+			return
+		}
+
+		yellow := lipgloss.NewStyle().Foreground(lipgloss.Yellow)
+		cyan := lipgloss.NewStyle().Foreground(lipgloss.Cyan)
+		msg := fmt.Sprintf("\n%s %s → %s",
+			yellow.Render("A new release of ghost is available:"),
+			cyan.Render(vr.result.CurrentVersion),
+			cyan.Render(vr.result.LatestVersion),
+		)
+		if vr.result.UpdateCommand != "" {
+			msg += fmt.Sprintf("\nTo upgrade: %s", vr.result.UpdateCommand)
+		}
+		cmd.PrintErrln(msg)
 	}
 }

@@ -31,21 +31,44 @@ type Server struct {
 
 // NewServer creates a new Ghost MCP server instance
 func NewServer(ctx context.Context, app *common.App, logger *slog.Logger) (*Server, error) {
+	logger = ensureLogger(logger)
+	instructions := "Ghost provides tools for creating, managing, and querying fully-managed PostgreSQL databases. " +
+		"Use it to provision new databases, fork existing ones, pause and resume instances, execute SQL queries, inspect schemas, and manage credentials. " +
+		"It also provides access to PostgreSQL documentation through semantic and keyword search."
+
+	// Append a directive to the instructions when an update is available, so
+	// the agent proactively surfaces the outdated CLI to the user. Runs
+	// synchronously so the message is included in the MCP server's
+	// initialization response. Errors are logged but never block server
+	// startup.
+	if cfg := app.GetConfig(); cfg.VersionCheck {
+		res, err := common.CheckVersion(ctx, cfg.ReleasesURL)
+		if err != nil {
+			logger.Error("version check failed", slog.String("error", err.Error()))
+		} else if res.UpdateAvailable {
+			instructions += fmt.Sprintf(
+				"\n\nIMPORTANT: The user's Ghost CLI is outdated (running %s; latest is %s). "+
+					"Before performing any Ghost-related work, proactively inform the user that their "+
+					"Ghost CLI is outdated and recommend they upgrade by running: %s. "+
+					"After upgrading, the user will need to reconnect the Ghost MCP server for the new version to take effect.",
+				res.CurrentVersion, res.LatestVersion, res.UpdateCommand,
+			)
+		}
+	}
+
 	// Create MCP server
 	mcpServer := mcp.NewServer(&mcp.Implementation{
 		Name:    ServerName,
 		Title:   serverTitle,
 		Version: config.Version,
 	}, &mcp.ServerOptions{
-		Instructions: "Ghost provides tools for creating, managing, and querying fully-managed PostgreSQL databases. " +
-			"Use it to provision new databases, fork existing ones, pause and resume instances, execute SQL queries, inspect schemas, and manage credentials. " +
-			"It also provides access to PostgreSQL documentation through semantic and keyword search.",
-		Logger: logger,
+		Instructions: instructions,
+		Logger:       logger,
 	})
 
 	server := &Server{
 		mcpServer: mcpServer,
-		logger:    ensureLogger(logger),
+		logger:    logger,
 		app:       app,
 	}
 

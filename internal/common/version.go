@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	lipgloss "charm.land/lipgloss/v2"
 	"github.com/timescale/ghost/internal/api"
 	"github.com/timescale/ghost/internal/config"
 	"golang.org/x/mod/semver"
@@ -214,27 +213,4 @@ func getUpdateCommand(method InstallMethod) string {
 	default:
 		return ""
 	}
-}
-
-// String returns a message describing the available update,
-// or an empty string if no update is available.
-func (r *VersionCheckResult) String() string {
-	if r == nil || !r.UpdateAvailable {
-		return ""
-	}
-
-	yellow := lipgloss.NewStyle().Foreground(lipgloss.Yellow)
-	cyan := lipgloss.NewStyle().Foreground(lipgloss.Cyan)
-
-	msg := fmt.Sprintf("\n%s %s → %s",
-		yellow.Render("A new release of ghost is available:"),
-		cyan.Render(r.CurrentVersion),
-		cyan.Render(r.LatestVersion),
-	)
-
-	if r.UpdateCommand != "" {
-		msg += fmt.Sprintf("\nTo upgrade: %s", r.UpdateCommand)
-	}
-
-	return msg
 }
