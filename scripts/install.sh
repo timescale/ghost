@@ -30,7 +30,10 @@
 #   - Standard POSIX utilities (mktemp, chmod, etc.)
 set -eu
 
+# ============================================================================
 # Configuration
+# ============================================================================
+
 REPO_NAME="ghost"
 BINARY_NAME="ghost"
 
@@ -44,22 +47,95 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Logging functions
+# ============================================================================
+# Shared utilities
+# ============================================================================
+
+# True when stderr is a TTY that supports ANSI escape sequences (cursor
+# positioning, in-place updates, colors). False for pipes, redirected
+# files, and dumb terminals — TERM=dumb is the historical Unix marker
+# for environments (emacs shell-mode, some CI runners) that don't
+# understand control sequences.
+supports_ansi_escapes() {
+    [ -t 2 ] && [ "${TERM:-}" != "dumb" ]
+}
+
+# Logging functions. log_info is gated on QUIET so the post-animation flow
+# can suppress its own helpers' chatter while showing explicit status
+# updates. log_warn and log_error clear any in-place status line first so
+# their output doesn't get jumbled with whatever was there.
 log_info() {
-    printf "%b[INFO]%b %s\n" "${BLUE}" "${NC}" "$1" >&2
+    if [ "${QUIET:-false}" = "true" ]; then
+        return
+    fi
+    printf "%s\n" "$1" >&2
+}
+
+log_debug() {
+    if [ "${QUIET:-false}" = "true" ]; then
+        return
+    fi
+    if [ "${DEBUG:-false}" = "true" ]; then
+      printf "%s\n" "$1" >&2
+    fi
 }
 
 log_success() {
-    printf "%b[SUCCESS]%b %s\n" "${GREEN}" "${NC}" "$1" >&2
+    printf "%s\n" "$1" >&2
 }
 
 log_warn() {
+    if [ -t 2 ]; then
+        printf "\r\033[K" >&2
+    fi
     printf "%b[WARN]%b %s\n" "${YELLOW}" "${NC}" "$1" >&2
 }
 
 log_error() {
+    if [ -t 2 ]; then
+        printf "\r\033[K" >&2
+    fi
     printf "%b[ERROR]%b %s\n" "${RED}" "${NC}" "$1" >&2
 }
+
+# Overwrite the current line with the given content, leaving the cursor on
+# that same line so a subsequent call can replace it. On non-TTY output
+# (pipes, dumb terminals) each call prints on a fresh line instead.
+update_status_line() {
+    if supports_ansi_escapes; then
+        printf "\r\033[K%b" "$1" >&2
+    else
+        printf "%b\n" "$1" >&2
+    fi
+}
+
+# Read the first line of a file, stripping any trailing CR/LF. Returns
+# empty when the file doesn't exist or is empty so callers can treat
+# absent and empty files identically.
+read_first_line() {
+    [ -s "$1" ] || return 0
+    head -n1 "$1" | tr -d '\n\r'
+}
+
+# Get the size of a file in bytes. Returns 0 if the file doesn't exist.
+file_size() {
+    if [ ! -f "$1" ]; then
+        echo 0
+        return
+    fi
+    wc -c < "$1" 2>/dev/null | tr -d ' \t' || echo 0
+}
+
+# Fetch the Content-Length of a URL via a HEAD request. Returns empty if
+# the server doesn't expose Content-Length.
+content_length() {
+    local url="$1"
+    curl -sLI "${url}" 2>/dev/null | tr -d '\r' | awk -F: 'tolower($1) == "content-length" { gsub(/[ \t]/, "", $2); print $2 }' | tail -n1
+}
+
+# ============================================================================
+# Install flow helpers
+# ============================================================================
 
 # Detect OS and architecture
 detect_platform() {
@@ -91,7 +167,7 @@ verify_dependencies() {
     local platform="$1"
 
     # Build complete dependency list based on platform
-    local required_deps="curl mktemp head tr sed awk grep uname chmod cp mkdir sleep"
+    local required_deps="curl mktemp head tr sed awk grep uname chmod cp mkdir sleep cat wc"
 
     if echo "${platform}" | grep -q "windows"; then
         required_deps="${required_deps} unzip"
@@ -116,32 +192,41 @@ verify_dependencies() {
     fi
 }
 
-# Download a URL to stdout with retry logic
-fetch_with_retry() {
-    local url="$1"
-    local description="${2:-content}"
+# Run curl with retries and exponential backoff. The action verb (e.g.
+# "fetch", "download") and description appear in log messages; the
+# remaining args are passed through to curl. Exits the script if all
+# retries fail.
+curl_with_retry() {
+    local action="$1"
+    local description="$2"
+    local url="$3"
+    shift 3
     local max_retries=3
     local retry_count=0
     local backoff_seconds=1
 
-    while [ ${retry_count} -le "${max_retries}" ]; do
-        local content
-        if content=$(curl -fsSL "${url}" 2>/dev/null); then
-            echo "${content}"
+    while [ "${retry_count}" -le "${max_retries}" ]; do
+        if curl -fsSL "$@" "${url}"; then
             return 0
+        fi
+        retry_count=$((retry_count + 1))
+        if [ "${retry_count}" -le "${max_retries}" ]; then
+            log_warn "${description} ${action} failed, retrying (${retry_count}/${max_retries})..."
+            sleep "${backoff_seconds}"
+            backoff_seconds=$((backoff_seconds * 2))
         else
-            retry_count=$((retry_count + 1))
-            if [ "${retry_count}" -le "${max_retries}" ]; then
-                log_warn "${description} fetch failed, retrying (${retry_count}/${max_retries})..."
-                sleep ${backoff_seconds}
-                backoff_seconds=$((backoff_seconds * 2))
-            else
-                log_error "Failed to fetch ${description} after $((max_retries + 1)) attempts"
-                log_error "URL: ${url}"
-                exit 1
-            fi
+            log_error "Failed to ${action} ${description} after $((max_retries + 1)) attempts"
+            log_error "URL: ${url}"
+            exit 1
         fi
     done
+}
+
+# Download a URL to stdout with retry logic
+fetch_with_retry() {
+    local url="$1"
+    local description="${2:-content}"
+    curl_with_retry fetch "${description}" "${url}"
 }
 
 # Download a file with retry logic
@@ -149,29 +234,9 @@ download_with_retry() {
     local url="$1"
     local output_file="$2"
     local description="${3:-file}"
-    local max_retries=3
-    local retry_count=0
-    local backoff_seconds=1
-
     log_info "Downloading ${description}..."
     log_info "URL: ${url}"
-
-    while [ ${retry_count} -le "${max_retries}" ]; do
-        if curl -fsSL "${url}" -o "${output_file}"; then
-            return 0
-        else
-            retry_count=$((retry_count + 1))
-            if [ "${retry_count}" -le "${max_retries}" ]; then
-                log_warn "${description} download failed, retrying (${retry_count}/${max_retries})..."
-                sleep ${backoff_seconds}
-                backoff_seconds=$((backoff_seconds * 2))
-            else
-                log_error "Failed to download ${description} after $((max_retries + 1)) attempts"
-                log_error "URL: ${url}"
-                exit 1
-            fi
-        fi
-    done
+    curl_with_retry download "${description}" "${url}" -o "${output_file}"
 }
 
 # Get version (from VERSION env var or latest from CloudFront)
@@ -317,22 +382,26 @@ verify_checksum() {
     fi
 }
 
-# Download archive and verify checksum
-download_archive() {
-    local version="$1"
-    local archive_name="$2"
-    local tmp_dir="$3"
-    local platform="$4"
+# Fetch the version, build the archive name, and download the archive (no
+# checksum verification — that runs in the foreground after the animation
+# so we can show separate status updates for each step). Intended to run in
+# the background while the intro animation plays.
+download_archive_for_platform() {
+    local platform="$1"
+    local tmp_dir="$2"
+    local version_file="$3"
+    local archive_name_file="$4"
 
-    # Construct download URL
+    local version
+    version="$(get_version)"
+    printf "%s\n" "${version}" > "${version_file}"
+
+    local archive_name
+    archive_name="$(build_archive_name "${platform}")"
+    printf "%s\n" "${archive_name}" > "${archive_name_file}"
+
     local download_url="${DOWNLOAD_BASE_URL}/releases/${version}/${archive_name}"
-
-    # Download archive with retry logic
     download_with_retry "${download_url}" "${tmp_dir}/${archive_name}" "Ghost ${version} for ${platform}"
-
-    # Download and validate checksum
-    log_info "Verifying file integrity..."
-    verify_checksum "${version}" "${archive_name}" "${tmp_dir}"
 }
 
 # Extract archive and return path to binary
@@ -381,8 +450,7 @@ verify_installation() {
     local installed_version
     if installed_version=$("${binary_path}" version --bare --version-check=false 2>/dev/null | head -n1 || echo ""); then
         if [ -n "${installed_version}" ]; then
-            log_success "Ghost installed successfully!"
-            log_success "Version: ${installed_version}"
+            log_debug "Ghost ${installed_version} installed successfully!"
         else
             log_success "Binary installed successfully at ${binary_path}"
         fi
@@ -406,10 +474,10 @@ prompt_yn() {
     local reply=""
 
     if [ -r /dev/tty ]; then
-        printf "%b[PROMPT]%b %s [y/N]: " "${BLUE}" "${NC}" "${prompt}" > /dev/tty
+        printf "%s [y/N]: " "${prompt}" > /dev/tty
         IFS= read -r reply < /dev/tty || reply=""
     else
-        printf "%b[PROMPT]%b %s [y/N]: " "${BLUE}" "${NC}" "${prompt}" >&2
+        printf "%s [y/N]: " "${prompt}" >&2
         IFS= read -r reply || reply=""
     fi
 
@@ -511,9 +579,9 @@ configure_path_in_shellrc() {
             ;;
     esac
 
-    if ! is_interactive || ! prompt_yn "Add ${install_dir} to PATH in ${shell_rc}?"; then
-        log_warn "To add it manually, run:"
-        log_warn "    ${manual_cmd}"
+    if ! is_interactive || ! prompt_yn "Add to PATH in ${shell_rc}?"; then
+        log_info "To add it manually, run:"
+        log_info "    ${manual_cmd}"
         return 0
     fi
 
@@ -563,7 +631,7 @@ configure_shell_completions() {
 
     # Already configured? Look for any reference to `ghost completion` in rc.
     if [ -f "${shell_rc}" ] && grep -qF "${BINARY_NAME} completion" "${shell_rc}" 2>/dev/null; then
-        log_info "Shell completions already configured in ${shell_rc}"
+        log_debug "Shell completions already configured in ${shell_rc}"
         return 0
     fi
 
@@ -609,73 +677,575 @@ configure_shell_completions() {
     log_info "Restart your shell or run: source ${shell_rc}"
 }
 
-# Main installation process
-main() {
-    log_info "Ghost Installation Script"
-    log_info "=============================="
+# ============================================================================
+# main
+# ============================================================================
 
-    # Detect platform first (needed for dependency checking)
+main() {
+    # Detect platform and verify dependencies before starting the background
+    # download so failures happen before the animation hides output.
     local platform
     platform=$(detect_platform)
-    log_info "Detected platform: ${platform}"
-
-    # Verify all required dependencies are available
     verify_dependencies "${platform}"
 
-    # Get version (handles VERSION env var internally)
-    local version
-    version="$(get_version)"
-
-    # Determine the installed binary filename (includes .exe on Windows)
-    local installed_binary="${BINARY_NAME}"
-    if echo "${platform}" | grep -q "windows"; then
-        installed_binary="${BINARY_NAME}.exe"
-    fi
-
-    # Find and ensure install directory exists and get its path
-    local install_dir
-    install_dir="$(detect_install_dir)"
-
-    # Create temporary directory
+    # Create temporary directory.
     local tmp_dir
     tmp_dir="$(mktemp -d)"
     # shellcheck disable=SC2064 # We want to expand ${tmp_dir} immediately, because it's out-of-scope when EXIT fires
     trap "rm -rf '${tmp_dir}'" EXIT
 
-    # Build archive name for the platform
-    local archive_name
-    archive_name="$(build_archive_name "${platform}")"
+    local version_file="${tmp_dir}/version"
+    local archive_name_file="${tmp_dir}/archive_name"
+    local download_log="${tmp_dir}/download.log"
+    local download_pid
 
-    # Download and verify the archive
-    download_archive "${version}" "${archive_name}" "${tmp_dir}" "${platform}"
+    # Suppress info-level chatter from helpers while the in-place status
+    # display is active. Warnings and errors still surface via log_warn /
+    # log_error (which clear the status line first).
+    local QUIET=true
 
-    # Extract the archive and get binary path
+    # Start the binary download in the background. The background task
+    # writes the version and archive name to files (so we can read them as
+    # soon as the animation finishes) and downloads the archive. Checksum
+    # verification runs in the foreground after the animation so it can show
+    # its own status update.
+    download_archive_for_platform "${platform}" "${tmp_dir}" "${version_file}" "${archive_name_file}" > "${download_log}" 2>&1 &
+    download_pid=$!
+
+    # Run the intro animation. While it plays, it draws the version
+    # header and download progress bar in the same frame redraw so they
+    # appear as soon as the version is known. After the main frames end,
+    # the animation keeps blinking the eyes — and polling progress —
+    # until the download finishes.
+    play_ghost_intro_animation "${platform}" "${version_file}" "${archive_name_file}" "${tmp_dir}" "${download_pid}"
+
+    # Wait for the version and archive name files to appear. The animation
+    # already waited in TTY mode (until the download completed), but the
+    # static-fallback path doesn't, and an early download failure is
+    # possible in either path.
+    while [ ! -s "${version_file}" ] || [ ! -s "${archive_name_file}" ]; do
+        if ! kill -0 "${download_pid}" 2>/dev/null; then
+            break
+        fi
+        sleep 0.05
+    done
+
+    local version archive_name
+    version="$(read_first_line "${version_file}")"
+    archive_name="$(read_first_line "${archive_name_file}")"
+
+    local installed_binary="${BINARY_NAME}"
+    if echo "${platform}" | grep -q "windows"; then
+        installed_binary="${BINARY_NAME}.exe"
+    fi
+
+    # In non-TTY mode the animation just printed the static ghost — the
+    # header and progress weren't drawn. Print them now so the non-
+    # interactive path still shows what's happening.
+    if ! supports_ansi_escapes; then
+        if [ -n "${version}" ]; then
+            printf "%s\n" "$(format_install_header "${version}" "${platform}")" >&2
+        fi
+        if kill -0 "${download_pid}" 2>/dev/null; then
+            printf "Downloading...\n" >&2
+        fi
+    fi
+
+    if ! wait "${download_pid}"; then
+        update_status_line ""
+        printf "\n" >&2
+        cat "${download_log}" >&2
+        exit 1
+    fi
+
+    if supports_ansi_escapes; then
+        update_status_line "Downloading $(render_progress_bar 100)"
+    fi
+
+    # Verify the archive's checksum (downloads the .sha256 file and runs
+    # sha256sum/shasum -c).
+    update_status_line "Verifying integrity..."
+    verify_checksum "${version}" "${archive_name}" "${tmp_dir}"
+
+    # Find a writable install directory.
+    local install_dir
+    install_dir="$(detect_install_dir)"
+
+    # Extract the archive and locate the binary.
+    update_status_line "Extracting archive..."
     local binary_path
     binary_path="$(extract_archive "${archive_name}" "${tmp_dir}" "${platform}")"
 
-    # Copy binary to install directory
-    # Remove existing binary first to prevent errors related
-    # to swapping out a currently executing binary
-    log_info "Installing to ${install_dir}..."
+    # Install the binary.
+    update_status_line "Installing to ${install_dir}..."
     rm -f "${install_dir}/${installed_binary}"
     cp "${binary_path}" "${install_dir}/${installed_binary}"
 
-    # Offer to configure PATH and shell completions in the user's shellrc.
-    # Both are guarded behind confirmation prompts and fall back to printing
-    # manual instructions when declined or running non-interactively.
+    # Finalize the in-place status line and add a blank line before the
+    # subsequent (non-in-place) sections.
+    update_status_line "${GREEN}✓${NC} Installed to ${install_dir}/${installed_binary}"
+    printf "\n\n" >&2
+
+    # Restore log_info so the interactive shellrc helpers and the final
+    # usage messages can speak normally.
+    QUIET=false
+
     configure_path_in_shellrc "${install_dir}"
     configure_shell_completions "${installed_binary}"
 
-    # Verify installation
     verify_installation "${install_dir}" "${installed_binary}"
 
-    # Show usage information
-    log_success "Get started with:"
-    log_success "    ${installed_binary} login"
-    log_success "    ${installed_binary} mcp install"
-    log_success "For help:"
-    log_success "    ${installed_binary} help"
+    # Final usage messages (plain printf for a clean unprefixed look).
+    printf "\nGet started with:\n  %s login\n  %s mcp install\n" \
+        "${installed_binary}" "${installed_binary}" >&2
 }
 
-# Run main function
+# ============================================================================
+# Intro animation
+#
+# Draws an animated ghost with header + download progress while the binary
+# downloads in the background. Falls back to a static, uncolored ghost when
+# stderr isn't a TTY that supports ANSI escapes. Shell forward-references
+# resolve at call time, so main() can call play_ghost_intro_animation even
+# though it's defined below.
+# ============================================================================
+
+# Format the install header line "Ghost vX.Y.Z - platform" with color
+# codes. Used for both the in-place animation header and the static
+# fallback printed by main() when ANSI escapes aren't supported.
+format_install_header() {
+    local version="$1"
+    local platform="$2"
+    printf "%bGhost%b %b%s%b - %s" "${BLUE}" "${NC}" "${GREEN}" "${version}" "${NC}" "${platform}"
+}
+
+# Render a 24-cell progress bar with a trailing percentage label using
+# Unicode block characters for the filled segment and light shade for the
+# empty segment.
+render_progress_bar() {
+    local percent="${1:-0}"
+    if [ "${percent}" -gt 100 ]; then percent=100; fi
+    if [ "${percent}" -lt 0 ]; then percent=0; fi
+    local width=24
+    local filled=$((percent * width / 100))
+    local bar=""
+    local i=0
+    while [ "${i}" -lt "${filled}" ]; do
+        bar="${bar}█"
+        i=$((i + 1))
+    done
+    while [ "${i}" -lt "${width}" ]; do
+        bar="${bar}░"
+        i=$((i + 1))
+    done
+    printf "%s %3d%%" "${bar}" "${percent}"
+}
+
+# Render a single Braille-char ghost row at the given indent. The indent may
+# be negative, in which case the row is partially clipped at the left edge.
+# Leading characters are trimmed via parameter expansion. `?` in a glob
+# matches one character regardless of its UTF-8 byte width, so each `#?`
+# strips exactly one Braille cell. `row_width` is the number of visible
+# cells in the row (16 for the original ghost rows, 17 for the half-shifted
+# bottom rows used during the sub-character slide).
+ghost_intro_render_row() {
+    local indent="$1"
+    local color="$2"
+    local row="$3"
+    local clear_line="$4"
+    local reset="$5"
+    local row_width="$6"
+
+    if [ "${indent}" -ge 0 ]; then
+        printf "%s%*s%s%s%s\n" "${clear_line}" "${indent}" '' "${color}" "${row}" "${reset}" >&2
+    elif [ $((indent + row_width)) -gt 0 ]; then
+        local trim=$((-indent))
+        local trimmed="${row}"
+        while [ "${trim}" -gt 0 ]; do
+            trimmed="${trimmed#?}"
+            trim=$((trim - 1))
+        done
+        printf "%s%s%s%s\n" "${clear_line}" "${color}" "${trimmed}" "${reset}" >&2
+    else
+        printf "%s\n" "${clear_line}" >&2
+    fi
+}
+
+# Render an eye row with body-colored outer chars and eye-colored middle
+# chars at the given indent. Eye chars span positions 4-11 of the row in
+# both the original (16-cell) and half-shifted (17-cell) variants. Each
+# segment is trimmed independently when the row is partially clipped at the
+# left edge, so the eye color is preserved during the slide-in.
+ghost_intro_render_eye_row() {
+    local indent="$1"
+    local body_color="$2"
+    local eye_color="$3"
+    local pre_eye="$4"      # 4 chars
+    local eye_chars="$5"    # 8 chars
+    local post_eye="$6"     # 4 chars (phase 0) or 5 chars (phase 1)
+    local clear_line="$7"
+    local reset="$8"
+    local row_width="$9"    # 16 or 17
+
+    if [ "${indent}" -ge 0 ]; then
+        printf "%s%*s%s%s%s%s%s%s%s\n" "${clear_line}" "${indent}" '' \
+            "${body_color}" "${pre_eye}" \
+            "${eye_color}" "${eye_chars}" \
+            "${body_color}" "${post_eye}" "${reset}" >&2
+        return
+    fi
+
+    if [ $((indent + row_width)) -le 0 ]; then
+        printf "%s\n" "${clear_line}" >&2
+        return
+    fi
+
+    local trim=$((-indent))
+    local pre_visible=""
+    local eyes_visible=""
+    local post_visible=""
+    local segment_trim trimmed
+
+    if [ "${trim}" -lt 4 ]; then
+        segment_trim="${trim}"
+        trimmed="${pre_eye}"
+        while [ "${segment_trim}" -gt 0 ]; do
+            trimmed="${trimmed#?}"
+            segment_trim=$((segment_trim - 1))
+        done
+        pre_visible="${trimmed}"
+    fi
+
+    if [ "${trim}" -lt 12 ]; then
+        segment_trim=$((trim - 4))
+        if [ "${segment_trim}" -lt 0 ]; then segment_trim=0; fi
+        trimmed="${eye_chars}"
+        while [ "${segment_trim}" -gt 0 ]; do
+            trimmed="${trimmed#?}"
+            segment_trim=$((segment_trim - 1))
+        done
+        eyes_visible="${trimmed}"
+    fi
+
+    segment_trim=$((trim - 12))
+    if [ "${segment_trim}" -lt 0 ]; then segment_trim=0; fi
+    trimmed="${post_eye}"
+    while [ "${segment_trim}" -gt 0 ]; do
+        trimmed="${trimmed#?}"
+        segment_trim=$((segment_trim - 1))
+    done
+    post_visible="${trimmed}"
+
+    local output="${clear_line}"
+    if [ -n "${pre_visible}" ]; then
+        output="${output}${body_color}${pre_visible}"
+    fi
+    if [ -n "${eyes_visible}" ]; then
+        output="${output}${eye_color}${eyes_visible}"
+    fi
+    if [ -n "${post_visible}" ]; then
+        output="${output}${body_color}${post_visible}"
+    fi
+    output="${output}${reset}"
+    printf "%s\n" "${output}" >&2
+}
+
+draw_ghost_intro_frame() {
+    local indent="$1"
+    local tilt="$2"
+    local eyes_state="$3"
+    local phase="$4"
+    local esc="$5"
+    local header="${6:-}"
+    local status="${7:-}"
+    # Empty esc means the caller wants plain (uncolored, no clear-line)
+    # output — used by the static fallback when ANSI escapes aren't
+    # supported. In that mode all the styling vars stay empty and the
+    # printf calls below render bare text.
+    local reset=""
+    local clear_line=""
+    local body=""
+    local eyes=""
+    if [ -n "${esc}" ]; then
+        reset="${esc}0m"
+        clear_line="${esc}2K"
+        body="${esc}38;2;232;242;255m"
+        eyes="${esc}38;2;102;247;65m"
+    fi
+
+    # Body rows are offset by `tilt` to suggest momentum at speed/direction
+    # changes. The offset increases linearly down the body, so the bottom
+    # leans further than the middle, like a swinging pendulum.
+    local mid_indent=$((indent + tilt / 2))
+    local bottom_indent=$((indent + tilt))
+
+    # Phase 0 uses the original 16-cell rows; phase 1 uses pre-computed
+    # half-shifted 17-cell variants of every row, which when rendered at the
+    # same integer indent appear visually offset by half a cell to the right.
+    # Alternating phase across consecutive frames produces smooth half-cell
+    # motion for the entire ghost (head, body, and tail in lockstep), so
+    # nothing visually disconnects during the slide-in.
+    local row1 row2 row3_pre row3_post row4_pre row4_post
+    local row5 row6 row7 row8 row9 row10
+    local row_w eyes_top eyes_bot
+    if [ "${phase}" = "1" ]; then
+        row1="⠀⠀⠀⢀⣠⠔⠛⠉⠉⠙⠓⠢⣄⠀⠀⠀⠀"
+        row2="⠀⠀⢀⡼⠉⠀⠀⠀⠀⠀⠀⠀⠙⢦⠀⠀⠀"
+        row3_pre="⠀⠀⢼⠀"
+        row3_post="⠀⠈⡆⠀⠀"
+        row4_pre="⠀⢰⡃⠀"
+        row4_post="⠀⠀⢻⠀⠀"
+        row5="⠀⢸⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⡇⠀"
+        row6="⠀⡞⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡇⠀"
+        row7="⠀⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢹⠀"
+        row8="⢸⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡄"
+        row9="⠘⡇⠀⢀⣀⠀⠀⠀⢀⠀⠀⠀⠀⠀⠀⢸⡇"
+        row10="⠀⠳⠴⠚⠙⠢⠤⠖⠚⠦⣤⠴⠒⠲⣄⡼⠁"
+        row_w=17
+        if [ "${eyes_state}" = "blink" ]; then
+            eyes_top="⠀⠀⠀⠀⠀⠀⠀⠀"
+            eyes_bot="⠀⠒⠒⠒⠀⠒⠒⠒"
+        else
+            eyes_top="⢠⣴⣦⣄⠀⣴⣶⣤"
+            eyes_bot="⠸⣿⣿⠟⠈⢿⣿⣿"
+        fi
+    else
+        row1="⠀⠀⠀⣀⡤⠚⠋⠉⠉⠛⠒⢤⡀⠀⠀⠀"
+        row2="⠀⠀⣠⠏⠁⠀⠀⠀⠀⠀⠀⠈⠳⡄⠀⠀"
+        row3_pre="⠀⢠⠇⠀"
+        row3_post="⠀⢱⠀⠀"
+        row4_pre="⠀⣞⠀⠀"
+        row4_post="⠀⠘⡇⠀"
+        row5="⠀⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢹⠀"
+        row6="⢰⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⠀"
+        row7="⢸⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⡇"
+        row8="⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣧"
+        row9="⢻⠀⠀⣀⡀⠀⠀⠀⡀⠀⠀⠀⠀⠀⠀⣿"
+        row10="⠘⠦⠖⠋⠓⠤⠴⠒⠳⢤⡤⠖⠒⢦⣠⠏"
+        row_w=16
+        if [ "${eyes_state}" = "blink" ]; then
+            eyes_top="⠀⠀⠀⠀⠀⠀⠀⠀"
+            eyes_bot="⠐⠒⠒⠂⠐⠒⠒⠂"
+        else
+            eyes_top="⣤⣶⣤⡀⢠⣶⣦⡄"
+            eyes_bot="⢿⣿⡿⠃⠹⣿⣿⠇"
+        fi
+    fi
+
+    # Padding above the ghost art.
+    printf "%s\n" "${clear_line}" >&2
+
+    # Head/upper rows (no tilt).
+    ghost_intro_render_row "${indent}" "${body}" "${row1}" "${clear_line}" "${reset}" "${row_w}"
+    ghost_intro_render_row "${indent}" "${body}" "${row2}" "${clear_line}" "${reset}" "${row_w}"
+
+    # Eye rows with segmented coloring (eyes always green, even partially).
+    ghost_intro_render_eye_row "${indent}" "${body}" "${eyes}" "${row3_pre}" "${eyes_top}" "${row3_post}" "${clear_line}" "${reset}" "${row_w}"
+    ghost_intro_render_eye_row "${indent}" "${body}" "${eyes}" "${row4_pre}" "${eyes_bot}" "${row4_post}" "${clear_line}" "${reset}" "${row_w}"
+
+    # Mid body rows, half tilt. Row 7 (the last mid row) is the boundary
+    # between mid and bottom; when the body leans (bottom_indent !=
+    # mid_indent) we render it at bottom_indent so its outline visually
+    # connects to row 8 instead of leaving a horizontal step on the
+    # leaning side. The body still reads as tilted because rows 5–6 stay
+    # at mid_indent.
+    local row7_indent="${mid_indent}"
+    if [ "${bottom_indent}" -ne "${mid_indent}" ]; then
+        row7_indent="${bottom_indent}"
+    fi
+    ghost_intro_render_row "${mid_indent}" "${body}" "${row5}" "${clear_line}" "${reset}" "${row_w}"
+    ghost_intro_render_row "${mid_indent}" "${body}" "${row6}" "${clear_line}" "${reset}" "${row_w}"
+    ghost_intro_render_row "${row7_indent}" "${body}" "${row7}" "${clear_line}" "${reset}" "${row_w}"
+
+    # Bottom body rows, full tilt.
+    ghost_intro_render_row "${bottom_indent}" "${body}" "${row8}" "${clear_line}" "${reset}" "${row_w}"
+    ghost_intro_render_row "${bottom_indent}" "${body}" "${row9}" "${clear_line}" "${reset}" "${row_w}"
+    ghost_intro_render_row "${bottom_indent}" "${body}" "${row10}" "${clear_line}" "${reset}" "${row_w}"
+
+    # Padding below the ghost art (separates the image from the header).
+    printf "%s\n" "${clear_line}" >&2
+
+    # Header + status lines (version/platform + download progress) anchor
+    # at column 0, regardless of the ghost's animation indent. Skipped in
+    # static (no-escape) mode since the caller prints those lines itself
+    # and we don't need empty placeholders for cursor_up positioning.
+    if [ -n "${esc}" ]; then
+        printf "%s%s\n" "${clear_line}" "${header}" >&2
+        printf "%s%s\n" "${clear_line}" "${status}" >&2
+    fi
+}
+
+# Refresh the install_* state and rebuild the header/status display
+# strings. Uses the calling function's locals (install_version, etc.) via
+# shell's dynamic scoping. Sets header_buf and status_buf, which are read
+# by the animation and post-animation blink loops.
+ghost_intro_compute_display_state() {
+    if [ -z "${install_version}" ] \
+            && [ -s "${version_file:-/dev/null}" ] \
+            && [ -s "${archive_name_file:-/dev/null}" ]; then
+        install_version="$(read_first_line "${version_file}")"
+        install_archive_name="$(read_first_line "${archive_name_file}")"
+        install_archive_path="${tmp_dir}/${install_archive_name}"
+        install_archive_url="${DOWNLOAD_BASE_URL}/releases/${install_version}/${install_archive_name}"
+        install_total_bytes="$(content_length "${install_archive_url}")"
+        : "${install_total_bytes:=0}"
+    fi
+
+    header_buf=""
+    status_buf=""
+    if [ -n "${install_version}" ]; then
+        header_buf="$(format_install_header "${install_version}" "${platform}")"
+        local current_bytes=0
+        if [ -n "${install_archive_path}" ]; then
+            current_bytes="$(file_size "${install_archive_path}")"
+        fi
+        local percent=0
+        if [ "${install_total_bytes}" -gt 0 ]; then
+            percent=$((current_bytes * 100 / install_total_bytes))
+            if [ "${percent}" -gt 100 ]; then percent=100; fi
+        fi
+        status_buf="Downloading $(render_progress_bar "${percent}")"
+    fi
+}
+
+play_ghost_intro_animation() {
+    local platform="${1:-}"
+    local version_file="${2:-}"
+    local archive_name_file="${3:-}"
+    local tmp_dir="${4:-}"
+    local download_pid="${5:-}"
+
+    if ! supports_ansi_escapes; then
+        # Static fallback: render the upright ghost with no escape codes.
+        # The caller (main) handles the version header and progress lines
+        # for the non-animated path.
+        draw_ghost_intro_frame 2 0 open 0 ""
+        return
+    fi
+
+    local esc
+    local hide_cursor
+    local show_cursor
+    local cursor_up
+    local frame
+    local indent
+    local eyes_state
+
+    esc="$(printf '\033[')"
+    hide_cursor="${esc}?25l"
+    show_cursor="${esc}?25h"
+    cursor_up="${esc}14A"
+
+    printf "%s" "${hide_cursor}" >&2
+
+    # Reserve 14 lines for the animation (1 padding + 10 ghost rows +
+    # 1 padding + 1 header + 1 status), then move the cursor back to the
+    # top of the reserved area. Without this, the very first frame has to
+    # both push fresh lines onto the terminal (potentially scrolling the
+    # viewport) and render content, which on some terminals stalls long
+    # enough that the first frame appears static for a noticeable moment.
+    # All subsequent frames just rewrite existing lines via cursor_up, so
+    # pre-allocating here makes the first frame as fast as the rest.
+    printf '\n\n\n\n\n\n\n\n\n\n\n\n\n\n' >&2
+    printf "%s" "${cursor_up}" >&2
+
+    # Frame data: "indent:tilt:eyes:phase". During the slide-in, alternating
+    # phase=0 / phase=1 frames swap the bottom rows between their original
+    # and half-shifted variants, giving the ghost's tail a 0.5-column step
+    # rate while the head still moves in 1-column steps. After the slide,
+    # all frames use phase=0 (integer cells). The final frame is `2:0:...:0`
+    # so the ghost ends fully on-screen, upright, with 2 chars of left pad.
+    local frames="\
+-10:-1:open:0 -10:-1:open:1 -9:-1:open:0 -9:-1:open:1 -8:-1:open:0 -8:-1:open:1 \
+-7:-1:open:0 -7:-1:open:1 -6:-1:open:0 -6:-1:open:1 -5:-1:open:0 -5:-1:open:1 \
+-4:-1:open:0 -4:-1:open:1 -3:-1:open:0 -3:-1:open:1 -2:-1:open:0 -2:-1:open:1 \
+-1:-1:open:0 -1:-1:open:1 0:-1:open:0 0:-1:open:1 1:-1:open:0 1:-1:open:1 \
+2:-1:open:0 \
+2:0:open:0 2:1:open:0 2:0:open:0 \
+3:-1:open:0 4:-1:open:0 5:-1:open:0 6:-1:blink:0 7:-1:open:0 8:-1:open:0 9:-1:open:0 10:-1:open:0 \
+10:0:open:0 10:1:open:0 \
+9:1:open:0 8:1:open:0 7:1:blink:0 6:1:open:0 5:1:open:0 4:1:open:0 3:1:open:0 2:1:open:0 \
+2:0:open:0 2:-1:open:0 2:0:open:0"
+
+    local frame_data
+    local tilt
+    local phase
+    local rest
+
+    # Install state monitored each frame. The version + archive name files
+    # are written by the background download task; once both exist we can
+    # render the header and start showing real download progress.
+    local install_version=""
+    local install_archive_name=""
+    local install_archive_path=""
+    local install_archive_url=""
+    local install_total_bytes=0
+    local header_buf=""
+    local status_buf=""
+
+    frame=0
+    for frame_data in $frames; do
+        if [ "${frame}" -gt 0 ]; then
+            printf "%s" "${cursor_up}" >&2
+        fi
+
+        ghost_intro_compute_display_state
+
+        # Early exit: if the download already finished, snap the ghost to
+        # its final upright position with 100% progress and break out of
+        # the animation. The blink loop below will also exit immediately
+        # for the same reason, so the script proceeds without adding any
+        # delay beyond the download itself.
+        if [ -n "${download_pid}" ] && ! kill -0 "${download_pid}" 2>/dev/null; then
+            draw_ghost_intro_frame 2 0 open 0 "${esc}" "${header_buf}" "${status_buf}"
+            break
+        fi
+
+        indent="${frame_data%%:*}"
+        rest="${frame_data#*:}"
+        tilt="${rest%%:*}"
+        rest="${rest#*:}"
+        eyes_state="${rest%%:*}"
+        phase="${rest#*:}"
+
+        draw_ghost_intro_frame "${indent}" "${tilt}" "${eyes_state}" "${phase}" "${esc}" "${header_buf}" "${status_buf}"
+        frame=$((frame + 1))
+        sleep 0.04
+    done
+
+    # After the main animation finishes, keep the ghost "alive" by blinking
+    # its eyes intermittently while the download is still in flight. The
+    # download-progress polling continues in this loop too, so the status
+    # line stays current.
+    if [ -n "${download_pid}" ]; then
+        local blink_frame=0
+        local blink_cycle
+        while kill -0 "${download_pid}" 2>/dev/null; do
+            printf "%s" "${cursor_up}" >&2
+
+            ghost_intro_compute_display_state
+
+            # Brief blink (~200ms) every ~2s.
+            blink_cycle=$((blink_frame % 20))
+            eyes_state="open"
+            if [ "${blink_cycle}" -ge 18 ]; then
+                eyes_state="blink"
+            fi
+
+            draw_ghost_intro_frame 2 0 "${eyes_state}" 0 "${esc}" "${header_buf}" "${status_buf}"
+            blink_frame=$((blink_frame + 1))
+            sleep 0.1
+        done
+    fi
+
+    # Show the cursor and position it on the status line (one row up from
+    # the line below the last status print) so the caller can continue
+    # updating the status in place via update_status_line.
+    printf "%s%s" "${show_cursor}" "${esc}1A" >&2
+}
+
+# ============================================================================
+# Entry point
+# ============================================================================
+
 main "$@"
