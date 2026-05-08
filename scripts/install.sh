@@ -696,6 +696,39 @@ configure_shell_completions() {
 # main
 # ============================================================================
 
+# Globals tracked by install_cleanup_on_exit. Promoted out of main() so
+# the EXIT trap can read them: backgrounded children (the download and
+# the animation) ignore SIGINT per POSIX (`&` in a non-interactive shell
+# sets SIGINT/SIGQUIT to SIG_IGN), so on Ctrl+C they would otherwise
+# keep running — the animation drawing forever and curl chewing
+# bandwidth — until they finish on their own.
+tmp_dir=""
+download_pid=""
+animation_pid=""
+
+install_cleanup_on_exit() {
+    # Disable `set -e` for the duration of this handler. wait on a child
+    # killed by a signal returns 128+signum (e.g. 143 for SIGTERM), which
+    # would otherwise abort the trap before the cursor is restored.
+    set +e
+    # After kill, wait on the pid (with stderr swallowed) so the shell
+    # reaps the exit status itself instead of printing a job-termination
+    # notification like "Terminated: 15" when the script unwinds.
+    if [ -n "${animation_pid}" ]; then
+        kill "${animation_pid}" 2>/dev/null
+        wait "${animation_pid}" 2>/dev/null
+    fi
+    if [ -n "${download_pid}" ]; then
+        kill "${download_pid}" 2>/dev/null
+        wait "${download_pid}" 2>/dev/null
+    fi
+    if [ -n "${tmp_dir}" ]; then
+        rm -rf "${tmp_dir}"
+    fi
+    # Restore the terminal cursor (the animation hides it during play).
+    printf '\033[?25h' >&2
+}
+
 main() {
     # Detect platform and verify dependencies before starting the background
     # download so failures happen before the animation hides output.
@@ -703,18 +736,15 @@ main() {
     platform=$(detect_platform)
     verify_dependencies "${platform}"
 
-    # Create temporary directory. The trap also restores the terminal
-    # cursor in case a Ctrl+C interrupts the animation while the cursor
-    # is hidden.
-    local tmp_dir
+    # Create temporary directory and install the cleanup trap. tmp_dir,
+    # download_pid, and animation_pid are file-scope globals so the
+    # cleanup function can read them when the script aborts.
     tmp_dir="$(mktemp -d)"
-    # shellcheck disable=SC2064 # We want to expand ${tmp_dir} immediately, because it's out-of-scope when EXIT fires
-    trap "rm -rf '${tmp_dir}'; printf '\\033[?25h' >&2" EXIT
+    trap install_cleanup_on_exit EXIT
 
     local version_file="${tmp_dir}/version"
     local archive_name_file="${tmp_dir}/archive_name"
     local download_log="${tmp_dir}/download.log"
-    local download_pid
 
     # Suppress info-level chatter from helpers while the in-place status
     # display is active. Warnings and errors still surface via log_warn /
@@ -742,7 +772,6 @@ main() {
     # to stderr the way it always did.
     local STATUS_FILE=""
     local stop_file=""
-    local animation_pid=""
     if supports_ansi_escapes; then
         STATUS_FILE="${tmp_dir}/status"
         stop_file="${tmp_dir}/animation_done"
