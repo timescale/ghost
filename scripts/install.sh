@@ -98,10 +98,25 @@ log_error() {
     printf "%b[ERROR]%b %s\n" "${RED}" "${NC}" "$1" >&2
 }
 
-# Overwrite the current line with the given content, leaving the cursor on
-# that same line so a subsequent call can replace it. On non-TTY output
-# (pipes, dumb terminals) each call prints on a fresh line instead.
+# Overwrite the current status line with the given content. There are
+# three modes:
+#   1. STATUS_FILE is set (animated mode with backgrounded animation):
+#      write the rendered text to the file. The animation reads it each
+#      frame, so the ghost stays "alive" while the status updates.
+#   2. ANSI-capable TTY (no STATUS_FILE): write directly with \r\033[K so
+#      successive calls overwrite the same line.
+#   3. Non-TTY (pipe, dumb terminal): one fresh line per call.
 update_status_line() {
+    if [ -n "${STATUS_FILE:-}" ]; then
+        printf "%b" "$1" > "${STATUS_FILE}"
+        # Pause briefly so the background animation has time to read and
+        # render this status before the next call potentially overwrites
+        # it. Without this, fast-changing statuses (e.g. an extract step
+        # that finishes in a few ms) can be replaced before any animation
+        # poll observes them, so the user never sees them on screen.
+        sleep 0.075
+        return
+    fi
     if supports_ansi_escapes; then
         printf "\r\033[K%b" "$1" >&2
     else
@@ -688,11 +703,13 @@ main() {
     platform=$(detect_platform)
     verify_dependencies "${platform}"
 
-    # Create temporary directory.
+    # Create temporary directory. The trap also restores the terminal
+    # cursor in case a Ctrl+C interrupts the animation while the cursor
+    # is hidden.
     local tmp_dir
     tmp_dir="$(mktemp -d)"
     # shellcheck disable=SC2064 # We want to expand ${tmp_dir} immediately, because it's out-of-scope when EXIT fires
-    trap "rm -rf '${tmp_dir}'" EXIT
+    trap "rm -rf '${tmp_dir}'; printf '\\033[?25h' >&2" EXIT
 
     local version_file="${tmp_dir}/version"
     local archive_name_file="${tmp_dir}/archive_name"
@@ -705,24 +722,38 @@ main() {
     local QUIET=true
 
     # Start the binary download in the background. The background task
-    # writes the version and archive name to files (so we can read them as
-    # soon as the animation finishes) and downloads the archive. Checksum
-    # verification runs in the foreground after the animation so it can show
-    # its own status update.
+    # writes the version and archive name to files (so the animation can
+    # render the header as soon as the version is known) and downloads
+    # the archive. Checksum verification, extraction, and install run
+    # later in the foreground while the animation keeps blinking.
     download_archive_for_platform "${platform}" "${tmp_dir}" "${version_file}" "${archive_name_file}" > "${download_log}" 2>&1 &
     download_pid=$!
 
-    # Run the intro animation. While it plays, it draws the version
-    # header and download progress bar in the same frame redraw so they
-    # appear as soon as the version is known. After the main frames end,
-    # the animation keeps blinking the eyes — and polling progress —
-    # until the download finishes.
-    play_ghost_intro_animation "${platform}" "${version_file}" "${archive_name_file}" "${tmp_dir}" "${download_pid}"
+    # In animated mode, background the animation so the ghost keeps
+    # blinking through every install step. STATUS_FILE is the channel
+    # used by update_status_line to publish phase strings ("Verifying
+    # integrity...", "✓ Installed to ...") that the animation reads each
+    # frame. stop_file is touched by main when the install is fully done
+    # — the animation does one final render with the latest status, then
+    # exits.
+    #
+    # In non-animated mode the animation just renders a static ghost in
+    # the foreground; STATUS_FILE stays empty so update_status_line writes
+    # to stderr the way it always did.
+    local STATUS_FILE=""
+    local stop_file=""
+    local animation_pid=""
+    if supports_ansi_escapes; then
+        STATUS_FILE="${tmp_dir}/status"
+        stop_file="${tmp_dir}/animation_done"
+        play_ghost_intro_animation "${platform}" "${version_file}" "${archive_name_file}" "${tmp_dir}" "${stop_file}" &
+        animation_pid=$!
+    else
+        play_ghost_intro_animation "${platform}" "${version_file}" "${archive_name_file}" "${tmp_dir}" ""
+    fi
 
-    # Wait for the version and archive name files to appear. The animation
-    # already waited in TTY mode (until the download completed), but the
-    # static-fallback path doesn't, and an early download failure is
-    # possible in either path.
+    # Wait for the version and archive name files to appear so the non-
+    # TTY fallback can print the header below.
     while [ ! -s "${version_file}" ] || [ ! -s "${archive_name_file}" ]; do
         if ! kill -0 "${download_pid}" 2>/dev/null; then
             break
@@ -752,38 +783,42 @@ main() {
     fi
 
     if ! wait "${download_pid}"; then
-        update_status_line ""
+        if [ -n "${animation_pid}" ]; then
+            update_status_line "${RED}✗${NC} Download failed"
+            touch "${stop_file}" 2>/dev/null
+            wait "${animation_pid}" 2>/dev/null
+        fi
         printf "\n" >&2
         cat "${download_log}" >&2
         exit 1
     fi
 
-    if supports_ansi_escapes; then
-        update_status_line "Downloading $(render_progress_bar 100)"
-    fi
-
-    # Verify the archive's checksum (downloads the .sha256 file and runs
-    # sha256sum/shasum -c).
+    # Run the install steps. update_status_line routes through STATUS_FILE
+    # in animated mode (animation reads + renders) or stderr otherwise.
     update_status_line "Verifying integrity..."
     verify_checksum "${version}" "${archive_name}" "${tmp_dir}"
 
-    # Find a writable install directory.
     local install_dir
     install_dir="$(detect_install_dir)"
 
-    # Extract the archive and locate the binary.
     update_status_line "Extracting archive..."
     local binary_path
     binary_path="$(extract_archive "${archive_name}" "${tmp_dir}" "${platform}")"
 
-    # Install the binary.
     update_status_line "Installing to ${install_dir}..."
     rm -f "${install_dir}/${installed_binary}"
     cp "${binary_path}" "${install_dir}/${installed_binary}"
 
-    # Finalize the in-place status line and add a blank line before the
-    # subsequent (non-in-place) sections.
     update_status_line "${GREEN}✓${NC} Installed to ${install_dir}/${installed_binary}"
+
+    # Stop the background animation and wait for it to do its final
+    # render. After this, the cursor is positioned on the status line.
+    if [ -n "${animation_pid}" ]; then
+        touch "${stop_file}"
+        wait "${animation_pid}"
+    fi
+
+    # Add blank lines before the subsequent (non-in-place) sections.
     printf "\n\n" >&2
 
     # Restore log_info so the interactive shellrc helpers and the final
@@ -1095,16 +1130,24 @@ ghost_intro_compute_display_state() {
     status_buf=""
     if [ -n "${install_version}" ]; then
         header_buf="$(format_install_header "${install_version}" "${platform}")"
-        local current_bytes=0
-        if [ -n "${install_archive_path}" ]; then
-            current_bytes="$(file_size "${install_archive_path}")"
+
+        # Status priority: an explicit override from STATUS_FILE (set by
+        # main() for post-download phases like "Verifying integrity...")
+        # wins over the live download progress bar.
+        if [ -n "${STATUS_FILE:-}" ] && [ -s "${STATUS_FILE}" ]; then
+            status_buf="$(read_first_line "${STATUS_FILE}")"
+        else
+            local current_bytes=0
+            if [ -n "${install_archive_path}" ]; then
+                current_bytes="$(file_size "${install_archive_path}")"
+            fi
+            local percent=0
+            if [ "${install_total_bytes}" -gt 0 ]; then
+                percent=$((current_bytes * 100 / install_total_bytes))
+                if [ "${percent}" -gt 100 ]; then percent=100; fi
+            fi
+            status_buf="Downloading $(render_progress_bar "${percent}")"
         fi
-        local percent=0
-        if [ "${install_total_bytes}" -gt 0 ]; then
-            percent=$((current_bytes * 100 / install_total_bytes))
-            if [ "${percent}" -gt 100 ]; then percent=100; fi
-        fi
-        status_buf="Downloading $(render_progress_bar "${percent}")"
     fi
 }
 
@@ -1113,7 +1156,7 @@ play_ghost_intro_animation() {
     local version_file="${2:-}"
     local archive_name_file="${3:-}"
     local tmp_dir="${4:-}"
-    local download_pid="${5:-}"
+    local stop_file="${5:-}"
 
     if ! supports_ansi_escapes; then
         # Static fallback: render the upright ghost with no escape codes.
@@ -1191,16 +1234,6 @@ play_ghost_intro_animation() {
 
         ghost_intro_compute_display_state
 
-        # Early exit: if the download already finished, snap the ghost to
-        # its final upright position with 100% progress and break out of
-        # the animation. The blink loop below will also exit immediately
-        # for the same reason, so the script proceeds without adding any
-        # delay beyond the download itself.
-        if [ -n "${download_pid}" ] && ! kill -0 "${download_pid}" 2>/dev/null; then
-            draw_ghost_intro_frame 2 0 open 0 "${esc}" "${header_buf}" "${status_buf}"
-            break
-        fi
-
         indent="${frame_data%%:*}"
         rest="${frame_data#*:}"
         tilt="${rest%%:*}"
@@ -1213,29 +1246,49 @@ play_ghost_intro_animation() {
         sleep 0.04
     done
 
-    # After the main animation finishes, keep the ghost "alive" by blinking
-    # its eyes intermittently while the download is still in flight. The
-    # download-progress polling continues in this loop too, so the status
-    # line stays current.
-    if [ -n "${download_pid}" ]; then
+    # After the main animation finishes, keep the ghost "alive" by
+    # blinking its eyes intermittently. The loop runs until stop_file
+    # appears — main touches it after the final install step — so the
+    # ghost stays animated through verify, extract, and install.
+    #
+    # Polling at 50ms keeps reaction time tight enough that fast status
+    # transitions are caught (combined with a small sleep in
+    # update_status_line). To keep the cost low, we only repaint when
+    # status_buf or eyes_state actually changes — most polls are no-ops.
+    if [ -n "${stop_file}" ]; then
         local blink_frame=0
         local blink_cycle
-        while kill -0 "${download_pid}" 2>/dev/null; do
-            printf "%s" "${cursor_up}" >&2
-
+        local last_status_rendered=""
+        local last_eyes_rendered=""
+        while [ ! -f "${stop_file}" ]; do
             ghost_intro_compute_display_state
 
-            # Brief blink (~200ms) every ~2s.
-            blink_cycle=$((blink_frame % 20))
+            # Brief blink (~200ms) every ~2s. 40 frames * 50ms = 2s cycle;
+            # last 4 frames (200ms) render with eyes blinking.
+            blink_cycle=$((blink_frame % 40))
             eyes_state="open"
-            if [ "${blink_cycle}" -ge 18 ]; then
+            if [ "${blink_cycle}" -ge 36 ]; then
                 eyes_state="blink"
             fi
 
-            draw_ghost_intro_frame 2 0 "${eyes_state}" 0 "${esc}" "${header_buf}" "${status_buf}"
+            if [ "${status_buf}" != "${last_status_rendered}" ] \
+                    || [ "${eyes_state}" != "${last_eyes_rendered}" ]; then
+                printf "%s" "${cursor_up}" >&2
+                draw_ghost_intro_frame 2 0 "${eyes_state}" 0 "${esc}" "${header_buf}" "${status_buf}"
+                last_status_rendered="${status_buf}"
+                last_eyes_rendered="${eyes_state}"
+            fi
+
             blink_frame=$((blink_frame + 1))
-            sleep 0.1
+            sleep 0.05
         done
+
+        # Final render with eyes open and the latest status (the caller
+        # may have just written "✓ Installed to ..." to STATUS_FILE before
+        # touching stop_file).
+        printf "%s" "${cursor_up}" >&2
+        ghost_intro_compute_display_state
+        draw_ghost_intro_frame 2 0 open 0 "${esc}" "${header_buf}" "${status_buf}"
     fi
 
     # Show the cursor and position it on the status line (one row up from
