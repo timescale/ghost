@@ -67,6 +67,10 @@ Only the Ghost MCP server entry named "ghost" is removed; other MCP server entri
 				},
 			})
 			if err != nil {
+				if errors.Is(err, errMCPSelectionCanceled) {
+					cmd.PrintErrln("Canceled.")
+					return nil
+				}
 				return err
 			}
 

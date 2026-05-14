@@ -101,16 +101,25 @@ func shellQuote(value string) string {
 var compinitMarkerRE = regexp.MustCompile(`compinit|oh-my-zsh|prezto|zinit|antigen|zplug|zgenom`)
 
 // ShellRCNeedsCompinit reports whether a zsh rc file is missing a compinit
-// call. Returns false for non-zsh shells.
+// call. Returns false for non-zsh shells. Comment lines are ignored so a
+// commented-out marker (e.g. `# compinit`) doesn't suppress the snippet.
 func ShellRCNeedsCompinit(shell, rcPath string) bool {
 	if shell != "zsh" {
 		return false
 	}
-	data, err := os.ReadFile(rcPath)
+	data, err := readShellRCFileIfExists(rcPath)
 	if err != nil {
 		return true
 	}
-	return !compinitMarkerRE.Match(data)
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if strings.HasPrefix(strings.TrimLeft(line, " \t"), "#") {
+			continue
+		}
+		if compinitMarkerRE.MatchString(line) {
+			return false
+		}
+	}
+	return true
 }
 
 // ShellRCMentions reports whether the file at rcPath contains needle. A

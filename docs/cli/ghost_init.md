@@ -36,4 +36,3 @@ ghost init [flags]
 
 * [ghost](ghost.md)	 - CLI for managing Postgres databases
 * [ghost init path](ghost_init_path.md)	 - Add Ghost to your PATH
-

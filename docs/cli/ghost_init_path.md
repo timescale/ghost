@@ -34,4 +34,3 @@ ghost init path [flags]
 ### SEE ALSO
 
 * [ghost init](ghost_init.md)	 - Interactively configure Ghost
-

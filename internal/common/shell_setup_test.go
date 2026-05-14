@@ -126,6 +126,13 @@ func TestShellRCNeedsCompinit(t *testing.T) {
 		t.Errorf("rc with oh-my-zsh should NOT need compinit")
 	}
 
+	if err := os.WriteFile(rc, []byte("# compinit\n# oh-my-zsh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !ShellRCNeedsCompinit("zsh", rc) {
+		t.Errorf("rc with only commented-out markers should still need compinit")
+	}
+
 	if ShellRCNeedsCompinit("bash", rc) {
 		t.Errorf("non-zsh shells should never need compinit")
 	}
