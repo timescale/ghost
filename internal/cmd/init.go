@@ -143,7 +143,7 @@ func runSelectedInitSteps(cmd *cobra.Command, app *common.App, indices []int) (b
 				return false, err
 			}
 		case stepMCP:
-			retry, err := runInitMCP(cmd, app)
+			retry, err := runInitMCP(cmd)
 			if err != nil {
 				return false, err
 			}
@@ -301,7 +301,7 @@ func runInitLogin(cmd *cobra.Command, app *common.App) error {
 	return nil
 }
 
-func runInitMCP(cmd *cobra.Command, app *common.App) (bool, error) {
+func runInitMCP(cmd *cobra.Command) (bool, error) {
 	cmd.PrintErrln()
 	cmd.PrintErrln("--- MCP server ---")
 
