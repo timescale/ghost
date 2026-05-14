@@ -41,4 +41,3 @@ ghost payment undelete <payment-id> [flags]
 ### SEE ALSO
 
 * [ghost payment](ghost_payment.md)	 - Manage payment methods
-

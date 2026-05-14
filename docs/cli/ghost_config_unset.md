@@ -34,4 +34,3 @@ ghost config unset <key> [flags]
 ### SEE ALSO
 
 * [ghost config](ghost_config.md)	 - List current configuration
-

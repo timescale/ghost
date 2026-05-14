@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -63,6 +65,11 @@ func main() {
 				log.Fatal(err)
 			}
 		}
+		// Cobra's markdown generator leaves a trailing blank line on every
+		// file. Strip it so `git diff --check` doesn't flag the EOF.
+		if err := trimTrailingBlankLines(*out, ".md"); err != nil {
+			log.Fatal(err)
+		}
 	case "man":
 		hdr := &doc.GenManHeader{Title: strings.ToUpper(root.Name()), Section: "1"}
 		if err := doc.GenManTree(root, hdr, *out); err != nil {
@@ -79,4 +86,28 @@ func main() {
 	default:
 		log.Fatalf("unknown format: %s", *format)
 	}
+}
+
+func trimTrailingBlankLines(dir, ext string) error {
+	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || filepath.Ext(path) != ext {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		trimmed := append(bytes.TrimRight(data, "\n"), '\n')
+		if bytes.Equal(trimmed, data) {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, trimmed, info.Mode().Perm())
+	})
 }

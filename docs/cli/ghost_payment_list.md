@@ -36,4 +36,3 @@ ghost payment list [flags]
 ### SEE ALSO
 
 * [ghost payment](ghost_payment.md)	 - Manage payment methods
-

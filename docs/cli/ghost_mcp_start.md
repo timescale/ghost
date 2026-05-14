@@ -49,4 +49,3 @@ ghost mcp start [flags]
 * [ghost mcp](ghost_mcp.md)	 - Ghost Model Context Protocol (MCP) server
 * [ghost mcp start http](ghost_mcp_start_http.md)	 - Start MCP server with HTTP transport
 * [ghost mcp start stdio](ghost_mcp_start_stdio.md)	 - Start MCP server with stdio transport
-

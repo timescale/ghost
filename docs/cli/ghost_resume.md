@@ -45,4 +45,3 @@ ghost resume <name-or-id> [flags]
 ### SEE ALSO
 
 * [ghost](ghost.md)	 - CLI for managing Postgres databases
-

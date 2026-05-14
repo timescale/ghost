@@ -51,4 +51,3 @@ ghost psql <name-or-id> [-- <psql-flags>...] [flags]
 ### SEE ALSO
 
 * [ghost](ghost.md)	 - CLI for managing Postgres databases
-

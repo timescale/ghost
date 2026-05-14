@@ -36,4 +36,3 @@ ghost share list [flags]
 ### SEE ALSO
 
 * [ghost share](ghost_share.md)	 - Share a database
-

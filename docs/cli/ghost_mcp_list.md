@@ -51,4 +51,3 @@ ghost mcp list [flags]
 ### SEE ALSO
 
 * [ghost mcp](ghost_mcp.md)	 - Ghost Model Context Protocol (MCP) server
-

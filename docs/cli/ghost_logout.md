@@ -34,4 +34,3 @@ ghost logout [flags]
 ### SEE ALSO
 
 * [ghost](ghost.md)	 - CLI for managing Postgres databases
-

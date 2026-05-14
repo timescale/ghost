@@ -57,4 +57,3 @@ ghost password <name-or-id> [new-password] [flags]
 ### SEE ALSO
 
 * [ghost](ghost.md)	 - CLI for managing Postgres databases
-

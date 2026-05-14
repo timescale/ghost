@@ -36,4 +36,3 @@ ghost api-key list [flags]
 ### SEE ALSO
 
 * [ghost api-key](ghost_api-key.md)	 - Manage API keys
-

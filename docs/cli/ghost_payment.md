@@ -39,4 +39,3 @@ ghost payment [flags]
 * [ghost payment list](ghost_payment_list.md)	 - List payment methods
 * [ghost payment primary](ghost_payment_primary.md)	 - Set the primary payment method
 * [ghost payment undelete](ghost_payment_undelete.md)	 - Cancel a pending payment method deletion
-

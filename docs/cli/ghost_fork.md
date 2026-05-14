@@ -58,4 +58,3 @@ ghost fork <name-or-id> [flags]
 
 * [ghost](ghost.md)	 - CLI for managing Postgres databases
 * [ghost fork dedicated](ghost_fork_dedicated.md)	 - Fork a database as dedicated
-

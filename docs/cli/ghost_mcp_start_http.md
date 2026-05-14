@@ -52,4 +52,3 @@ ghost mcp start http [flags]
 ### SEE ALSO
 
 * [ghost mcp start](ghost_mcp_start.md)	 - Start the Ghost MCP server
-

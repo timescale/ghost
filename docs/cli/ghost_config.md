@@ -40,4 +40,3 @@ ghost config [flags]
 * [ghost config reset](ghost_config_reset.md)	 - Reset to defaults
 * [ghost config set](ghost_config_set.md)	 - Set configuration value
 * [ghost config unset](ghost_config_unset.md)	 - Remove configuration value
-

@@ -66,4 +66,3 @@ ghost create dedicated [flags]
 ### SEE ALSO
 
 * [ghost create](ghost_create.md)	 - Create a new Postgres database
-

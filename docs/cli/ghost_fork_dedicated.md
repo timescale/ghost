@@ -62,4 +62,3 @@ ghost fork dedicated <name-or-id> [flags]
 ### SEE ALSO
 
 * [ghost fork](ghost_fork.md)	 - Fork a database
-

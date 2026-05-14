@@ -58,4 +58,3 @@ ghost create [flags]
 
 * [ghost](ghost.md)	 - CLI for managing Postgres databases
 * [ghost create dedicated](ghost_create_dedicated.md)	 - Create a dedicated database
-

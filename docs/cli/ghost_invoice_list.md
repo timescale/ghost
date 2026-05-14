@@ -38,4 +38,3 @@ ghost invoice list [flags]
 ### SEE ALSO
 
 * [ghost invoice](ghost_invoice.md)	 - View invoices
-

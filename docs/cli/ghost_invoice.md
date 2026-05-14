@@ -32,4 +32,3 @@ View invoices for your Ghost space.
 * [ghost](ghost.md)	 - CLI for managing Postgres databases
 * [ghost invoice list](ghost_invoice_list.md)	 - List invoices
 * [ghost invoice view](ghost_invoice_view.md)	 - View invoice detail
-

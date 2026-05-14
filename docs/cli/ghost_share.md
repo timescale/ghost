@@ -63,4 +63,3 @@ ghost share <name-or-id> [flags]
 * [ghost](ghost.md)	 - CLI for managing Postgres databases
 * [ghost share list](ghost_share_list.md)	 - List database shares
 * [ghost share revoke](ghost_share_revoke.md)	 - Revoke a database share
-

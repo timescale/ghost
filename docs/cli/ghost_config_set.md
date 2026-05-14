@@ -34,4 +34,3 @@ ghost config set <key> <value> [flags]
 ### SEE ALSO
 
 * [ghost config](ghost_config.md)	 - List current configuration
-

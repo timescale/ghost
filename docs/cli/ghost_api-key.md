@@ -36,4 +36,3 @@ GHOST_API_KEY environment variable.
 * [ghost api-key create](ghost_api-key_create.md)	 - Create a new API key
 * [ghost api-key delete](ghost_api-key_delete.md)	 - Delete an API key
 * [ghost api-key list](ghost_api-key_list.md)	 - List API keys
-

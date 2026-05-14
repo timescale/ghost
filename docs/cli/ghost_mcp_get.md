@@ -52,4 +52,3 @@ ghost mcp get <name> [flags]
 ### SEE ALSO
 
 * [ghost mcp](ghost_mcp.md)	 - Ghost Model Context Protocol (MCP) server
-

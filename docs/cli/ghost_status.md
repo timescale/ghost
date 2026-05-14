@@ -45,4 +45,3 @@ ghost status [flags]
 ### SEE ALSO
 
 * [ghost](ghost.md)	 - CLI for managing Postgres databases
-

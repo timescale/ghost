@@ -41,4 +41,3 @@ ghost rename <name-or-id> <new-name> [flags]
 ### SEE ALSO
 
 * [ghost](ghost.md)	 - CLI for managing Postgres databases
-
