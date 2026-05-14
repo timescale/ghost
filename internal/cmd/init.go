@@ -105,6 +105,7 @@ func runInit(cmd *cobra.Command, app *common.App, skipIfConfigured bool) error {
 // reports whether the caller should redraw the main menu (true when a submenu
 // was canceled, false on full success).
 func runSelectedInitSteps(cmd *cobra.Command, app *common.App, indices []int) (bool, error) {
+	rcChanged := false
 	for _, idx := range indices {
 		switch initStep(idx) {
 		case stepLogin:
@@ -120,17 +121,25 @@ func runSelectedInitSteps(cmd *cobra.Command, app *common.App, indices []int) (b
 				return true, nil
 			}
 		case stepCompletions:
-			if err := runInitCompletions(cmd); err != nil {
+			changed, err := runInitCompletions(cmd)
+			if err != nil {
 				return false, err
 			}
+			rcChanged = rcChanged || changed
 		case stepPATH:
-			if err := runInitPath(cmd); err != nil {
+			changed, err := runInitPath(cmd)
+			if err != nil {
 				return false, err
 			}
+			rcChanged = rcChanged || changed
 		}
 	}
 	cmd.PrintErrln()
-	cmd.PrintErrln("All done. Restart your shell to pick up any rc file changes.")
+	if rcChanged {
+		cmd.PrintErrln("All done. Restart your shell to pick up rc file changes.")
+	} else {
+		cmd.PrintErrln("All done.")
+	}
 	return false, nil
 }
 
@@ -273,118 +282,76 @@ func runInitMCP(cmd *cobra.Command, app *common.App) (bool, error) {
 	cmd.PrintErrln()
 	cmd.PrintErrln("--- MCP server ---")
 
-	items := make([]common.MultiSelectItem, len(supportedClients))
-	for i, clientCfg := range supportedClients {
-		result := detectMCPClientStatus(cmd.Context(), clientCfg)
-		configured := result.Status == mcpStatusConfigured
-		var status string
-		switch result.Status {
-		case mcpStatusConfigured:
-			status = "already configured"
-		case mcpStatusNotConfigured:
-			status = "not configured"
-		case mcpStatusError:
-			status = "could not detect"
-		default:
-			status = string(result.Status)
-		}
-		items[i] = common.MultiSelectItem{
-			Label:    clientCfg.Name,
-			Status:   status,
-			Selected: !configured,
-			Dimmed:   configured,
-		}
-	}
-
-	res, err := common.RunMultiSelect(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), "Select MCP clients to install:", items)
+	clients, err := selectMCPClientsInteractively(cmd, mcpInstallSelectionOptions())
 	if err != nil {
 		return false, err
 	}
-	switch res.Reason {
-	case common.MultiSelectAborted:
-		return false, common.ErrMultiSelectAborted
-	case common.MultiSelectCanceled:
+	if clients == nil {
+		// User pressed esc/q — return to the main menu.
 		return true, nil
 	}
-
-	if len(res.Indices) == 0 {
+	if len(clients) == 0 {
 		cmd.PrintErrln("No MCP clients selected.")
 		return false, nil
 	}
-
-	rows := make([]MCPClientStatusOutput, 0, len(res.Indices))
-	anyError := false
-	for _, idx := range res.Indices {
-		row, err := installGhostMCPForClientWithoutOutput(cmd.Context(), supportedClients[idx], true)
-		rows = append(rows, row)
-		if err != nil {
-			anyError = true
-		}
-	}
-
-	if err := outputMCPClientResultTable(cmd.OutOrStdout(), rows); err != nil {
-		return false, err
-	}
-	if anyError {
-		cmd.PrintErrln("One or more clients failed to configure. See the table above.")
-	}
-	return false, nil
+	return false, installGhostMCPForClients(cmd, clients, true, false, false)
 }
 
-func runInitCompletions(cmd *cobra.Command) error {
+// runInitCompletions appends Ghost's completion snippet to the user's rc
+// file. The returned bool reports whether the rc file was actually modified.
+func runInitCompletions(cmd *cobra.Command) (bool, error) {
 	cmd.PrintErrln()
 	cmd.PrintErrln("--- Shell completions ---")
 	shellType := common.DetectShellType()
 	if shellType == "" {
 		cmd.PrintErrln("Could not detect your shell from $SHELL; skipping completions.")
-		return nil
+		return false, nil
 	}
 	rc := common.DetectShellRC()
 	mentioned, err := common.ShellRCMentions(rc, "ghost completion")
 	if err != nil {
-		return fmt.Errorf("failed to read %s: %w", rc, err)
+		return false, fmt.Errorf("failed to read %s: %w", rc, err)
 	}
 	if mentioned {
 		cmd.PrintErrf("Completions already configured in %s.\n", rc)
-		return nil
+		return false, nil
 	}
 
-	binary := "ghost"
-	if err := common.AppendCompletionsToShellRC(rc, shellType, binary); err != nil {
-		return err
+	if err := common.AppendCompletionsToShellRC(rc, shellType, "ghost"); err != nil {
+		return false, err
 	}
 	cmd.PrintErrf("Added %s completions to %s.\n", shellType, rc)
-	cmd.PrintErrf("Restart your shell or run: source %s\n", rc)
-	return nil
+	return true, nil
 }
 
-func runInitPath(cmd *cobra.Command) error {
+// runInitPath adds Ghost's install dir to the user's PATH via their rc file.
+// The returned bool reports whether the rc file was actually modified.
+func runInitPath(cmd *cobra.Command) (bool, error) {
 	cmd.PrintErrln()
 	cmd.PrintErrln("--- PATH ---")
 	exe, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("failed to determine install directory: %w", err)
+		return false, fmt.Errorf("failed to determine install directory: %w", err)
 	}
 	installDir := filepath.Dir(exe)
 	if common.IsInPath(installDir) {
 		cmd.PrintErrf("%s is already in PATH.\n", installDir)
-		return nil
+		return false, nil
 	}
 	rc := common.DetectShellRC()
 	mentioned, err := common.ShellRCMentions(rc, installDir)
 	if err != nil {
-		return fmt.Errorf("failed to read %s: %w", rc, err)
+		return false, fmt.Errorf("failed to read %s: %w", rc, err)
 	}
 	if mentioned {
 		cmd.PrintErrf("%s is already referenced in %s. Restart your shell to apply.\n", installDir, rc)
-		return nil
+		return false, nil
 	}
 	if err := common.AppendPathToShellRC(rc, installDir); err != nil {
-		return err
+		return false, err
 	}
 	cmd.PrintErrf("Added %s to PATH in %s.\n", installDir, rc)
-	cmd.PrintErrf("Restart your shell or run: source %s\n", rc)
-	return nil
+	return true, nil
 }
 
 // displayPath replaces $HOME with ~ in path for compact display.

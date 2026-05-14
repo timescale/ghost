@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"context"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,12 +70,9 @@ func TestInit_SkipIfConfiguredAllConfigured(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// MCP detection: write the Claude Code config file with a ghost server
-	// entry. The detect helper for Claude Code calls `claude mcp get` which
-	// we cannot reliably stub from here without a custom runner; we accept
-	// that MCP may not be "configured" in this environment and rely on a
-	// JSON-config client instead. Cursor uses ~/.cursor/mcp.json with
-	// MCPServersPathPrefix=/mcpServers.
+	// MCP detection: write a JSON-config client (Cursor) so detectMCPState
+	// reports at least one configured client. Cursor uses ~/.cursor/mcp.json
+	// with MCPServersPathPrefix=/mcpServers.
 	cursorPath := filepath.Join(home, ".cursor", "mcp.json")
 	if err := os.MkdirAll(filepath.Dir(cursorPath), 0o755); err != nil {
 		t.Fatal(err)
@@ -84,6 +83,14 @@ func TestInit_SkipIfConfiguredAllConfigured(t *testing.T) {
 	if err := os.WriteFile(cursorPath, []byte(cursorCfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
+
+	// Stub every external MCP-client CLI (claude / codex / gemini, etc.)
+	// to behave as if the binary is not installed. Detection helpers treat
+	// exec.ErrNotFound as "not configured", which keeps the test
+	// hermetic regardless of what's actually on the developer's PATH.
+	withMCPClientCommandRunner(t, func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return nil, exec.ErrNotFound
+	})
 
 	setup := func(m *mock.MockClientWithResponsesInterface) {
 		m.EXPECT().

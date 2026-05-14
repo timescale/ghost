@@ -94,27 +94,7 @@ Pass "all" to configure every supported client. If no client is specified, you'l
 		ValidArgs:    getValidMCPClientTargetNames(),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			clients, err := resolveMCPClients(cmd, args, mcpClientSelectionOptions{
-				title: "Select MCP clients to install:",
-				statusText: func(status MCPClientStatus) string {
-					switch status {
-					case mcpStatusConfigured:
-						return "already configured"
-					case mcpStatusNotConfigured:
-						return "not configured"
-					case mcpStatusError:
-						return "could not detect"
-					default:
-						return string(status)
-					}
-				},
-				selectedByDefault: func(status MCPClientStatus) bool {
-					return status != mcpStatusConfigured
-				},
-				dimmedByDefault: func(status MCPClientStatus) bool {
-					return status == mcpStatusConfigured
-				},
-			})
+			clients, err := resolveMCPClients(cmd, args, mcpInstallSelectionOptions())
 			if err != nil {
 				return err
 			}
@@ -573,6 +553,33 @@ type mcpClientSelectionOptions struct {
 	statusText        func(MCPClientStatus) string
 	selectedByDefault func(MCPClientStatus) bool
 	dimmedByDefault   func(MCPClientStatus) bool
+}
+
+// mcpInstallSelectionOptions returns the multi-select options for picking
+// MCP clients to install Ghost into. Shared by `ghost mcp install` and the
+// MCP step of `ghost init`.
+func mcpInstallSelectionOptions() mcpClientSelectionOptions {
+	return mcpClientSelectionOptions{
+		title: "Select MCP clients to install:",
+		statusText: func(status MCPClientStatus) string {
+			switch status {
+			case mcpStatusConfigured:
+				return "already configured"
+			case mcpStatusNotConfigured:
+				return "not configured"
+			case mcpStatusError:
+				return "could not detect"
+			default:
+				return string(status)
+			}
+		},
+		selectedByDefault: func(status MCPClientStatus) bool {
+			return status != mcpStatusConfigured
+		},
+		dimmedByDefault: func(status MCPClientStatus) bool {
+			return status == mcpStatusConfigured
+		},
+	}
 }
 
 var selectMCPClientsInteractively = func(cmd *cobra.Command, options mcpClientSelectionOptions) ([]clientConfig, error) {
