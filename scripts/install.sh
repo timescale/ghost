@@ -481,18 +481,20 @@ verify_installation() {
 # unnecessarily.
 #
 # `ghost init` needs an interactive TTY for its multi-select prompts. We
-# redirect stdin from /dev/tty so the flow works under `curl | sh`, where the
-# script's stdin is the pipe from curl. If /dev/tty isn't readable (e.g. in a
-# container with no tty), we run the non-interactive PATH setup and tell the
-# user to run the full interactive init flow manually.
+# redirect stdin/stdout/stderr through /dev/tty so the flow works under
+# `curl | sh`, where the script's stdin is the pipe from curl, and so prompts
+# remain visible even if the installer itself is redirected. If /dev/tty isn't
+# readable and writable (e.g. in a container with no tty), we run the
+# non-interactive PATH setup and tell the user to run the full interactive init
+# flow manually.
 run_ghost_init() {
     local binary_path="$1"
-    if [ ! -r /dev/tty ]; then
+    if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
         "${binary_path}" --version-check=false init path || true
         printf "\nRun '%s init' to finish configuring Ghost.\n" "${binary_path}" >&2
         return 0
     fi
-    "${binary_path}" --version-check=false init --skip-if-configured </dev/tty || true
+    "${binary_path}" --version-check=false init --skip-if-configured </dev/tty >/dev/tty 2>/dev/tty || true
 }
 
 # ============================================================================
