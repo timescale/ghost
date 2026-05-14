@@ -21,7 +21,7 @@ type VersionOutput struct {
 	Platform  string `json:"platform"`
 }
 
-func buildVersionCmd(app *common.App) *cobra.Command {
+func buildVersionCmd(_ *common.App) *cobra.Command {
 	var jsonOutput bool
 	var yamlOutput bool
 	var bareOutput bool

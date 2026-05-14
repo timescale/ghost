@@ -15,7 +15,6 @@ import (
 
 func TestMCPUninstallCmd(t *testing.T) {
 	falseVal := false
-	trueVal := true
 
 	cursorConfiguredFile := `{
   "mcpServers": {
@@ -284,7 +283,6 @@ func TestMCPUninstallCmd(t *testing.T) {
 			clientSelector: func(_ *cobra.Command, _ mcpClientSelectionOptions) ([]clientConfig, error) {
 				return []clientConfig{supportedClientsMap[Cursor]}, nil
 			},
-			isTerminal: &trueVal,
 			wantStdout: "CLIENT  STATUS       \n" +
 				"Cursor  uninstalled  \n",
 		},

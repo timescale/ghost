@@ -53,7 +53,7 @@ const (
 )
 
 // buildMCPInstallCmd creates the install subcommand for configuring editors
-func buildMCPInstallCmd(app *common.App) *cobra.Command {
+func buildMCPInstallCmd(_ *common.App) *cobra.Command {
 	var noBackup bool
 	var jsonOutput bool
 	var yamlOutput bool
@@ -98,7 +98,13 @@ Pass "all" to configure every supported client. If no client is specified, you'l
 			if err != nil {
 				return err
 			}
-			return installGhostMCPForClients(cmd, clients, !noBackup, jsonOutput, yamlOutput)
+			if err := installGhostMCPForClients(cmd, clients, !noBackup, jsonOutput, yamlOutput); err != nil {
+				// The per-row errors are already shown in the table, so suppress
+				// cobra's "Error: ..." line.
+				cmd.SilenceErrors = true
+				return err
+			}
+			return nil
 		},
 	}
 
@@ -379,7 +385,7 @@ func installGhostMCPForClients(cmd *cobra.Command, clients []clientConfig, creat
 	rows := make([]MCPClientStatusOutput, len(clients))
 	anyError := false
 	for i, clientCfg := range clients {
-		row, err := installGhostMCPForClientWithoutOutput(cmd.Context(), clientCfg, createBackup)
+		row, err := installGhostMCPForClient(cmd.Context(), clientCfg, createBackup)
 		rows[i] = row
 		if err != nil {
 			anyError = true
@@ -390,8 +396,7 @@ func installGhostMCPForClients(cmd *cobra.Command, clients []clientConfig, creat
 		return err
 	}
 	if anyError {
-		cmd.SilenceErrors = true
-		return common.ExitWithCode(common.ExitGeneralError, errors.New("failed to install Ghost MCP server for one or more clients"))
+		return common.ExitWithCode(common.ExitGeneralError, nil)
 	}
 	return nil
 }
@@ -464,7 +469,7 @@ func outputMCPClientResultTable(w io.Writer, rows []MCPClientStatusOutput) error
 	return table.Render()
 }
 
-func installGhostMCPForClientWithoutOutput(ctx context.Context, clientCfg clientConfig, createBackup bool) (MCPClientStatusOutput, error) {
+func installGhostMCPForClient(ctx context.Context, clientCfg clientConfig, createBackup bool) (MCPClientStatusOutput, error) {
 
 	makeErrorResult := func(err error) (MCPClientStatusOutput, error) {
 		return MCPClientStatusOutput{
@@ -562,7 +567,7 @@ func generateSupportedEditorsHelp() string {
 	for _, cfg := range supportedClients {
 		// Show only the primary editor name in help text
 		primaryName := cfg.EditorNames[0]
-		result.WriteString(fmt.Sprintf("  %-24s Configure for %s\n", primaryName, cfg.Name))
+		fmt.Fprintf(&result, "  %-24s Configure for %s\n", primaryName, cfg.Name)
 	}
 	return result.String()
 }

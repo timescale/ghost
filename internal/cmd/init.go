@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -45,7 +44,13 @@ func buildInitCmd(app *common.App) *cobra.Command {
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInit(cmd, app, skipIfConfigured)
+			err := runInit(cmd, app, skipIfConfigured)
+			if err != nil && err.Error() == "" {
+				// MCP install reports failures via its table and returns an
+				// ExitCodeError with no message; suppress cobra's "Error: ..." line.
+				cmd.SilenceErrors = true
+			}
+			return err
 		},
 	}
 
@@ -78,6 +83,10 @@ func buildInitPathCmd() *cobra.Command {
 	return cmd
 }
 
+// errInitCanceled signals that the user backed out of a submenu and the init
+// flow should stop without printing an error.
+var errInitCanceled = errors.New("init canceled")
+
 func runInit(cmd *cobra.Command, app *common.App, skipIfConfigured bool) error {
 	ctx := cmd.Context()
 	stdinIsTerminal := util.IsTerminal(cmd.InOrStdin())
@@ -97,68 +106,56 @@ func runInit(cmd *cobra.Command, app *common.App, skipIfConfigured bool) error {
 		return errors.New("ghost init requires an interactive terminal; run it from a TTY")
 	}
 
-	for {
-		mainItems := buildMainMenuItems(states)
-		result, err := common.RunMultiSelect(ctx, cmd.InOrStdin(), cmd.ErrOrStderr(), "Select what to configure:", mainItems)
-		if err != nil {
-			return err
-		}
-		switch result.Reason {
-		case common.MultiSelectAborted:
-			return common.ErrMultiSelectAborted
-		case common.MultiSelectCanceled:
+	mainItems := buildMainMenuItems(states)
+	result, err := common.RunMultiSelect(ctx, cmd.InOrStdin(), cmd.ErrOrStderr(), "Select what to configure:", mainItems)
+	if err != nil {
+		return err
+	}
+	switch result.Reason {
+	case common.MultiSelectAborted:
+		return common.ErrMultiSelectAborted
+	case common.MultiSelectCanceled:
+		cmd.PrintErrln("Canceled.")
+		return nil
+	}
+
+	if len(result.Indices) == 0 {
+		cmd.PrintErrln("Nothing selected.")
+		return nil
+	}
+
+	if err := runSelectedInitSteps(cmd, app, result.Indices); err != nil {
+		if errors.Is(err, errInitCanceled) {
 			cmd.PrintErrln("Canceled.")
 			return nil
 		}
-
-		if len(result.Indices) == 0 {
-			cmd.PrintErrln("Nothing selected.")
-			return nil
-		}
-
-		retryMainMenu, err := runSelectedInitSteps(cmd, app, result.Indices)
-		if err != nil {
-			return err
-		}
-		if retryMainMenu {
-			// User canceled out of a submenu. Re-detect state (login or
-			// other steps may have changed) and show the main menu again.
-			states = detectInitStates(ctx, app)
-			continue
-		}
-		return nil
+		return err
 	}
+	return nil
 }
 
-// runSelectedInitSteps executes the steps the user picked. The returned bool
-// reports whether the caller should redraw the main menu (true when a submenu
-// was canceled, false on full success).
-func runSelectedInitSteps(cmd *cobra.Command, app *common.App, indices []int) (bool, error) {
+func runSelectedInitSteps(cmd *cobra.Command, app *common.App, indices []int) error {
 	rcChanged := false
 	for _, idx := range indices {
 		switch initStep(idx) {
 		case stepPATH:
 			changed, err := runInitPath(cmd)
 			if err != nil {
-				return false, err
+				return err
 			}
 			rcChanged = rcChanged || changed
 		case stepLogin:
 			if err := runInitLogin(cmd, app); err != nil {
-				return false, err
+				return err
 			}
 		case stepMCP:
-			retry, err := runInitMCP(cmd)
-			if err != nil {
-				return false, err
-			}
-			if retry {
-				return true, nil
+			if err := runInitMCP(cmd); err != nil {
+				return err
 			}
 		case stepCompletions:
 			changed, err := runInitCompletions(cmd)
 			if err != nil {
-				return false, err
+				return err
 			}
 			rcChanged = rcChanged || changed
 		}
@@ -169,7 +166,7 @@ func runSelectedInitSteps(cmd *cobra.Command, app *common.App, indices []int) (b
 	} else {
 		cmd.PrintErrln("All done.")
 	}
-	return false, nil
+	return nil
 }
 
 func detectInitStates(ctx context.Context, app *common.App) []initStepState {
@@ -271,10 +268,10 @@ func detectCompletionsState() initStepState {
 	}
 	if mentioned {
 		state.configured = true
-		state.status = fmt.Sprintf("already configured in %s", displayPath(rc))
+		state.status = fmt.Sprintf("already configured in %s", util.DisplayPath(rc))
 		return state
 	}
-	state.status = fmt.Sprintf("not configured (would write to %s)", displayPath(rc))
+	state.status = fmt.Sprintf("not configured (would write to %s)", util.DisplayPath(rc))
 	return state
 }
 
@@ -288,10 +285,10 @@ func detectPathState() initStepState {
 	}
 	if common.IsInPath(installDir) {
 		state.configured = true
-		state.status = fmt.Sprintf("already in PATH (%s)", displayPath(installDir))
+		state.status = fmt.Sprintf("already in PATH (%s)", util.DisplayPath(installDir))
 		return state
 	}
-	state.status = fmt.Sprintf("not in PATH (%s)", displayPath(installDir))
+	state.status = fmt.Sprintf("not in PATH (%s)", util.DisplayPath(installDir))
 	return state
 }
 
@@ -306,23 +303,23 @@ func runInitLogin(cmd *cobra.Command, app *common.App) error {
 	return nil
 }
 
-func runInitMCP(cmd *cobra.Command) (bool, error) {
+func runInitMCP(cmd *cobra.Command) error {
 	cmd.PrintErrln()
 	cmd.PrintErrln("--- MCP server ---")
 
 	clients, err := selectMCPClientsInteractively(cmd, mcpInstallSelectionOptions())
 	if err != nil {
-		return false, err
+		return err
 	}
 	if clients == nil {
-		// User pressed esc/q — return to the main menu.
-		return true, nil
+		// User pressed esc/q — exit the init flow.
+		return errInitCanceled
 	}
 	if len(clients) == 0 {
 		cmd.PrintErrln("No MCP clients selected.")
-		return false, nil
+		return nil
 	}
-	return false, installGhostMCPForClients(cmd, clients, true, false, false)
+	return installGhostMCPForClients(cmd, clients, true, false, false)
 }
 
 // runInitCompletions appends Ghost's completion snippet to the user's rc
@@ -345,7 +342,7 @@ func runInitCompletions(cmd *cobra.Command) (bool, error) {
 		return false, nil
 	}
 
-	binaryPath, err := currentGhostExecutablePath()
+	binaryPath, err := getGhostExecutablePath()
 	if err != nil {
 		return false, fmt.Errorf("failed to determine Ghost executable path: %w", err)
 	}
@@ -386,36 +383,9 @@ func runInitPath(cmd *cobra.Command) (bool, error) {
 }
 
 func currentGhostInstallDir() (string, error) {
-	executablePath, err := currentGhostExecutablePath()
+	executablePath, err := getGhostExecutablePath()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Dir(executablePath), nil
-}
-
-func currentGhostExecutablePath() (string, error) {
-	executablePath, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	absoluteExecutablePath, err := filepath.Abs(executablePath)
-	if err != nil {
-		return "", err
-	}
-	return absoluteExecutablePath, nil
-}
-
-// displayPath replaces $HOME with ~ in path for compact display.
-func displayPath(path string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return path
-	}
-	if path == home {
-		return "~"
-	}
-	if strings.HasPrefix(path, home+string(os.PathSeparator)) {
-		return "~" + path[len(home):]
-	}
-	return path
 }

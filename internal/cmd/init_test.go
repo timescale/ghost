@@ -32,9 +32,9 @@ func TestInit(t *testing.T) {
 
 func TestInitPathSubcommandNonInteractive(t *testing.T) {
 	home := t.TempDir()
-	executablePath, err := currentGhostExecutablePath()
+	executablePath, err := getGhostExecutablePath()
 	if err != nil {
-		t.Fatalf("currentGhostExecutablePath: %v", err)
+		t.Fatalf("getGhostExecutablePath: %v", err)
 	}
 	installDir := filepath.Dir(executablePath)
 	rcPath := filepath.Join(home, ".bashrc")
@@ -66,9 +66,9 @@ func TestRunSelectedInitSteps_ConfiguresPathBeforeCompletions(t *testing.T) {
 	t.Setenv("ZDOTDIR", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
 
-	executablePath, err := currentGhostExecutablePath()
+	executablePath, err := getGhostExecutablePath()
 	if err != nil {
-		t.Fatalf("currentGhostExecutablePath: %v", err)
+		t.Fatalf("getGhostExecutablePath: %v", err)
 	}
 	installDir := filepath.Dir(executablePath)
 
@@ -78,12 +78,8 @@ func TestRunSelectedInitSteps_ConfiguresPathBeforeCompletions(t *testing.T) {
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 
-	retryMainMenu, err := runSelectedInitSteps(cmd, &common.App{}, []int{int(stepPATH), int(stepCompletions)})
-	if err != nil {
+	if err := runSelectedInitSteps(cmd, &common.App{}, []int{int(stepPATH), int(stepCompletions)}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if retryMainMenu {
-		t.Fatal("unexpected retryMainMenu=true")
 	}
 	assertOutput(t, stdout.String(), "")
 
