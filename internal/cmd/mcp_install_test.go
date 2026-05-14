@@ -82,7 +82,7 @@ func TestMCPInstallCmd(t *testing.T) {
 					"Cursor  installed  " + configPath + "  \n" +
 					"\n" +
 					"Next steps:\n" +
-					"   1. Restart cursor to load the new configuration\n" +
+					"   1. Restart Cursor to load the new configuration\n" +
 					"   2. The Ghost MCP server will be available as 'ghost'\n"
 			},
 			after: assertCursorHasGhost,

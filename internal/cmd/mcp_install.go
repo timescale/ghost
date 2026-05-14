@@ -410,7 +410,7 @@ func writeMCPInstallOutput(cmd *cobra.Command, rows []MCPClientStatusOutput, jso
 			cmd.Printf("\nNext steps:\n")
 			what := "the client(s)"
 			if len(rows) == 1 {
-				what = string(rows[0].Client)
+				what = supportedClientsMap[rows[0].Client].Name
 			}
 			cmd.Printf("   1. Restart %s to load the new configuration\n", what)
 			cmd.Printf("   2. The Ghost MCP server will be available as '%s'\n", mcp.ServerName)
