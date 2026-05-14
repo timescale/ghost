@@ -165,6 +165,9 @@ func TestShellRCMentionsGhostCompletion(t *testing.T) {
 		{name: "absolute path snippet", content: "source <(/opt/ghost/bin/ghost completion zsh)\n", want: true},
 		{name: "quoted absolute path snippet", content: "source <('/Applications/Ghost CLI/ghost' completion zsh)\n", want: true},
 		{name: "not completions", content: "echo ghost\n", want: false},
+		{name: "commented out snippet is ignored", content: "# source <(ghost completion zsh)\n", want: false},
+		{name: "indented commented out snippet is ignored", content: "  \t# source <(ghost completion zsh)\n", want: false},
+		{name: "snippet present alongside an unrelated comment", content: "# nothing here\nsource <(ghost completion zsh)\n", want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -197,24 +200,33 @@ func TestAppendPathToShellRC(t *testing.T) {
 	tests := []struct {
 		name       string
 		rcFilename string
+		installDir string
 		want       string
 	}{
 		{
 			name:       "bash",
 			rcFilename: ".bashrc",
+			installDir: "/opt/ghost/bin",
 			want:       "\n# Added by ghost init\nexport PATH=\"/opt/ghost/bin:$PATH\"\n",
 		},
 		{
 			name:       "fish",
 			rcFilename: "fish/config.fish",
+			installDir: "/opt/ghost/bin",
 			want:       "\n# Added by ghost init\nset -gx PATH /opt/ghost/bin $PATH\n",
+		},
+		{
+			name:       "fish quotes install dir with spaces",
+			rcFilename: "fish/config.fish",
+			installDir: "/Applications/Ghost CLI/bin",
+			want:       "\n# Added by ghost init\nset -gx PATH '/Applications/Ghost CLI/bin' $PATH\n",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			rc := filepath.Join(dir, tt.rcFilename)
-			if err := AppendPathToShellRC(rc, "/opt/ghost/bin"); err != nil {
+			if err := AppendPathToShellRC(rc, tt.installDir); err != nil {
 				t.Fatal(err)
 			}
 			got, err := os.ReadFile(rc)

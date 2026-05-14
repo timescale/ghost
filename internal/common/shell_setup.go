@@ -129,13 +129,22 @@ var ghostCompletionMentionRE = regexp.MustCompile(`(?:^|[^[:alnum:]_-])ghost(?:\
 // ShellRCMentionsGhostCompletion reports whether the rc file appears to
 // configure Ghost shell completions. It recognizes both the historical
 // `ghost completion ...` form and the absolute-path form written by
-// AppendCompletionsToShellRC.
+// AppendCompletionsToShellRC. Comment lines are ignored so a commented-out
+// snippet is not treated as configured.
 func ShellRCMentionsGhostCompletion(rcPath string) (bool, error) {
 	data, err := readShellRCFileIfExists(rcPath)
 	if err != nil {
 		return false, err
 	}
-	return ghostCompletionMentionRE.Match(data), nil
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if strings.HasPrefix(strings.TrimLeft(line, " \t"), "#") {
+			continue
+		}
+		if ghostCompletionMentionRE.MatchString(line) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func readShellRCFileIfExists(rcPath string) ([]byte, error) {
@@ -154,7 +163,10 @@ func readShellRCFileIfExists(rcPath string) ([]byte, error) {
 func AppendPathToShellRC(rcPath, installDir string) error {
 	var snippet string
 	if strings.HasSuffix(rcPath, "config.fish") {
-		snippet = fmt.Sprintf("\n# Added by ghost init\nset -gx PATH %s $PATH\n", installDir)
+		// Fish performs word-splitting on unquoted arguments, so an install
+		// dir containing whitespace (e.g. "/Applications/Ghost CLI/bin")
+		// would otherwise be split into separate PATH entries.
+		snippet = fmt.Sprintf("\n# Added by ghost init\nset -gx PATH %s $PATH\n", shellQuote(installDir))
 	} else {
 		snippet = fmt.Sprintf("\n# Added by ghost init\nexport PATH=\"%s:$PATH\"\n", installDir)
 	}
