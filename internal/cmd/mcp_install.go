@@ -587,16 +587,8 @@ func findClientConfigFile(clientCfg clientConfig) (string, error) {
 	return util.ExpandPath(clientCfg.ConfigPaths[0]), nil
 }
 
-// ghostExecutablePathFunc can be overridden in tests to return a fixed path
-var ghostExecutablePathFunc = defaultGetGhostExecutablePath
-
-// getGhostExecutablePath returns the full path to the currently executing Ghost binary
-func getGhostExecutablePath() (string, error) {
-	return ghostExecutablePathFunc()
-}
-
-// defaultGetGhostExecutablePath is the default implementation
-func defaultGetGhostExecutablePath() (string, error) {
+// path to the binary, but if we're running via 'go run' return "ghost" to allow detection in development without requiring a build
+var getGhostExecutablePath = func() (string, error) {
 	ghostPath, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("failed to get executable path: %w", err)

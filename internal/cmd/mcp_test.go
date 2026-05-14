@@ -25,7 +25,7 @@ type mcpCmdTest struct {
 	// in values is replaced with the absolute HOME path.
 	files map[string]string
 
-	// ghostPath stubs ghostExecutablePathFunc so the install command produces
+	// ghostPath stubs getGhostExecutablePath so the install command produces
 	// deterministic output independent of the real binary location.
 	ghostPath string
 
@@ -142,9 +142,9 @@ func runMCPCmdTests(t *testing.T, tests []mcpCmdTest) {
 // real binary location.
 func withGhostExecutablePath(t *testing.T, path string) {
 	t.Helper()
-	original := ghostExecutablePathFunc
-	ghostExecutablePathFunc = func() (string, error) { return path, nil }
-	t.Cleanup(func() { ghostExecutablePathFunc = original })
+	original := getGhostExecutablePath
+	getGhostExecutablePath = func() (string, error) { return path, nil }
+	t.Cleanup(func() { getGhostExecutablePath = original })
 }
 
 // withMCPClientCommandRunner overrides runMCPClientCommand for the duration
