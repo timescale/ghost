@@ -475,221 +475,23 @@ verify_installation() {
     fi
 }
 
-# Check whether a prompt can be shown to the user. Prefers /dev/tty so this
-# works correctly when the script is piped through `curl | sh`.
-is_interactive() {
-    [ -t 0 ] || [ -r /dev/tty ]
-}
-
-# Prompt the user with a yes/no question. Returns 0 on yes, 1 on no or on any
-# error reading input. Reads from /dev/tty when available so prompts still
-# work under `curl | sh`.
-prompt_yn() {
-    local prompt="$1"
-    local reply=""
-
-    if [ -r /dev/tty ]; then
-        printf "%s [y/N]: " "${prompt}" > /dev/tty
-        IFS= read -r reply < /dev/tty || reply=""
-    else
-        printf "%s [y/N]: " "${prompt}" >&2
-        IFS= read -r reply || reply=""
-    fi
-
-    case "${reply}" in
-        [Yy]|[Yy][Ee][Ss]) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-# Determine the user's shell rc file based on the SHELL env var, falling
-# back to an OS-appropriate default. Echoes the path on stdout.
-detect_shell_rc() {
-    local shell_name
-    shell_name="$(basename "${SHELL:-}" 2>/dev/null || echo "")"
-
-    case "${shell_name}" in
-        zsh)
-            echo "${ZDOTDIR:-$HOME}/.zshrc"
-            ;;
-        bash)
-            # On macOS, login shells read .bash_profile, not .bashrc, so
-            # prefer that file when it already exists.
-            if [ "$(uname -s)" = "Darwin" ] && [ -f "$HOME/.bash_profile" ]; then
-                echo "$HOME/.bash_profile"
-            else
-                echo "$HOME/.bashrc"
-            fi
-            ;;
-        fish)
-            echo "${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish"
-            ;;
-        *)
-            # Unknown shell — guess based on OS and existing files.
-            if [ "$(uname -s)" = "Darwin" ] || [ -f "$HOME/.zshrc" ]; then
-                echo "$HOME/.zshrc"
-            else
-                echo "$HOME/.bashrc"
-            fi
-            ;;
-    esac
-}
-
-# Determine the shell type for completions (bash/zsh/fish). Echoes empty
-# string when the user's shell is unknown or unsupported.
-detect_shell_type() {
-    local shell_name
-    shell_name="$(basename "${SHELL:-}" 2>/dev/null || echo "")"
-
-    case "${shell_name}" in
-        bash|zsh|fish) echo "${shell_name}" ;;
-        *) echo "" ;;
-    esac
-}
-
-# Build the shell-specific snippet that sources Ghost's completions.
-completion_snippet() {
-    local shell_type="$1"
-
-    case "${shell_type}" in
-        fish)
-            echo "${BINARY_NAME} completion fish | source"
-            ;;
-        *)
-            echo "command -v ${BINARY_NAME} >/dev/null 2>&1 && source <(${BINARY_NAME} completion ${shell_type})"
-            ;;
-    esac
-}
-
-# Offer to add the install directory to the PATH in the user's shellrc.
-# No-op when the directory is already in PATH or already referenced in the
-# shellrc file. Prints manual instructions when declined or non-interactive.
-configure_path_in_shellrc() {
-    local install_dir="$1"
-    local shell_rc
-    shell_rc="$(detect_shell_rc)"
-
-    # Already in PATH — nothing to do.
-    if is_in_path "${install_dir}"; then
+# Run `ghost init` to drive the post-install configuration flow (login, MCP
+# server installation, shell completions, PATH setup). We pass
+# --skip-if-configured so re-runs of the installer don't re-prompt the user
+# unnecessarily.
+#
+# `ghost init` needs an interactive TTY for its multi-select prompts. We
+# redirect stdin from /dev/tty so the flow works under `curl | sh`, where the
+# script's stdin is the pipe from curl. If /dev/tty isn't readable (e.g. in a
+# container with no tty), we skip the call and tell the user to run
+# `ghost init` manually.
+run_ghost_init() {
+    local binary_path="$1"
+    if [ ! -r /dev/tty ]; then
+        printf "\nRun '%s init' to finish configuring Ghost.\n" "$(basename "${binary_path}")" >&2
         return 0
     fi
-
-    log_warn "${install_dir} is not in your PATH"
-
-    # If the shellrc already references the install dir, assume the user has
-    # configured it and just needs to reload their shell.
-    if [ -f "${shell_rc}" ] && grep -qF "${install_dir}" "${shell_rc}" 2>/dev/null; then
-        log_info "${install_dir} is already referenced in ${shell_rc}"
-        log_info "Restart your shell or run: source ${shell_rc}"
-        return 0
-    fi
-
-    local manual_cmd
-    case "${shell_rc}" in
-        *config.fish)
-            manual_cmd="fish_add_path ${install_dir}"
-            ;;
-        *)
-            manual_cmd="echo 'export PATH=\"${install_dir}:\$PATH\"' >> ${shell_rc}"
-            ;;
-    esac
-
-    if ! is_interactive || ! prompt_yn "Add to PATH in ${shell_rc}?"; then
-        log_info "To add it manually, run:"
-        log_info "    ${manual_cmd}"
-        return 0
-    fi
-
-    # Ensure parent directory and shellrc file exist before appending.
-    mkdir -p "$(dirname "${shell_rc}")"
-    touch "${shell_rc}"
-
-    case "${shell_rc}" in
-        *config.fish)
-            {
-                echo ""
-                echo "# Added by Ghost installer"
-                echo "set -gx PATH ${install_dir} \$PATH"
-            } >> "${shell_rc}"
-            ;;
-        *)
-            {
-                echo ""
-                echo "# Added by Ghost installer"
-                echo "export PATH=\"${install_dir}:\$PATH\""
-            } >> "${shell_rc}"
-            ;;
-    esac
-
-    log_success "Added ${install_dir} to PATH in ${shell_rc}"
-    log_info "Restart your shell or run: source ${shell_rc}"
-}
-
-# Offer to configure shell completions in the user's shellrc. No-op when
-# the shell is unknown, when completions are already configured, or when
-# the user declines.
-configure_shell_completions() {
-    local installed_binary="$1"
-    local shell_rc
-    shell_rc="$(detect_shell_rc)"
-    local shell_type
-    shell_type="$(detect_shell_type)"
-
-    if [ -z "${shell_type}" ]; then
-        log_info "Could not detect shell type, skipping completion setup"
-        log_info "Run '${installed_binary} completion --help' for manual setup instructions"
-        return 0
-    fi
-
-    local snippet
-    snippet="$(completion_snippet "${shell_type}")"
-
-    # Already configured? Look for any reference to `ghost completion` in rc.
-    if [ -f "${shell_rc}" ] && grep -qF "${BINARY_NAME} completion" "${shell_rc}" 2>/dev/null; then
-        log_debug "Shell completions already configured in ${shell_rc}"
-        return 0
-    fi
-
-    # For zsh, `source <(...)` requires compinit. If the user doesn't already
-    # load it (directly or via a framework), we offer to add it too.
-    local needs_compinit="false"
-    if [ "${shell_type}" = "zsh" ] && [ -f "${shell_rc}" ]; then
-        if ! grep -qE '(compinit|oh-my-zsh|prezto|zinit|antigen|zplug|zgenom)' "${shell_rc}" 2>/dev/null; then
-            needs_compinit="true"
-        fi
-    elif [ "${shell_type}" = "zsh" ]; then
-        needs_compinit="true"
-    fi
-
-    if ! is_interactive || ! prompt_yn "Add ${shell_type} shell completions for ${BINARY_NAME} to ${shell_rc}?"; then
-        log_info "To enable shell completions, add the following to ${shell_rc}:"
-        if [ "${needs_compinit}" = "true" ]; then
-            log_info "    autoload -Uz compinit && compinit -i"
-        fi
-        log_info "    ${snippet}"
-        return 0
-    fi
-
-    # Ensure parent directory and shellrc file exist before appending.
-    mkdir -p "$(dirname "${shell_rc}")"
-    touch "${shell_rc}"
-
-    {
-        if [ "${needs_compinit}" = "true" ]; then
-            echo ""
-            echo "# Initialize zsh completions"
-            echo "autoload -Uz compinit && compinit -i"
-        fi
-        echo ""
-        echo "# Ghost shell completions"
-        echo "${snippet}"
-    } >> "${shell_rc}"
-
-    log_success "Added ${shell_type} shell completions to ${shell_rc}"
-    if [ "${needs_compinit}" = "true" ]; then
-        log_success "Added compinit initialization to ${shell_rc}"
-    fi
-    log_info "Restart your shell or run: source ${shell_rc}"
+    "${binary_path}" init --skip-if-configured </dev/tty || true
 }
 
 # ============================================================================
@@ -854,14 +656,9 @@ main() {
     # usage messages can speak normally.
     QUIET=false
 
-    configure_path_in_shellrc "${install_dir}"
-    configure_shell_completions "${installed_binary}"
-
     verify_installation "${install_dir}" "${installed_binary}"
 
-    # Final usage messages (plain printf for a clean unprefixed look).
-    printf "\nGet started with:\n  %s login\n  %s mcp install\n" \
-        "${installed_binary}" "${installed_binary}" >&2
+    run_ghost_init "${install_dir}/${installed_binary}"
 }
 
 # ============================================================================

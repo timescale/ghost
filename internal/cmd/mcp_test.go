@@ -33,9 +33,9 @@ type mcpCmdTest struct {
 	// install/uninstall invocations route through this stub.
 	runner mcpClientCommandRunner
 
-	// uninstallSelector stubs the interactive client selector used by
-	// `ghost mcp uninstall` when no client argument is provided.
-	uninstallSelector func(*cobra.Command) (string, error)
+	// clientSelector stubs the interactive client selector used
+	// when no client argument is provided.
+	clientSelector func(*cobra.Command, mcpClientSelectionOptions) ([]clientConfig, error)
 
 	// stdin / isTerminal exercise the interactive prompt code paths.
 	stdin      string
@@ -45,6 +45,12 @@ type mcpCmdTest struct {
 	// "{{HOME}}" is substituted with the per-test HOME directory.
 	wantStdout string
 	wantStderr string
+
+	// wantStdoutFunc, when set, takes precedence over wantStdout. Use this when
+	// the expected output depends on the per-test HOME directory in a way that
+	// can't be expressed by simple "{{HOME}}" substitution — e.g. tablewriter
+	// output whose column widths depend on the length of a variable file path.
+	wantStdoutFunc func(homeDir string) string
 
 	// wantErr asserts the result error's Error() string. When set and
 	// wantStderr is empty, wantStderr is derived as "Error: <wantErr>\n".
@@ -81,10 +87,10 @@ func runMCPCmdTests(t *testing.T, tests []mcpCmdTest) {
 			if tt.runner != nil {
 				withMCPClientCommandRunner(t, tt.runner)
 			}
-			if tt.uninstallSelector != nil {
-				original := uninstallTargetSelector
-				uninstallTargetSelector = tt.uninstallSelector
-				t.Cleanup(func() { uninstallTargetSelector = original })
+			if tt.clientSelector != nil {
+				original := selectMCPClientsInteractively
+				selectMCPClientsInteractively = tt.clientSelector
+				t.Cleanup(func() { selectMCPClientsInteractively = original })
 			}
 
 			opts := []runOption{withEnv("HOME", homeDir)}
@@ -110,7 +116,13 @@ func runMCPCmdTests(t *testing.T, tests []mcpCmdTest) {
 				}
 			}
 
-			assertOutput(t, result.stdout, expand(tt.wantStdout))
+			wantStdout := tt.wantStdout
+			if tt.wantStdoutFunc != nil {
+				wantStdout = tt.wantStdoutFunc(homeDir)
+			} else {
+				wantStdout = expand(wantStdout)
+			}
+			assertOutput(t, result.stdout, wantStdout)
 
 			wantStderr := tt.wantStderr
 			if wantStderr == "" && tt.wantErr != "" && tt.wantExitCode == 0 {

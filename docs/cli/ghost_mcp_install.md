@@ -32,7 +32,7 @@ The command will:
 - Merge with existing MCP server configurations (doesn't overwrite other servers)
 - Validate the configuration after installation
 
-Pass "all" to configure every supported client. If no client is specified, you'll be prompted to select one interactively.
+Pass "all" to configure every supported client. If no client is specified, you'll be prompted to pick one or more clients interactively.
 
 ```
 ghost mcp install [client] [flags]
@@ -41,7 +41,7 @@ ghost mcp install [client] [flags]
 ### Examples
 
 ```
-  # Interactive client selection
+  # Interactive client selection (multi-select)
   ghost mcp install
 
   # Install for Claude Code (User scope - available in all projects)

@@ -47,6 +47,7 @@ npm install -g @ghost.build/cli
 ## Usage
 
 ```bash
+ghost init        # Interactively configure Ghost (login, MCP, completions, PATH)
 ghost login       # Authenticate with GitHub OAuth
 ghost mcp install # Install the MCP server
 ghost create      # Create a new Postgres database
@@ -68,6 +69,7 @@ ghost list        # List all databases
 | `fork` | Fork a database |
 | `fork dedicated` | Fork a database as dedicated |
 | `help` | Help about any command |
+| `init` | Interactively configure Ghost |
 | `invoice` | View invoices |
 | `list` | List all databases |
 | `logs` | View logs for a database |

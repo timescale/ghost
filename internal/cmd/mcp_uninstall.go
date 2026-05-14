@@ -17,12 +17,6 @@ import (
 	"github.com/timescale/ghost/internal/util"
 )
 
-// uninstallTargetSelector is the function used to select an uninstall target
-// interactively when no client argument is provided. It is a package-level
-// variable so tests can override it without spinning up a real Bubble Tea
-// program (which requires a TTY).
-var uninstallTargetSelector = selectClientInteractively
-
 func buildMCPUninstallCmd(_ *common.App) *cobra.Command {
 	var noBackup bool
 	var jsonOutput bool
@@ -51,12 +45,27 @@ Only the Ghost MCP server entry named "ghost" is removed; other MCP server entri
 		ValidArgs:    getValidMCPClientTargetNames(),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			targetName, err := selectedMCPUninstallTarget(cmd, args)
-			if err != nil {
-				return err
-			}
-
-			clients, err := mcpClientConfigsForTargetName(targetName)
+			clients, err := resolveMCPClients(cmd, args, mcpClientSelectionOptions{
+				title: "Select MCP clients to uninstall:",
+				statusText: func(status MCPClientStatus) string {
+					switch status {
+					case mcpStatusConfigured:
+						return "installed"
+					case mcpStatusNotConfigured:
+						return "not installed"
+					case mcpStatusError:
+						return "could not detect"
+					default:
+						return string(status)
+					}
+				},
+				selectedByDefault: func(status MCPClientStatus) bool {
+					return status == mcpStatusConfigured
+				},
+				dimmedByDefault: func(status MCPClientStatus) bool {
+					return status == mcpStatusNotConfigured
+				},
+			})
 			if err != nil {
 				return err
 			}
@@ -94,24 +103,6 @@ Only the Ghost MCP server entry named "ghost" is removed; other MCP server entri
 	cmd.MarkFlagsMutuallyExclusive("json", "yaml")
 
 	return cmd
-}
-
-func selectedMCPUninstallTarget(cmd *cobra.Command, args []string) (string, error) {
-	if len(args) > 0 {
-		return args[0], nil
-	}
-	if !util.IsTerminal(cmd.InOrStdin()) {
-		return "", errors.New("no client specified and stdin is not a terminal; pass the client name or 'all' as an argument")
-	}
-
-	targetName, err := uninstallTargetSelector(cmd)
-	if err != nil {
-		return "", fmt.Errorf("failed to select client: %w", err)
-	}
-	if targetName == "" {
-		return "", errors.New("no client selected")
-	}
-	return targetName, nil
 }
 
 func uninstallGhostMCPFromClients(ctx context.Context, clients []clientConfig, createBackup bool) []MCPClientStatusOutput {

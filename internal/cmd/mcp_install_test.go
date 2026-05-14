@@ -75,12 +75,16 @@ func TestMCPInstallCmd(t *testing.T) {
 			name:      "single client text output",
 			args:      []string{"mcp", "install", "cursor", "--no-backup"},
 			ghostPath: "/opt/bin/ghost",
-			wantStdout: "Successfully installed Ghost MCP server configuration for cursor\n" +
-				"Configuration file: {{HOME}}/.cursor/mcp.json\n" +
-				"\n" +
-				"Next steps:\n" +
-				"   1. Restart cursor to load the new configuration\n" +
-				"   2. The Ghost MCP server will be available as 'ghost'\n",
+			wantStdoutFunc: func(homeDir string) string {
+				configPath := homeDir + "/.cursor/mcp.json"
+				detailPad := strings.Repeat(" ", len(configPath)-len("DETAIL"))
+				return "CLIENT  STATUS     DETAIL" + detailPad + "  \n" +
+					"Cursor  installed  " + configPath + "  \n" +
+					"\n" +
+					"Next steps:\n" +
+					"   1. Restart cursor to load the new configuration\n" +
+					"   2. The Ghost MCP server will be available as 'ghost'\n"
+			},
 			after: assertCursorHasGhost,
 		},
 		{

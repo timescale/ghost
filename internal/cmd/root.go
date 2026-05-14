@@ -102,6 +102,7 @@ func buildRootCmd() (*cobra.Command, *common.App, error) {
 	cmd.AddCommand(buildVersionCmd(app))
 	cmd.AddCommand(buildConfigCmd(app))
 	cmd.AddCommand(buildMCPCmd(app))
+	cmd.AddCommand(buildInitCmd(app))
 	cmd.AddCommand(buildLoginCmd(app))
 	cmd.AddCommand(buildLogoutCmd(app))
 	cmd.AddCommand(buildCreateCmd(app))

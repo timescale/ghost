@@ -281,8 +281,8 @@ func TestMCPUninstallCmd(t *testing.T) {
 			files: map[string]string{
 				".cursor/mcp.json": cursorConfiguredFile,
 			},
-			uninstallSelector: func(_ *cobra.Command) (string, error) {
-				return "cursor", nil
+			clientSelector: func(_ *cobra.Command, _ mcpClientSelectionOptions) ([]clientConfig, error) {
+				return []clientConfig{supportedClientsMap[Cursor]}, nil
 			},
 			isTerminal: &trueVal,
 			wantStdout: "CLIENT  STATUS       \n" +

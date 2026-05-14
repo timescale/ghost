@@ -31,6 +31,7 @@ Ghost is a command-line interface for managing PostgreSQL databases.
 * [ghost delete](ghost_delete.md)	 - Delete a database
 * [ghost feedback](ghost_feedback.md)	 - Submit feedback, a bug report, or a support request
 * [ghost fork](ghost_fork.md)	 - Fork a database
+* [ghost init](ghost_init.md)	 - Interactively configure Ghost
 * [ghost invoice](ghost_invoice.md)	 - View invoices
 * [ghost list](ghost_list.md)	 - List all databases
 * [ghost login](ghost_login.md)	 - Authenticate with GitHub OAuth
