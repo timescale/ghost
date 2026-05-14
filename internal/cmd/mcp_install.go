@@ -199,24 +199,6 @@ var supportedClients = []clientConfig{
 		detectInstallStatus: detectClaudeCodeMCPConfiguration,
 	},
 	{
-		ClientType:           Cursor,
-		Name:                 "Cursor",
-		EditorNames:          []string{"cursor"},
-		MCPServersPathPrefix: "/mcpServers",
-		ConfigPaths: []string{
-			"~/.cursor/mcp.json",
-		},
-	},
-	{
-		ClientType:           Windsurf,
-		Name:                 "Windsurf",
-		EditorNames:          []string{"windsurf"},
-		MCPServersPathPrefix: "/mcpServers",
-		ConfigPaths: []string{
-			"~/.codeium/windsurf/mcp_config.json",
-		},
-	},
-	{
 		ClientType:  Codex,
 		Name:        "Codex",
 		EditorNames: []string{"codex"},
@@ -233,6 +215,15 @@ var supportedClients = []clientConfig{
 		detectInstallStatus: detectCodexMCPConfiguration,
 	},
 	{
+		ClientType:           Cursor,
+		Name:                 "Cursor",
+		EditorNames:          []string{"cursor"},
+		MCPServersPathPrefix: "/mcpServers",
+		ConfigPaths: []string{
+			"~/.cursor/mcp.json",
+		},
+	},
+	{
 		ClientType:  Gemini,
 		Name:        "Gemini CLI",
 		EditorNames: []string{"gemini", "gemini-cli"},
@@ -246,6 +237,30 @@ var supportedClients = []clientConfig{
 			return []string{"gemini", "mcp", "remove", "-s", "user", serverName}, nil
 		},
 		detectInstallStatus: detectGeminiMCPConfiguration,
+	},
+	{
+		ClientType:           Antigravity,
+		Name:                 "Google Antigravity",
+		EditorNames:          []string{"antigravity", "agy"},
+		MCPServersPathPrefix: "/mcpServers",
+		ConfigPaths: []string{
+			"~/.gemini/antigravity/mcp_config.json",
+		},
+	},
+	{
+		ClientType:           KiroCLI,
+		Name:                 "Kiro CLI",
+		EditorNames:          []string{"kiro-cli"},
+		MCPServersPathPrefix: "/mcpServers",
+		ConfigPaths: []string{
+			"~/.kiro/settings/mcp.json",
+		},
+		buildInstallCommand: func(serverName, command string, args []string) ([]string, error) {
+			return []string{"kiro-cli", "mcp", "add", "--name", serverName, "--scope", "global", "--force", "--command", command, "--args", strings.Join(args, ",")}, nil
+		},
+		buildUninstallCommand: func(serverName string) ([]string, error) {
+			return []string{"kiro-cli", "mcp", "remove", "--name", serverName, "--scope", "global"}, nil
+		},
 	},
 	{
 		ClientType:  VSCode,
@@ -270,27 +285,12 @@ var supportedClients = []clientConfig{
 		},
 	},
 	{
-		ClientType:           Antigravity,
-		Name:                 "Google Antigravity",
-		EditorNames:          []string{"antigravity", "agy"},
+		ClientType:           Windsurf,
+		Name:                 "Windsurf",
+		EditorNames:          []string{"windsurf"},
 		MCPServersPathPrefix: "/mcpServers",
 		ConfigPaths: []string{
-			"~/.gemini/antigravity/mcp_config.json",
-		},
-	},
-	{
-		ClientType:           KiroCLI,
-		Name:                 "Kiro CLI",
-		EditorNames:          []string{"kiro-cli"},
-		MCPServersPathPrefix: "/mcpServers",
-		ConfigPaths: []string{
-			"~/.kiro/settings/mcp.json",
-		},
-		buildInstallCommand: func(serverName, command string, args []string) ([]string, error) {
-			return []string{"kiro-cli", "mcp", "add", "--name", serverName, "--scope", "global", "--force", "--command", command, "--args", strings.Join(args, ",")}, nil
-		},
-		buildUninstallCommand: func(serverName string) ([]string, error) {
-			return []string{"kiro-cli", "mcp", "remove", "--name", serverName, "--scope", "global"}, nil
+			"~/.codeium/windsurf/mcp_config.json",
 		},
 	},
 }
