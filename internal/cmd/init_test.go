@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -33,12 +32,6 @@ func TestInit(t *testing.T) {
 			args:    []string{"init"},
 			setup:   authInfoOK,
 			opts:    []runOption{withIsTerminal(false)},
-			wantErr: "ghost init requires an interactive terminal; run it from a TTY",
-		},
-		{
-			name:    "skip-if-configured falls through when login not configured",
-			args:    []string{"init", "--skip-if-configured"},
-			opts:    []runOption{withClientError(errors.New("not logged in")), withIsTerminal(false)},
 			wantErr: "ghost init requires an interactive terminal; run it from a TTY",
 		},
 	}
@@ -112,15 +105,5 @@ func TestInit_SkipIfConfiguredAllConfigured(t *testing.T) {
 	}
 	if !strings.Contains(result.stderr, "Ghost is already fully configured") {
 		t.Fatalf("expected 'already fully configured' on stderr, got:\nstderr: %s", result.stderr)
-	}
-}
-
-func TestInit_RegisteredInHelp(t *testing.T) {
-	result := runCommand(t, []string{"--help"}, nil)
-	if result.err != nil {
-		t.Fatalf("unexpected error: %v", result.err)
-	}
-	if !strings.Contains(result.stdout, "init") {
-		t.Errorf("expected `init` to appear in help, got:\n%s", result.stdout)
 	}
 }

@@ -3,7 +3,6 @@ package common
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -23,37 +22,50 @@ func TestDetectShellType(t *testing.T) {
 	}
 }
 
-func TestDetectShellRC_Zsh(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("SHELL", "/bin/zsh")
-	t.Setenv("ZDOTDIR", "")
-	want := filepath.Join(home, ".zshrc")
-	if got := DetectShellRC(); got != want {
-		t.Errorf("got %q, want %q", got, want)
+func TestDetectShellRC(t *testing.T) {
+	tests := []struct {
+		name  string
+		shell string
+		// setup configures the test-specific env vars and returns the
+		// expected rc path. Called after HOME and SHELL are already set.
+		setup func(t *testing.T, home string) string
+	}{
+		{
+			name:  "zsh",
+			shell: "/bin/zsh",
+			setup: func(t *testing.T, home string) string {
+				t.Setenv("ZDOTDIR", "")
+				return filepath.Join(home, ".zshrc")
+			},
+		},
+		{
+			name:  "zsh with ZDOTDIR",
+			shell: "/bin/zsh",
+			setup: func(t *testing.T, home string) string {
+				custom := t.TempDir()
+				t.Setenv("ZDOTDIR", custom)
+				return filepath.Join(custom, ".zshrc")
+			},
+		},
+		{
+			name:  "fish",
+			shell: "/usr/bin/fish",
+			setup: func(t *testing.T, home string) string {
+				t.Setenv("XDG_CONFIG_HOME", "")
+				return filepath.Join(home, ".config", "fish", "config.fish")
+			},
+		},
 	}
-}
-
-func TestDetectShellRC_ZdotDir(t *testing.T) {
-	home := t.TempDir()
-	custom := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("SHELL", "/bin/zsh")
-	t.Setenv("ZDOTDIR", custom)
-	want := filepath.Join(custom, ".zshrc")
-	if got := DetectShellRC(); got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestDetectShellRC_Fish(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("SHELL", "/usr/bin/fish")
-	t.Setenv("XDG_CONFIG_HOME", "")
-	want := filepath.Join(home, ".config", "fish", "config.fish")
-	if got := DetectShellRC(); got != want {
-		t.Errorf("got %q, want %q", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("SHELL", tt.shell)
+			want := tt.setup(t, home)
+			if got := DetectShellRC(); got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+		})
 	}
 }
 
@@ -71,14 +83,20 @@ func TestIsInPath(t *testing.T) {
 }
 
 func TestCompletionSnippet(t *testing.T) {
-	if got := CompletionSnippet("fish", "ghost"); got != "ghost completion fish | source" {
-		t.Errorf("fish snippet mismatch: %q", got)
+	tests := []struct {
+		shell string
+		want  string
+	}{
+		{shell: "fish", want: "ghost completion fish | source"},
+		{shell: "zsh", want: "command -v ghost >/dev/null 2>&1 && source <(ghost completion zsh)"},
+		{shell: "bash", want: "command -v ghost >/dev/null 2>&1 && source <(ghost completion bash)"},
 	}
-	if got := CompletionSnippet("zsh", "ghost"); !strings.Contains(got, "source <(ghost completion zsh)") {
-		t.Errorf("zsh snippet mismatch: %q", got)
-	}
-	if got := CompletionSnippet("bash", "ghost"); !strings.Contains(got, "source <(ghost completion bash)") {
-		t.Errorf("bash snippet mismatch: %q", got)
+	for _, tt := range tests {
+		t.Run(tt.shell, func(t *testing.T) {
+			if got := CompletionSnippet(tt.shell, "ghost"); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -133,89 +151,91 @@ func TestShellRCMentions(t *testing.T) {
 	}
 }
 
-func TestAppendPathToShellRC_Bash(t *testing.T) {
-	dir := t.TempDir()
-	rc := filepath.Join(dir, ".bashrc")
-	installDir := "/opt/ghost/bin"
-	if err := AppendPathToShellRC(rc, installDir); err != nil {
-		t.Fatal(err)
+func TestAppendPathToShellRC(t *testing.T) {
+	tests := []struct {
+		name       string
+		rcFilename string
+		want       string
+	}{
+		{
+			name:       "bash",
+			rcFilename: ".bashrc",
+			want:       "\n# Added by ghost init\nexport PATH=\"/opt/ghost/bin:$PATH\"\n",
+		},
+		{
+			name:       "fish",
+			rcFilename: "fish/config.fish",
+			want:       "\n# Added by ghost init\nset -gx PATH /opt/ghost/bin $PATH\n",
+		},
 	}
-	got, err := os.ReadFile(rc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "\n# Added by ghost init\nexport PATH=\"/opt/ghost/bin:$PATH\"\n"
-	if string(got) != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestAppendPathToShellRC_Fish(t *testing.T) {
-	dir := t.TempDir()
-	rc := filepath.Join(dir, "fish", "config.fish")
-	if err := AppendPathToShellRC(rc, "/opt/ghost/bin"); err != nil {
-		t.Fatal(err)
-	}
-	got, err := os.ReadFile(rc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "\n# Added by ghost init\nset -gx PATH /opt/ghost/bin $PATH\n"
-	if string(got) != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestAppendCompletionsToShellRC_ZshWithCompinit(t *testing.T) {
-	dir := t.TempDir()
-	rc := filepath.Join(dir, ".zshrc")
-	if err := AppendCompletionsToShellRC(rc, "zsh", "ghost"); err != nil {
-		t.Fatal(err)
-	}
-	got, err := os.ReadFile(rc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(got), "autoload -Uz compinit && compinit -i") {
-		t.Errorf("expected compinit block for empty zshrc: %q", got)
-	}
-	if !strings.Contains(string(got), "ghost completion zsh") {
-		t.Errorf("expected ghost completion snippet: %q", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			rc := filepath.Join(dir, tt.rcFilename)
+			if err := AppendPathToShellRC(rc, "/opt/ghost/bin"); err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(rc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
-func TestAppendCompletionsToShellRC_ZshWithExistingCompinit(t *testing.T) {
-	dir := t.TempDir()
-	rc := filepath.Join(dir, ".zshrc")
-	if err := os.WriteFile(rc, []byte("autoload -Uz compinit\ncompinit\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := AppendCompletionsToShellRC(rc, "zsh", "ghost"); err != nil {
-		t.Fatal(err)
-	}
-	got, err := os.ReadFile(rc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Count(string(got), "autoload -Uz compinit") != 1 {
-		t.Errorf("should not duplicate compinit when already present: %q", got)
-	}
-}
+func TestAppendCompletionsToShellRC(t *testing.T) {
+	const zshSnippet = "command -v ghost >/dev/null 2>&1 && source <(ghost completion zsh)"
+	const bashSnippet = "command -v ghost >/dev/null 2>&1 && source <(ghost completion bash)"
 
-func TestAppendCompletionsToShellRC_Bash(t *testing.T) {
-	dir := t.TempDir()
-	rc := filepath.Join(dir, ".bashrc")
-	if err := AppendCompletionsToShellRC(rc, "bash", "ghost"); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name        string
+		shell       string
+		rcFilename  string
+		prefilledRC string
+		want        string
+	}{
+		{
+			name:       "zsh adds compinit block when missing",
+			shell:      "zsh",
+			rcFilename: ".zshrc",
+			want:       "\n# Initialize zsh completions\nautoload -Uz compinit && compinit -i\n\n# Ghost shell completions\n" + zshSnippet + "\n",
+		},
+		{
+			name:        "zsh skips compinit block when already present",
+			shell:       "zsh",
+			rcFilename:  ".zshrc",
+			prefilledRC: "autoload -Uz compinit\ncompinit\n",
+			want:        "autoload -Uz compinit\ncompinit\n\n# Ghost shell completions\n" + zshSnippet + "\n",
+		},
+		{
+			name:       "bash never adds compinit",
+			shell:      "bash",
+			rcFilename: ".bashrc",
+			want:       "\n# Ghost shell completions\n" + bashSnippet + "\n",
+		},
 	}
-	got, err := os.ReadFile(rc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(got), "compinit") {
-		t.Errorf("bash rc should not include compinit: %q", got)
-	}
-	if !strings.Contains(string(got), "ghost completion bash") {
-		t.Errorf("expected ghost completion snippet: %q", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			rc := filepath.Join(dir, tt.rcFilename)
+			if tt.prefilledRC != "" {
+				if err := os.WriteFile(rc, []byte(tt.prefilledRC), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := AppendCompletionsToShellRC(rc, tt.shell, "ghost"); err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(rc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
