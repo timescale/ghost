@@ -134,25 +134,16 @@ func TestMCPInstallCmd(t *testing.T) {
 				`    "status": "already configured"` + "\n" +
 				"  },\n" +
 				"  {\n" +
+				`    "client": "codex",` + "\n" +
+				`    "status": "already configured"` + "\n" +
+				"  },\n" +
+				"  {\n" +
 				`    "client": "cursor",` + "\n" +
 				`    "status": "installed",` + "\n" +
 				`    "detail": "{{HOME}}/.cursor/mcp.json"` + "\n" +
 				"  },\n" +
 				"  {\n" +
-				`    "client": "windsurf",` + "\n" +
-				`    "status": "installed",` + "\n" +
-				`    "detail": "{{HOME}}/.codeium/windsurf/mcp_config.json"` + "\n" +
-				"  },\n" +
-				"  {\n" +
-				`    "client": "codex",` + "\n" +
-				`    "status": "already configured"` + "\n" +
-				"  },\n" +
-				"  {\n" +
 				`    "client": "gemini",` + "\n" +
-				`    "status": "already configured"` + "\n" +
-				"  },\n" +
-				"  {\n" +
-				`    "client": "vscode",` + "\n" +
 				`    "status": "already configured"` + "\n" +
 				"  },\n" +
 				"  {\n" +
@@ -163,6 +154,15 @@ func TestMCPInstallCmd(t *testing.T) {
 				"  {\n" +
 				`    "client": "kiro-cli",` + "\n" +
 				`    "status": "already configured"` + "\n" +
+				"  },\n" +
+				"  {\n" +
+				`    "client": "vscode",` + "\n" +
+				`    "status": "already configured"` + "\n" +
+				"  },\n" +
+				"  {\n" +
+				`    "client": "windsurf",` + "\n" +
+				`    "status": "installed",` + "\n" +
+				`    "detail": "{{HOME}}/.codeium/windsurf/mcp_config.json"` + "\n" +
 				"  }\n" +
 				"]\n",
 			after: assertCursorHasGhost,

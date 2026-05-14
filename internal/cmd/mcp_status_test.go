@@ -49,23 +49,15 @@ func TestMCPStatusCmd(t *testing.T) {
 		`    "status": "not configured"` + "\n" +
 		"  },\n" +
 		"  {\n" +
-		`    "client": "cursor",` + "\n" +
-		`    "status": "not configured"` + "\n" +
-		"  },\n" +
-		"  {\n" +
-		`    "client": "windsurf",` + "\n" +
-		`    "status": "not configured"` + "\n" +
-		"  },\n" +
-		"  {\n" +
 		`    "client": "codex",` + "\n" +
 		`    "status": "not configured"` + "\n" +
 		"  },\n" +
 		"  {\n" +
-		`    "client": "gemini",` + "\n" +
+		`    "client": "cursor",` + "\n" +
 		`    "status": "not configured"` + "\n" +
 		"  },\n" +
 		"  {\n" +
-		`    "client": "vscode",` + "\n" +
+		`    "client": "gemini",` + "\n" +
 		`    "status": "not configured"` + "\n" +
 		"  },\n" +
 		"  {\n" +
@@ -74,6 +66,14 @@ func TestMCPStatusCmd(t *testing.T) {
 		"  },\n" +
 		"  {\n" +
 		`    "client": "kiro-cli",` + "\n" +
+		`    "status": "not configured"` + "\n" +
+		"  },\n" +
+		"  {\n" +
+		`    "client": "vscode",` + "\n" +
+		`    "status": "not configured"` + "\n" +
+		"  },\n" +
+		"  {\n" +
+		`    "client": "windsurf",` + "\n" +
 		`    "status": "not configured"` + "\n" +
 		"  }\n" +
 		"]\n"
@@ -180,13 +180,13 @@ func TestMCPStatusCmd(t *testing.T) {
 			runner: notFoundRunner,
 			wantStdout: "CLIENT              STATUS          \n" +
 				"Claude Code         not configured  \n" +
-				"Cursor              configured      \n" +
-				"Windsurf            not configured  \n" +
 				"Codex               not configured  \n" +
+				"Cursor              configured      \n" +
 				"Gemini CLI          not configured  \n" +
-				"VS Code             not configured  \n" +
 				"Google Antigravity  not configured  \n" +
-				"Kiro CLI            not configured  \n",
+				"Kiro CLI            not configured  \n" +
+				"VS Code             not configured  \n" +
+				"Windsurf            not configured  \n",
 		},
 		{
 			name:         "all clients no args all unconfigured exits two",
@@ -223,24 +223,16 @@ func TestMCPStatusCmd(t *testing.T) {
 				`    "status": "not configured"` + "\n" +
 				"  },\n" +
 				"  {\n" +
-				`    "client": "cursor",` + "\n" +
-				`    "status": "configured"` + "\n" +
-				"  },\n" +
-				"  {\n" +
-				`    "client": "windsurf",` + "\n" +
-				`    "status": "not configured"` + "\n" +
-				"  },\n" +
-				"  {\n" +
 				`    "client": "codex",` + "\n" +
 				`    "status": "error",` + "\n" +
 				`    "detail": "failed to parse codex mcp list output: invalid character 'o' in literal null (expecting 'u')"` + "\n" +
 				"  },\n" +
 				"  {\n" +
-				`    "client": "gemini",` + "\n" +
-				`    "status": "not configured"` + "\n" +
+				`    "client": "cursor",` + "\n" +
+				`    "status": "configured"` + "\n" +
 				"  },\n" +
 				"  {\n" +
-				`    "client": "vscode",` + "\n" +
+				`    "client": "gemini",` + "\n" +
 				`    "status": "not configured"` + "\n" +
 				"  },\n" +
 				"  {\n" +
@@ -249,6 +241,14 @@ func TestMCPStatusCmd(t *testing.T) {
 				"  },\n" +
 				"  {\n" +
 				`    "client": "kiro-cli",` + "\n" +
+				`    "status": "not configured"` + "\n" +
+				"  },\n" +
+				"  {\n" +
+				`    "client": "vscode",` + "\n" +
+				`    "status": "not configured"` + "\n" +
+				"  },\n" +
+				"  {\n" +
+				`    "client": "windsurf",` + "\n" +
 				`    "status": "not configured"` + "\n" +
 				"  }\n" +
 				"]\n",

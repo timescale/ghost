@@ -237,23 +237,15 @@ func TestMCPUninstallCmd(t *testing.T) {
 				`    "status": "not configured"` + "\n" +
 				"  },\n" +
 				"  {\n" +
-				`    "client": "cursor",` + "\n" +
-				`    "status": "uninstalled"` + "\n" +
-				"  },\n" +
-				"  {\n" +
-				`    "client": "windsurf",` + "\n" +
-				`    "status": "not configured"` + "\n" +
-				"  },\n" +
-				"  {\n" +
 				`    "client": "codex",` + "\n" +
 				`    "status": "not configured"` + "\n" +
 				"  },\n" +
 				"  {\n" +
-				`    "client": "gemini",` + "\n" +
-				`    "status": "not configured"` + "\n" +
+				`    "client": "cursor",` + "\n" +
+				`    "status": "uninstalled"` + "\n" +
 				"  },\n" +
 				"  {\n" +
-				`    "client": "vscode",` + "\n" +
+				`    "client": "gemini",` + "\n" +
 				`    "status": "not configured"` + "\n" +
 				"  },\n" +
 				"  {\n" +
@@ -262,6 +254,14 @@ func TestMCPUninstallCmd(t *testing.T) {
 				"  },\n" +
 				"  {\n" +
 				`    "client": "kiro-cli",` + "\n" +
+				`    "status": "not configured"` + "\n" +
+				"  },\n" +
+				"  {\n" +
+				`    "client": "vscode",` + "\n" +
+				`    "status": "not configured"` + "\n" +
+				"  },\n" +
+				"  {\n" +
+				`    "client": "windsurf",` + "\n" +
 				`    "status": "not configured"` + "\n" +
 				"  }\n" +
 				"]\n",
