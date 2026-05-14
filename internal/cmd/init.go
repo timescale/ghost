@@ -246,7 +246,6 @@ func detectPathState() initStepState {
 	exe, err := os.Executable()
 	if err != nil {
 		state.status = "could not determine install location"
-		state.configured = true // best to skip rather than error
 		return state
 	}
 	installDir := filepath.Dir(exe)
