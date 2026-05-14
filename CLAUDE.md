@@ -18,20 +18,7 @@
 
 ## Build & Test
 
-Always run the following after editing Go code:
-
-- Build:
-  - `go install ./...`
-- Format:
-  - `go fmt ./...`
-- Fix:
-  - `go mod tidy`
-  - `go fix -omitzero=false ./...`
-- Lint:
-  - `go vet ./...`
-  - `go tool staticcheck ./...`
-- Test:
-  - `go test ./...`
+After editing Go code, run `./check` from the repo root. It runs `go install`, `go fmt`, `go mod tidy`, `go fix`, `go vet`, `staticcheck`, and `go test` in one shot.
 
 ## Testing
 
