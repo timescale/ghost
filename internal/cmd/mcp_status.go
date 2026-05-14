@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,18 +60,14 @@ A configured client must have a Ghost MCP server entry named "ghost" that runs "
 			}
 
 			results := detectMCPClientStatuses(cmd.Context(), clients)
-			output := make([]MCPClientStatusOutput, len(results))
-			for i, result := range results {
-				output[i] = MCPClientStatusOutput(result)
-			}
 
 			switch {
 			case jsonOutput:
-				err = util.SerializeToJSON(cmd.OutOrStdout(), output)
+				err = util.SerializeToJSON(cmd.OutOrStdout(), results)
 			case yamlOutput:
-				err = util.SerializeToYAML(cmd.OutOrStdout(), output)
+				err = util.SerializeToYAML(cmd.OutOrStdout(), results)
 			default:
-				err = outputMCPClientStatuses(cmd.OutOrStdout(), output)
+				err = outputMCPClientResultTable(cmd.OutOrStdout(), results)
 			}
 			if err != nil {
 				return err
@@ -137,18 +132,6 @@ func mcpStatusExitCode(results []MCPClientStatusOutput) int {
 		return 0
 	}
 	return mcpExitNoneConfigured
-}
-
-func outputMCPClientStatuses(w io.Writer, statuses []MCPClientStatusOutput) error {
-	rows := make([]MCPClientStatusOutput, len(statuses))
-	for i, status := range statuses {
-		rows[i] = MCPClientStatusOutput{
-			Client: status.Client,
-			Status: status.Status,
-			Detail: status.Detail,
-		}
-	}
-	return outputMCPClientResultTable(w, rows)
 }
 
 func detectClaudeCodeMCPConfiguration(ctx context.Context) (MCPClientStatus, string) {

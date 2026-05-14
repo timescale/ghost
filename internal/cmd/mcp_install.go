@@ -156,9 +156,13 @@ type clientConfig struct {
 	// Parameters: serverName (name to register), command (binary path), args (arguments to binary)
 	buildInstallCommand   func(serverName, command string, args []string) ([]string, error)
 	buildUninstallCommand func(serverName string) ([]string, error)
-	// Optionally provide the check function for status detection (via CLI or other means)
-	// If not provided, will default to JSON config detection
+	// Optionally provide the check function for status detection (via CLI or other means).
+	// If not provided, will default to JSON config detection.
 	detectInstallStatus func(ctx context.Context) (MCPClientStatus, string)
+	// Optionally provide best-effort client install detection. This is used only
+	// to decide whether interactive install menus should preselect the client;
+	// users can still manually select any supported client.
+	detectClientInstalled func(ctx context.Context) bool
 }
 
 // supportedClients defines the clients we support for Ghost MCP installation
@@ -176,7 +180,8 @@ var supportedClients = []clientConfig{
 		buildUninstallCommand: func(serverName string) ([]string, error) {
 			return []string{"claude", "mcp", "remove", "-s", "user", serverName}, nil
 		},
-		detectInstallStatus: detectClaudeCodeMCPConfiguration,
+		detectInstallStatus:   detectClaudeCodeMCPConfiguration,
+		detectClientInstalled: detectClientExecutable("claude"),
 	},
 	{
 		ClientType:  Codex,
@@ -192,7 +197,8 @@ var supportedClients = []clientConfig{
 		buildUninstallCommand: func(serverName string) ([]string, error) {
 			return []string{"codex", "mcp", "remove", serverName}, nil
 		},
-		detectInstallStatus: detectCodexMCPConfiguration,
+		detectInstallStatus:   detectCodexMCPConfiguration,
+		detectClientInstalled: detectClientExecutable("codex"),
 	},
 	{
 		ClientType:           Cursor,
@@ -202,6 +208,14 @@ var supportedClients = []clientConfig{
 		ConfigPaths: []string{
 			"~/.cursor/mcp.json",
 		},
+		detectClientInstalled: detectClientExecutableOrPath([]string{"cursor"}, []string{
+			"/Applications/Cursor.app",
+			"~/Applications/Cursor.app",
+			"/usr/share/applications/cursor.desktop",
+			"~/.local/share/applications/cursor.desktop",
+			"/opt/Cursor",
+			"/opt/cursor",
+		}),
 	},
 	{
 		ClientType:  Gemini,
@@ -216,7 +230,8 @@ var supportedClients = []clientConfig{
 		buildUninstallCommand: func(serverName string) ([]string, error) {
 			return []string{"gemini", "mcp", "remove", "-s", "user", serverName}, nil
 		},
-		detectInstallStatus: detectGeminiMCPConfiguration,
+		detectInstallStatus:   detectGeminiMCPConfiguration,
+		detectClientInstalled: detectClientExecutable("gemini"),
 	},
 	{
 		ClientType:           Antigravity,
@@ -226,6 +241,14 @@ var supportedClients = []clientConfig{
 		ConfigPaths: []string{
 			"~/.gemini/antigravity/mcp_config.json",
 		},
+		detectClientInstalled: detectClientExecutableOrPath([]string{"antigravity", "agy"}, []string{
+			"/Applications/Antigravity.app",
+			"/Applications/Google Antigravity.app",
+			"~/Applications/Antigravity.app",
+			"~/Applications/Google Antigravity.app",
+			"/usr/share/applications/antigravity.desktop",
+			"~/.local/share/applications/antigravity.desktop",
+		}),
 	},
 	{
 		ClientType:           KiroCLI,
@@ -241,6 +264,7 @@ var supportedClients = []clientConfig{
 		buildUninstallCommand: func(serverName string) ([]string, error) {
 			return []string{"kiro-cli", "mcp", "remove", "--name", serverName, "--scope", "global"}, nil
 		},
+		detectClientInstalled: detectClientExecutable("kiro-cli"),
 	},
 	{
 		ClientType:  VSCode,
@@ -263,6 +287,7 @@ var supportedClients = []clientConfig{
 			}
 			return []string{"code", "--add-mcp", string(j)}, nil
 		},
+		detectClientInstalled: detectClientExecutable("code"),
 	},
 	{
 		ClientType:           Windsurf,
@@ -272,7 +297,45 @@ var supportedClients = []clientConfig{
 		ConfigPaths: []string{
 			"~/.codeium/windsurf/mcp_config.json",
 		},
+		detectClientInstalled: detectClientExecutableOrPath([]string{"windsurf"}, []string{
+			"/Applications/Windsurf.app",
+			"~/Applications/Windsurf.app",
+			"/usr/share/applications/windsurf.desktop",
+			"~/.local/share/applications/windsurf.desktop",
+			"/opt/Windsurf",
+			"/opt/windsurf",
+		}),
 	},
+}
+
+func detectClientExecutable(executableNames ...string) func(context.Context) bool {
+	return detectClientExecutableOrPath(executableNames, nil)
+}
+
+func detectClientExecutableOrPath(executableNames []string, paths []string) func(context.Context) bool {
+	return func(ctx context.Context) bool {
+		if ctx.Err() != nil {
+			return false
+		}
+		for _, executableName := range executableNames {
+			if _, err := exec.LookPath(executableName); err == nil {
+				return true
+			}
+		}
+		for _, path := range paths {
+			if _, err := os.Stat(util.ExpandPath(path)); err == nil {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+func detectMCPClientInstalled(ctx context.Context, clientCfg clientConfig) bool {
+	if clientCfg.detectClientInstalled == nil {
+		return true
+	}
+	return clientCfg.detectClientInstalled(ctx)
 }
 
 var supportedClientsMap = func() map[MCPClient]clientConfig {
@@ -550,9 +613,10 @@ func defaultGetGhostExecutablePath() (string, error) {
 
 type mcpClientSelectionOptions struct {
 	title             string
-	statusText        func(MCPClientStatus) string
-	selectedByDefault func(MCPClientStatus) bool
-	dimmedByDefault   func(MCPClientStatus) bool
+	statusText        func(MCPClientStatus, bool) string
+	selectedByDefault func(MCPClientStatus, bool) bool
+	dimmedByDefault   func(MCPClientStatus, bool) bool
+	checkInstalled    bool
 }
 
 // mcpInstallSelectionOptions returns the multi-select options for picking
@@ -560,12 +624,16 @@ type mcpClientSelectionOptions struct {
 // MCP step of `ghost init`.
 func mcpInstallSelectionOptions() mcpClientSelectionOptions {
 	return mcpClientSelectionOptions{
-		title: "Select MCP clients to install:",
-		statusText: func(status MCPClientStatus) string {
+		title:          "Select MCP clients to install:",
+		checkInstalled: true,
+		statusText: func(status MCPClientStatus, clientInstalled bool) string {
 			switch status {
 			case mcpStatusConfigured:
 				return "already configured"
 			case mcpStatusNotConfigured:
+				if !clientInstalled {
+					return "not configured (client not detected)"
+				}
 				return "not configured"
 			case mcpStatusError:
 				return "could not detect"
@@ -573,10 +641,10 @@ func mcpInstallSelectionOptions() mcpClientSelectionOptions {
 				return string(status)
 			}
 		},
-		selectedByDefault: func(status MCPClientStatus) bool {
-			return status == mcpStatusNotConfigured
+		selectedByDefault: func(status MCPClientStatus, clientInstalled bool) bool {
+			return status == mcpStatusNotConfigured && clientInstalled
 		},
-		dimmedByDefault: func(status MCPClientStatus) bool {
+		dimmedByDefault: func(status MCPClientStatus, _ bool) bool {
 			return status == mcpStatusConfigured
 		},
 	}
@@ -590,11 +658,15 @@ var selectMCPClientsInteractively = func(cmd *cobra.Command, options mcpClientSe
 	items := make([]common.MultiSelectItem, len(supportedClients))
 	for i, cfg := range supportedClients {
 		status := detectMCPClientStatus(cmd.Context(), cfg)
+		clientInstalled := true
+		if options.checkInstalled {
+			clientInstalled = detectMCPClientInstalled(cmd.Context(), cfg)
+		}
 		items[i] = common.MultiSelectItem{
 			Label:    cfg.Name,
-			Status:   options.statusText(status.Status),
-			Selected: options.selectedByDefault(status.Status),
-			Dimmed:   options.dimmedByDefault(status.Status),
+			Status:   options.statusText(status.Status, clientInstalled),
+			Selected: options.selectedByDefault(status.Status, clientInstalled),
+			Dimmed:   options.dimmedByDefault(status.Status, clientInstalled),
 		}
 	}
 

@@ -47,7 +47,7 @@ Only the Ghost MCP server entry named "ghost" is removed; other MCP server entri
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clients, err := resolveMCPClients(cmd, args, mcpClientSelectionOptions{
 				title: "Select MCP clients to uninstall:",
-				statusText: func(status MCPClientStatus) string {
+				statusText: func(status MCPClientStatus, _ bool) string {
 					switch status {
 					case mcpStatusConfigured:
 						return "installed"
@@ -59,10 +59,10 @@ Only the Ghost MCP server entry named "ghost" is removed; other MCP server entri
 						return string(status)
 					}
 				},
-				selectedByDefault: func(status MCPClientStatus) bool {
+				selectedByDefault: func(status MCPClientStatus, _ bool) bool {
 					return status == mcpStatusConfigured
 				},
-				dimmedByDefault: func(status MCPClientStatus) bool {
+				dimmedByDefault: func(status MCPClientStatus, _ bool) bool {
 					return status == mcpStatusNotConfigured
 				},
 			})
@@ -71,18 +71,14 @@ Only the Ghost MCP server entry named "ghost" is removed; other MCP server entri
 			}
 
 			results := uninstallGhostMCPFromClients(cmd.Context(), clients, !noBackup)
-			output := make([]MCPClientStatusOutput, len(results))
-			for i, result := range results {
-				output[i] = MCPClientStatusOutput(result)
-			}
 
 			switch {
 			case jsonOutput:
-				err = util.SerializeToJSON(cmd.OutOrStdout(), output)
+				err = util.SerializeToJSON(cmd.OutOrStdout(), results)
 			case yamlOutput:
-				err = util.SerializeToYAML(cmd.OutOrStdout(), output)
+				err = util.SerializeToYAML(cmd.OutOrStdout(), results)
 			default:
-				err = outputMCPClientResultTable(cmd.OutOrStdout(), output)
+				err = outputMCPClientResultTable(cmd.OutOrStdout(), results)
 			}
 			if err != nil {
 				return err
