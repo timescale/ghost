@@ -18,25 +18,10 @@ import (
 )
 
 func TestInit(t *testing.T) {
-	// authInfoOK is a helper that mocks /auth/info returning a logged-in
-	// user — used by tests that want detection to report "already logged in".
-	authInfoOK := func(m *mock.MockClientWithResponsesInterface) {
-		m.EXPECT().
-			AuthInfoWithResponse(validCtx).
-			Return(&api.AuthInfoResponse{
-				HTTPResponse: httpResponse(http.StatusOK),
-				JSON200: &api.AuthInfo{
-					Type: api.AuthInfoType("user"),
-					User: &api.UserInfo{Email: "you@example.com"},
-				},
-			}, nil).AnyTimes()
-	}
-
 	tests := []cmdTest{
 		{
-			name:    "non-interactive stdin returns error",
+			name:    "non-interactive stdin returns error before detecting state",
 			args:    []string{"init"},
-			setup:   authInfoOK,
 			opts:    []runOption{withIsTerminal(false)},
 			wantErr: "ghost init requires an interactive terminal; run it from a TTY",
 		},

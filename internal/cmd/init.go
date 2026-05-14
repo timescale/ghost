@@ -80,6 +80,11 @@ func buildInitPathCmd() *cobra.Command {
 
 func runInit(cmd *cobra.Command, app *common.App, skipIfConfigured bool) error {
 	ctx := cmd.Context()
+	stdinIsTerminal := util.IsTerminal(cmd.InOrStdin())
+
+	if !stdinIsTerminal && !skipIfConfigured {
+		return errors.New("ghost init requires an interactive terminal; run it from a TTY")
+	}
 
 	states := detectInitStates(ctx, app)
 
@@ -88,7 +93,7 @@ func runInit(cmd *cobra.Command, app *common.App, skipIfConfigured bool) error {
 		return nil
 	}
 
-	if !util.IsTerminal(cmd.InOrStdin()) {
+	if !stdinIsTerminal {
 		return errors.New("ghost init requires an interactive terminal; run it from a TTY")
 	}
 
