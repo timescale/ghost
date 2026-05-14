@@ -171,3 +171,16 @@ func TestMCPInstallCmd(t *testing.T) {
 
 	runMCPCmdTests(t, tests)
 }
+
+func TestMCPInstallSelectionOptions_DefaultSelection(t *testing.T) {
+	opts := mcpInstallSelectionOptions()
+	if !opts.selectedByDefault(mcpStatusNotConfigured) {
+		t.Fatal("not-configured clients should be selected by default")
+	}
+	if opts.selectedByDefault(mcpStatusConfigured) {
+		t.Fatal("already-configured clients should not be selected by default")
+	}
+	if opts.selectedByDefault(mcpStatusError) {
+		t.Fatal("clients with detection errors should not be selected by default")
+	}
+}

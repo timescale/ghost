@@ -76,12 +76,22 @@ func IsInPath(dir string) bool {
 // CompletionSnippet returns the shellrc line(s) that source Ghost's
 // completion output for the given shell.
 func CompletionSnippet(shell, binary string) string {
+	quotedBinary := shellQuote(binary)
 	switch shell {
 	case "fish":
-		return fmt.Sprintf("%s completion fish | source", binary)
+		return fmt.Sprintf("%s completion fish | source", quotedBinary)
 	default:
-		return fmt.Sprintf("command -v %s >/dev/null 2>&1 && source <(%s completion %s)", binary, binary, shell)
+		return fmt.Sprintf("command -v %s >/dev/null 2>&1 && source <(%s completion %s)", quotedBinary, quotedBinary, shell)
 	}
+}
+
+var shellBareWordRE = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./-]+$`)
+
+func shellQuote(value string) string {
+	if value != "" && shellBareWordRE.MatchString(value) {
+		return value
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 // compinitMarkerRE matches existing references to compinit or to common zsh
@@ -107,18 +117,40 @@ func ShellRCNeedsCompinit(shell, rcPath string) bool {
 // missing file is treated as "not mentioned" with no error so callers can
 // distinguish "doesn't reference" from "couldn't read".
 func ShellRCMentions(rcPath, needle string) (bool, error) {
-	data, err := os.ReadFile(rcPath)
+	data, err := readShellRCFileIfExists(rcPath)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return false, nil
-		}
 		return false, err
 	}
 	return strings.Contains(string(data), needle), nil
 }
 
-// AppendPathToShellRC adds an export statement to rcPath that prepends
-// installDir to $PATH. For fish, emits `fish_add_path` instead.
+var ghostCompletionMentionRE = regexp.MustCompile(`(?:^|[^[:alnum:]_-])ghost(?:\.exe)?['"]?[[:space:]]+completion(?:[[:space:]]|$)`)
+
+// ShellRCMentionsGhostCompletion reports whether the rc file appears to
+// configure Ghost shell completions. It recognizes both the historical
+// `ghost completion ...` form and the absolute-path form written by
+// AppendCompletionsToShellRC.
+func ShellRCMentionsGhostCompletion(rcPath string) (bool, error) {
+	data, err := readShellRCFileIfExists(rcPath)
+	if err != nil {
+		return false, err
+	}
+	return ghostCompletionMentionRE.Match(data), nil
+}
+
+func readShellRCFileIfExists(rcPath string) ([]byte, error) {
+	data, err := os.ReadFile(rcPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return data, nil
+}
+
+// AppendPathToShellRC adds a shell snippet to rcPath that prepends
+// installDir to $PATH. For fish, emits an equivalent `set -gx PATH` snippet.
 func AppendPathToShellRC(rcPath, installDir string) error {
 	var snippet string
 	if strings.HasSuffix(rcPath, "config.fish") {

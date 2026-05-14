@@ -22,7 +22,7 @@ ghost mcp uninstall [client] [flags]
 ### Examples
 
 ```
-  # Interactive client selection
+  # Interactive client selection (multi-select)
   ghost mcp uninstall
 
   # Uninstall from Cursor

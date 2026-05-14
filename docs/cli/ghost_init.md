@@ -10,7 +10,7 @@ Interactively configure Ghost
 
 ### Synopsis
 
-Interactively configure Ghost. Walks through login, MCP server installation, shell completions, and adding Ghost to your PATH.
+Interactively configure Ghost. Walks through adding Ghost to your PATH, login, MCP server installation, and shell completions.
 
 ```
 ghost init [flags]
@@ -20,7 +20,7 @@ ghost init [flags]
 
 ```
   -h, --help                 help for init
-      --skip-if-configured   Exit silently if every step is already configured
+      --skip-if-configured   Exit with a short message if every step is already configured
 ```
 
 ### Options inherited from parent commands
@@ -35,4 +35,5 @@ ghost init [flags]
 ### SEE ALSO
 
 * [ghost](ghost.md)	 - CLI for managing Postgres databases
+* [ghost init path](ghost_init_path.md)	 - Add Ghost to your PATH
 

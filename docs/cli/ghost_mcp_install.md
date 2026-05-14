@@ -17,13 +17,13 @@ configuration files for the specified client.
 
 Supported Clients:
   claude-code              Configure for Claude Code
-  cursor                   Configure for Cursor
-  windsurf                 Configure for Windsurf
   codex                    Configure for Codex
+  cursor                   Configure for Cursor
   gemini                   Configure for Gemini CLI
-  vscode                   Configure for VS Code
   antigravity              Configure for Google Antigravity
   kiro-cli                 Configure for Kiro CLI
+  vscode                   Configure for VS Code
+  windsurf                 Configure for Windsurf
 
 The command will:
 - Automatically detect the appropriate configuration file location

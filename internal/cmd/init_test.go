@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"os"
@@ -9,8 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/timescale/ghost/internal/api"
 	"github.com/timescale/ghost/internal/api/mock"
+	"github.com/timescale/ghost/internal/common"
 )
 
 func TestInit(t *testing.T) {
@@ -39,6 +43,83 @@ func TestInit(t *testing.T) {
 	}
 
 	runCmdTests(t, tests)
+}
+
+func TestInitPathSubcommandNonInteractive(t *testing.T) {
+	home := t.TempDir()
+	executablePath, err := currentGhostExecutablePath()
+	if err != nil {
+		t.Fatalf("currentGhostExecutablePath: %v", err)
+	}
+	installDir := filepath.Dir(executablePath)
+	rcPath := filepath.Join(home, ".bashrc")
+
+	result := runCommand(t, []string{"init", "path"}, nil,
+		withEnv("HOME", home),
+		withEnv("SHELL", "/bin/bash"),
+		withEnv("PATH", filepath.Join(home, "not-in-path")),
+		withIsTerminal(false),
+	)
+	if result.err != nil {
+		t.Fatalf("unexpected error: %v", result.err)
+	}
+	assertOutput(t, result.stdout, "")
+	assertOutput(t, result.stderr, "\n--- PATH ---\nAdded "+installDir+" to PATH in "+rcPath+".\nRestart your shell to pick up rc file changes.\n")
+
+	gotRC, err := os.ReadFile(rcPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOutput(t, string(gotRC), "\n# Added by ghost init\nexport PATH=\""+installDir+":$PATH\"\n")
+}
+
+func TestRunSelectedInitSteps_ConfiguresPathBeforeCompletions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHELL", "/bin/bash")
+	t.Setenv("PATH", filepath.Join(home, "not-in-path"))
+	t.Setenv("ZDOTDIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	executablePath, err := currentGhostExecutablePath()
+	if err != nil {
+		t.Fatalf("currentGhostExecutablePath: %v", err)
+	}
+	installDir := filepath.Dir(executablePath)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+
+	retryMainMenu, err := runSelectedInitSteps(cmd, &common.App{}, []int{int(stepPATH), int(stepCompletions)})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if retryMainMenu {
+		t.Fatal("unexpected retryMainMenu=true")
+	}
+	assertOutput(t, stdout.String(), "")
+
+	rcPath := filepath.Join(home, ".bashrc")
+	gotRCBytes, err := os.ReadFile(rcPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotRC := string(gotRCBytes)
+	pathIndex := strings.Index(gotRC, "export PATH=\""+installDir+":$PATH\"")
+	if pathIndex == -1 {
+		t.Fatalf("PATH snippet not found in rc file:\n%s", gotRC)
+	}
+	completionSnippet := common.CompletionSnippet("bash", executablePath)
+	completionIndex := strings.Index(gotRC, completionSnippet)
+	if completionIndex == -1 {
+		t.Fatalf("completion snippet %q not found in rc file:\n%s", completionSnippet, gotRC)
+	}
+	if completionIndex < pathIndex {
+		t.Fatalf("completion snippet should appear after PATH snippet in rc file:\n%s", gotRC)
+	}
 }
 
 func TestInit_SkipIfConfiguredAllConfigured(t *testing.T) {

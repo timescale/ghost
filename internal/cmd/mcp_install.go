@@ -574,7 +574,7 @@ func mcpInstallSelectionOptions() mcpClientSelectionOptions {
 			}
 		},
 		selectedByDefault: func(status MCPClientStatus) bool {
-			return status != mcpStatusConfigured
+			return status == mcpStatusNotConfigured
 		},
 		dimmedByDefault: func(status MCPClientStatus) bool {
 			return status == mcpStatusConfigured

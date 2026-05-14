@@ -84,16 +84,20 @@ func TestIsInPath(t *testing.T) {
 
 func TestCompletionSnippet(t *testing.T) {
 	tests := []struct {
-		shell string
-		want  string
+		name   string
+		shell  string
+		binary string
+		want   string
 	}{
-		{shell: "fish", want: "ghost completion fish | source"},
-		{shell: "zsh", want: "command -v ghost >/dev/null 2>&1 && source <(ghost completion zsh)"},
-		{shell: "bash", want: "command -v ghost >/dev/null 2>&1 && source <(ghost completion bash)"},
+		{name: "fish", shell: "fish", binary: "ghost", want: "ghost completion fish | source"},
+		{name: "zsh", shell: "zsh", binary: "ghost", want: "command -v ghost >/dev/null 2>&1 && source <(ghost completion zsh)"},
+		{name: "bash", shell: "bash", binary: "ghost", want: "command -v ghost >/dev/null 2>&1 && source <(ghost completion bash)"},
+		{name: "absolute path", shell: "bash", binary: "/opt/ghost/bin/ghost", want: "command -v /opt/ghost/bin/ghost >/dev/null 2>&1 && source <(/opt/ghost/bin/ghost completion bash)"},
+		{name: "quoted path", shell: "zsh", binary: "/Applications/Ghost CLI/ghost", want: "command -v '/Applications/Ghost CLI/ghost' >/dev/null 2>&1 && source <('/Applications/Ghost CLI/ghost' completion zsh)"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.shell, func(t *testing.T) {
-			if got := CompletionSnippet(tt.shell, "ghost"); got != tt.want {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CompletionSnippet(tt.shell, tt.binary); got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
@@ -148,6 +152,44 @@ func TestShellRCMentions(t *testing.T) {
 	}
 	if !mentioned {
 		t.Errorf("file containing needle should be reported as mentioning it")
+	}
+}
+
+func TestShellRCMentionsGhostCompletion(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: "plain historical snippet", content: "source <(ghost completion zsh)\n", want: true},
+		{name: "absolute path snippet", content: "source <(/opt/ghost/bin/ghost completion zsh)\n", want: true},
+		{name: "quoted absolute path snippet", content: "source <('/Applications/Ghost CLI/ghost' completion zsh)\n", want: true},
+		{name: "not completions", content: "echo ghost\n", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			rc := filepath.Join(dir, ".zshrc")
+			if err := os.WriteFile(rc, []byte(tt.content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			got, err := ShellRCMentionsGhostCompletion(rc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	missingRC := filepath.Join(t.TempDir(), ".zshrc")
+	got, err := ShellRCMentionsGhostCompletion(missingRC)
+	if err != nil {
+		t.Fatalf("missing file should not error: %v", err)
+	}
+	if got {
+		t.Errorf("missing file should not be reported as configuring completions")
 	}
 }
 

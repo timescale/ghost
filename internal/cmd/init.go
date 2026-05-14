@@ -20,10 +20,10 @@ import (
 type initStep int
 
 const (
-	stepLogin initStep = iota
+	stepPATH initStep = iota
+	stepLogin
 	stepMCP
 	stepCompletions
-	stepPATH
 	stepCount
 )
 
@@ -40,7 +40,7 @@ func buildInitCmd(app *common.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "init",
 		Short:             "Interactively configure Ghost",
-		Long:              `Interactively configure Ghost. Walks through login, MCP server installation, shell completions, and adding Ghost to your PATH.`,
+		Long:              `Interactively configure Ghost. Walks through adding Ghost to your PATH, login, MCP server installation, and shell completions.`,
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
@@ -49,8 +49,32 @@ func buildInitCmd(app *common.App) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&skipIfConfigured, "skip-if-configured", false, "Exit silently if every step is already configured")
+	cmd.Flags().BoolVar(&skipIfConfigured, "skip-if-configured", false, "Exit with a short message if every step is already configured")
 
+	cmd.AddCommand(buildInitPathCmd())
+
+	return cmd
+}
+
+func buildInitPathCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:               "path",
+		Short:             "Add Ghost to your PATH",
+		Long:              `Add Ghost's install directory to your PATH by appending a snippet to your shell rc file. This command does not prompt for confirmation, so it can be used from scripts.`,
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
+		SilenceUsage:      true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			changed, err := runInitPath(cmd)
+			if err != nil {
+				return err
+			}
+			if changed {
+				cmd.PrintErrln("Restart your shell to pick up rc file changes.")
+			}
+			return nil
+		},
+	}
 	return cmd
 }
 
@@ -108,6 +132,12 @@ func runSelectedInitSteps(cmd *cobra.Command, app *common.App, indices []int) (b
 	rcChanged := false
 	for _, idx := range indices {
 		switch initStep(idx) {
+		case stepPATH:
+			changed, err := runInitPath(cmd)
+			if err != nil {
+				return false, err
+			}
+			rcChanged = rcChanged || changed
 		case stepLogin:
 			if err := runInitLogin(cmd, app); err != nil {
 				return false, err
@@ -126,12 +156,6 @@ func runSelectedInitSteps(cmd *cobra.Command, app *common.App, indices []int) (b
 				return false, err
 			}
 			rcChanged = rcChanged || changed
-		case stepPATH:
-			changed, err := runInitPath(cmd)
-			if err != nil {
-				return false, err
-			}
-			rcChanged = rcChanged || changed
 		}
 	}
 	cmd.PrintErrln()
@@ -145,10 +169,10 @@ func runSelectedInitSteps(cmd *cobra.Command, app *common.App, indices []int) (b
 
 func detectInitStates(ctx context.Context, app *common.App) []initStepState {
 	states := make([]initStepState, stepCount)
+	states[stepPATH] = detectPathState()
 	states[stepLogin] = detectLoginState(ctx, app)
 	states[stepMCP] = detectMCPState(ctx)
 	states[stepCompletions] = detectCompletionsState()
-	states[stepPATH] = detectPathState()
 	return states
 }
 
@@ -235,7 +259,7 @@ func detectCompletionsState() initStepState {
 		state.configured = true
 		return state
 	}
-	mentioned, err := common.ShellRCMentions(rc, "ghost completion")
+	mentioned, err := common.ShellRCMentionsGhostCompletion(rc)
 	if err != nil {
 		state.status = fmt.Sprintf("could not read %s", rc)
 		return state
@@ -252,12 +276,11 @@ func detectCompletionsState() initStepState {
 // detectPathState reports whether the install dir is already in $PATH.
 func detectPathState() initStepState {
 	state := initStepState{label: "Add to PATH"}
-	exe, err := os.Executable()
+	installDir, err := currentGhostInstallDir()
 	if err != nil {
 		state.status = "could not determine install location"
 		return state
 	}
-	installDir := filepath.Dir(exe)
 	if common.IsInPath(installDir) {
 		state.configured = true
 		state.status = fmt.Sprintf("already in PATH (%s)", displayPath(installDir))
@@ -270,7 +293,7 @@ func detectPathState() initStepState {
 func runInitLogin(cmd *cobra.Command, app *common.App) error {
 	cmd.PrintErrln()
 	cmd.PrintErrln("--- Login ---")
-	result, err := common.Login(cmd.Context(), app, false, cmd.OutOrStdout())
+	result, err := common.Login(cmd.Context(), app, false, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
@@ -308,7 +331,7 @@ func runInitCompletions(cmd *cobra.Command) (bool, error) {
 		return false, nil
 	}
 	rc := common.DetectShellRC()
-	mentioned, err := common.ShellRCMentions(rc, "ghost completion")
+	mentioned, err := common.ShellRCMentionsGhostCompletion(rc)
 	if err != nil {
 		return false, fmt.Errorf("failed to read %s: %w", rc, err)
 	}
@@ -317,7 +340,11 @@ func runInitCompletions(cmd *cobra.Command) (bool, error) {
 		return false, nil
 	}
 
-	if err := common.AppendCompletionsToShellRC(rc, shellType, "ghost"); err != nil {
+	binaryPath, err := currentGhostExecutablePath()
+	if err != nil {
+		return false, fmt.Errorf("failed to determine Ghost executable path: %w", err)
+	}
+	if err := common.AppendCompletionsToShellRC(rc, shellType, binaryPath); err != nil {
 		return false, err
 	}
 	cmd.PrintErrf("Added %s completions to %s.\n", shellType, rc)
@@ -329,11 +356,10 @@ func runInitCompletions(cmd *cobra.Command) (bool, error) {
 func runInitPath(cmd *cobra.Command) (bool, error) {
 	cmd.PrintErrln()
 	cmd.PrintErrln("--- PATH ---")
-	exe, err := os.Executable()
+	installDir, err := currentGhostInstallDir()
 	if err != nil {
 		return false, fmt.Errorf("failed to determine install directory: %w", err)
 	}
-	installDir := filepath.Dir(exe)
 	if common.IsInPath(installDir) {
 		cmd.PrintErrf("%s is already in PATH.\n", installDir)
 		return false, nil
@@ -352,6 +378,26 @@ func runInitPath(cmd *cobra.Command) (bool, error) {
 	}
 	cmd.PrintErrf("Added %s to PATH in %s.\n", installDir, rc)
 	return true, nil
+}
+
+func currentGhostInstallDir() (string, error) {
+	executablePath, err := currentGhostExecutablePath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(executablePath), nil
+}
+
+func currentGhostExecutablePath() (string, error) {
+	executablePath, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	absoluteExecutablePath, err := filepath.Abs(executablePath)
+	if err != nil {
+		return "", err
+	}
+	return absoluteExecutablePath, nil
 }
 
 // displayPath replaces $HOME with ~ in path for compact display.

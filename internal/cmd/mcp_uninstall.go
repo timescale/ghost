@@ -28,9 +28,9 @@ func buildMCPUninstallCmd(_ *common.App) *cobra.Command {
 		Short:   "Uninstall Ghost MCP server configuration from a client",
 		Long: `Uninstall the Ghost MCP server configuration from a supported MCP client.
 
-Pass "all" to uninstall from all supported clients. If no client is specified, you'll be prompted to select one interactively.
+Pass "all" to uninstall from all supported clients. If no client is specified, you'll be prompted to select one or more interactively.
 Only the Ghost MCP server entry named "ghost" is removed; other MCP server entries are left untouched.`,
-		Example: `  # Interactive client selection
+		Example: `  # Interactive client selection (multi-select)
   ghost mcp uninstall
 
   # Uninstall from Cursor
