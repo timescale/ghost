@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -75,7 +76,7 @@ func buildInitPathCmd() *cobra.Command {
 				return err
 			}
 			if changed {
-				cmd.PrintErrln("Restart your shell to pick up rc file changes.")
+				cmd.PrintErrln("Restart your shell to apply changes.")
 			}
 			return nil
 		},
@@ -133,6 +134,8 @@ func runSelectedInitSteps(cmd *cobra.Command, app *common.App, indices []int) er
 	for _, idx := range indices {
 		switch initStep(idx) {
 		case stepPATH:
+			cmd.PrintErrln()
+			cmd.PrintErrln("--- PATH ---")
 			changed, err := runInitPath(cmd)
 			if err != nil {
 				return err
@@ -156,7 +159,7 @@ func runSelectedInitSteps(cmd *cobra.Command, app *common.App, indices []int) er
 	}
 	cmd.PrintErrln()
 	if rcChanged {
-		cmd.PrintErrln("All done. Restart your shell to pick up rc file changes.")
+		cmd.PrintErrln("All done. Restart your shell to apply changes.")
 	} else {
 		cmd.PrintErrln("All done.")
 	}
@@ -248,6 +251,11 @@ func detectMCPState(ctx context.Context) initStepState {
 // completions.
 func detectCompletionsState() initStepState {
 	state := initStepState{label: "Shell completions"}
+	if runtime.GOOS == "windows" {
+		state.status = "unsupported on Windows — skipping"
+		state.configured = true
+		return state
+	}
 	shellType := common.DetectShellType()
 	rc := common.DetectShellRC()
 	if shellType == "" {
@@ -269,7 +277,10 @@ func detectCompletionsState() initStepState {
 	return state
 }
 
-// detectPathState reports whether the install dir is already in $PATH.
+// detectPathState reports whether the install dir is already in $PATH. On
+// Windows it also consults the persistent user Path in the registry, since
+// `ghost init` is typically run right after install and the current shell
+// session's %PATH% hasn't been refreshed yet.
 func detectPathState() initStepState {
 	state := initStepState{label: "Add to PATH"}
 	installDir, err := currentGhostInstallDir()
@@ -277,7 +288,16 @@ func detectPathState() initStepState {
 		state.status = "could not determine install location"
 		return state
 	}
-	if common.IsInPath(installDir) {
+	inPath := common.IsInPath(installDir)
+	if !inPath && runtime.GOOS == "windows" {
+		inUserPath, checkErr := common.IsInWindowsUserPath(installDir)
+		if checkErr != nil {
+			state.status = fmt.Sprintf("could not read user Path: %v", checkErr)
+			return state
+		}
+		inPath = inUserPath
+	}
+	if inPath {
 		state.configured = true
 		state.status = fmt.Sprintf("already in PATH (%s)", util.DisplayPath(installDir))
 		return state
@@ -317,6 +337,10 @@ func runInitMCP(cmd *cobra.Command) error {
 func runInitCompletions(cmd *cobra.Command) (bool, error) {
 	cmd.PrintErrln()
 	cmd.PrintErrln("--- Shell completions ---")
+	if runtime.GOOS == "windows" {
+		cmd.PrintErrln("Shell completions are not supported on Windows; skipping.")
+		return false, nil
+	}
 	shellType := common.DetectShellType()
 	if shellType == "" {
 		cmd.PrintErrln("Could not detect your shell from $SHELL; skipping completions.")
@@ -343,11 +367,11 @@ func runInitCompletions(cmd *cobra.Command) (bool, error) {
 	return true, nil
 }
 
-// runInitPath adds Ghost's install dir to the user's PATH via their rc file.
-// The returned bool reports whether the rc file was actually modified.
+// runInitPath adds Ghost's install dir to the user's PATH. On Unix it
+// appends a snippet to the shell rc file; on Windows it updates the user
+// Path environment variable in the registry. The returned bool reports
+// whether the change requires a shell restart to take effect.
 func runInitPath(cmd *cobra.Command) (bool, error) {
-	cmd.PrintErrln()
-	cmd.PrintErrln("--- PATH ---")
 	installDir, err := currentGhostInstallDir()
 	if err != nil {
 		return false, fmt.Errorf("failed to determine install directory: %w", err)
@@ -355,6 +379,9 @@ func runInitPath(cmd *cobra.Command) (bool, error) {
 	if common.IsInPath(installDir) {
 		cmd.PrintErrf("%s is already in PATH.\n", installDir)
 		return false, nil
+	}
+	if runtime.GOOS == "windows" {
+		return runInitPathWindows(cmd, installDir)
 	}
 	rc := common.DetectShellRC()
 	mentioned, err := common.ShellRCMentions(rc, installDir)
@@ -369,6 +396,25 @@ func runInitPath(cmd *cobra.Command) (bool, error) {
 		return false, err
 	}
 	cmd.PrintErrf("Added %s to PATH in %s.\n", installDir, rc)
+	return true, nil
+}
+
+// runInitPathWindows handles the PATH step on Windows by updating the user
+// Path in the registry. It assumes the caller has already verified that
+// installDir is not in the current session's %PATH%.
+func runInitPathWindows(cmd *cobra.Command, installDir string) (bool, error) {
+	inUserPath, err := common.IsInWindowsUserPath(installDir)
+	if err != nil {
+		return false, err
+	}
+	if inUserPath {
+		cmd.PrintErrf("%s is already in your user Path. Restart your shell to apply.\n", installDir)
+		return false, nil
+	}
+	if err := common.AddToWindowsUserPath(installDir); err != nil {
+		return false, err
+	}
+	cmd.PrintErrf("Added %s to your user Path.\n", installDir)
 	return true, nil
 }
 

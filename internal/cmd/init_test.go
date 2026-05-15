@@ -49,7 +49,7 @@ func TestInitPathSubcommandNonInteractive(t *testing.T) {
 		t.Fatalf("unexpected error: %v", result.err)
 	}
 	assertOutput(t, result.stdout, "")
-	assertOutput(t, result.stderr, "\n--- PATH ---\nAdded "+installDir+" to PATH in "+rcPath+".\nRestart your shell to pick up rc file changes.\n")
+	assertOutput(t, result.stderr, "\n--- PATH ---\nAdded "+installDir+" to PATH in "+rcPath+".\nRestart your shell to apply changes.\n")
 
 	gotRC, err := os.ReadFile(rcPath)
 	if err != nil {
