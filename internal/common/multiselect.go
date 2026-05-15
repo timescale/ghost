@@ -45,9 +45,9 @@ type MultiSelectResult struct {
 	Indices []int // populated only when Reason == MultiSelectConfirmed
 }
 
-// ErrMultiSelectAborted is returned by RunMultiSelect when the user presses
-// ctrl+c. Callers can match it with errors.Is.
+// Canned errors to correspond with the MultiSelectReason values
 var ErrMultiSelectAborted = errors.New("multi-select aborted")
+var ErrMultiSelectCanceled = errors.New("multi-select canceled")
 
 // RunMultiSelect renders an interactive multi-select prompt and returns the
 // user's selection. ctrl+c is reported as MultiSelectAborted; esc/q as

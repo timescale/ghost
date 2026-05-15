@@ -83,10 +83,6 @@ func buildInitPathCmd() *cobra.Command {
 	return cmd
 }
 
-// errInitCanceled signals that the user backed out of a submenu and the init
-// flow should stop without printing an error.
-var errInitCanceled = errors.New("init canceled")
-
 func runInit(cmd *cobra.Command, app *common.App, skipIfConfigured bool) error {
 	ctx := cmd.Context()
 	stdinIsTerminal := util.IsTerminal(cmd.InOrStdin())
@@ -112,9 +108,7 @@ func runInit(cmd *cobra.Command, app *common.App, skipIfConfigured bool) error {
 		return err
 	}
 	switch result.Reason {
-	case common.MultiSelectAborted:
-		return common.ErrMultiSelectAborted
-	case common.MultiSelectCanceled:
+	case common.MultiSelectAborted, common.MultiSelectCanceled:
 		cmd.PrintErrln("Canceled.")
 		return nil
 	}
@@ -125,7 +119,7 @@ func runInit(cmd *cobra.Command, app *common.App, skipIfConfigured bool) error {
 	}
 
 	if err := runSelectedInitSteps(cmd, app, result.Indices); err != nil {
-		if errors.Is(err, errInitCanceled) {
+		if errors.Is(err, common.ErrMultiSelectCanceled) || errors.Is(err, common.ErrMultiSelectAborted) {
 			cmd.PrintErrln("Canceled.")
 			return nil
 		}
@@ -310,10 +304,6 @@ func runInitMCP(cmd *cobra.Command) error {
 	clients, err := selectMCPClientsInteractively(cmd, mcpInstallSelectionOptions())
 	if err != nil {
 		return err
-	}
-	if clients == nil {
-		// User pressed esc/q — exit the init flow.
-		return errInitCanceled
 	}
 	if len(clients) == 0 {
 		cmd.PrintErrln("No MCP clients selected.")

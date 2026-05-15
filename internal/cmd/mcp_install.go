@@ -96,7 +96,7 @@ Pass "all" to configure every supported client. If no client is specified, you'l
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clients, err := resolveMCPClients(cmd, args, mcpInstallSelectionOptions())
 			if err != nil {
-				if errors.Is(err, errMCPSelectionCanceled) {
+				if errors.Is(err, common.ErrMultiSelectCanceled) || errors.Is(err, common.ErrMultiSelectAborted) {
 					cmd.PrintErrln("Canceled.")
 					return nil
 				}
@@ -121,12 +121,6 @@ Pass "all" to configure every supported client. If no client is specified, you'l
 	return cmd
 }
 
-// errMCPSelectionCanceled signals that the user backed out of the
-// interactive MCP client picker (esc/q). Both `ghost mcp install` and
-// `ghost mcp uninstall` translate this into a clean "Canceled." exit so the
-// behavior matches the cancel path in `ghost init`.
-var errMCPSelectionCanceled = errors.New("mcp client selection canceled")
-
 func resolveMCPClients(cmd *cobra.Command, args []string, opts mcpClientSelectionOptions) ([]clientConfig, error) {
 	if len(args) > 0 {
 		return mcpClientConfigsForTargetName(args[0])
@@ -134,9 +128,6 @@ func resolveMCPClients(cmd *cobra.Command, args []string, opts mcpClientSelectio
 	clients, err := selectMCPClientsInteractively(cmd, opts)
 	if err != nil {
 		return nil, err
-	}
-	if clients == nil {
-		return nil, errMCPSelectionCanceled
 	}
 	if len(clients) == 0 {
 		return nil, errors.New("no clients selected")
@@ -688,7 +679,7 @@ var selectMCPClientsInteractively = func(cmd *cobra.Command, options mcpClientSe
 	case common.MultiSelectAborted:
 		return nil, common.ErrMultiSelectAborted
 	case common.MultiSelectCanceled:
-		return nil, nil
+		return nil, common.ErrMultiSelectCanceled
 	}
 	selected := make([]clientConfig, len(result.Indices))
 	for i, idx := range result.Indices {
