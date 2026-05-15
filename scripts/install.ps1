@@ -355,6 +355,33 @@ function Test-Installation {
     }
 }
 
+# Run `ghost init` to drive the post-install configuration flow (login,
+# MCP server installation, shell completions). PATH setup is already handled
+# inline by Test-Installation so this run's current PowerShell session can
+# immediately pick up ghost — something a Go subprocess can't do for its
+# parent. We pass --skip-if-configured so re-runs of the installer don't
+# re-prompt the user unnecessarily.
+#
+# `ghost init` needs an interactive terminal for its multi-select prompts.
+# When running under `irm | iex` with redirected stdin (CI, scripted runs,
+# etc.), fall back to printing a hint instead so the install still succeeds.
+function Invoke-GhostInit {
+    param([string]$BinaryPath)
+
+    if ([Console]::IsInputRedirected -or -not [Environment]::UserInteractive) {
+        Write-Info "Run '$BinaryPath init' to finish configuring Ghost."
+        return
+    }
+
+    try {
+        & $BinaryPath --version-check=false init --skip-if-configured
+    }
+    catch {
+        Write-Warn "ghost init failed: $_"
+        Write-Warn "Run '$BinaryPath init' manually to finish configuring Ghost."
+    }
+}
+
 # Main installation process
 function Install-Ghost {
     Write-Info "Ghost CLI Installation Script"
@@ -429,12 +456,8 @@ function Install-Ghost {
         # Verify installation
         Test-Installation -InstallDir $installDir
 
-        # Show usage information
-        Write-Success "Get started with:"
-        Write-Success "    ghost login"
-        Write-Success "    ghost mcp install"
-        Write-Success "For help:"
-        Write-Success "    ghost help"
+        # Run the post-install configuration flow
+        Invoke-GhostInit -BinaryPath $targetPath
     }
     finally {
         # Clean up temporary directory
