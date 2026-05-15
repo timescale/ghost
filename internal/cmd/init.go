@@ -163,6 +163,7 @@ func runSelectedInitSteps(cmd *cobra.Command, app *common.App, indices []int) er
 	} else {
 		cmd.PrintErrln("All done.")
 	}
+	cmd.PrintErrln("\nGet started with:\n    ghost create\nFor help:\n    ghost --help")
 	return nil
 }
 
@@ -286,6 +287,11 @@ func detectPathState() initStepState {
 	installDir, err := currentGhostInstallDir()
 	if err != nil {
 		state.status = "could not determine install location"
+		return state
+	}
+	if installDir == "" {
+		state.status = "not installed in a directory (e.g. run from source or via `npx ghost`)"
+		state.configured = true
 		return state
 	}
 	inPath := common.IsInPath(installDir)
@@ -422,6 +428,9 @@ func currentGhostInstallDir() (string, error) {
 	executablePath, err := getGhostExecutablePath()
 	if err != nil {
 		return "", err
+	}
+	if executablePath == "ghost" {
+		return "", nil
 	}
 	return filepath.Dir(executablePath), nil
 }

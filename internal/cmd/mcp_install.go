@@ -605,7 +605,7 @@ var getGhostExecutablePath = func() (string, error) {
 
 	// If running via 'go run', os.Executable() returns a temp path like /tmp/go-build*/exe/ghost
 	// In this case, return "ghost" assuming it's in PATH for development
-	if strings.Contains(ghostPath, "go-build") && strings.Contains(ghostPath, "/exe/") {
+	if (strings.Contains(ghostPath, "/go-build") && strings.Contains(ghostPath, "/exe/")) || strings.Contains(ghostPath, "/Caches/go-build") {
 		return "ghost", nil
 	}
 
