@@ -52,6 +52,12 @@ ghost create      # Create a new Postgres database
 ghost list        # List all databases
 ```
 
+Learn more about ghost's forking workflow and other features with the interactive tutorial:
+
+```bash
+ghost tutorial
+```
+
 ## Commands
 
 | Command | Description |
@@ -84,6 +90,7 @@ ghost list        # List all databases
 | `schema` | Display database schema information |
 | `share` | Share a database |
 | `sql` | Execute SQL query on a database |
+| `tutorial` | Run an interactive Ghost tutorial |
 | `usage` | Show space usage |
 | `upgrade` | Upgrade the ghost CLI to the latest version |
 | `version` | Show version information |

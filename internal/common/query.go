@@ -51,7 +51,10 @@ type ExecuteQueryArgs struct {
 // Multi-statement queries (semicolon-separated) are supported when no
 // parameters are provided. When parameters are provided, only single
 // statements are supported.
-func ExecuteQuery(ctx context.Context, args ExecuteQueryArgs) (*QueryResult, error) {
+//
+// Declared as a var so tests can replace it with a stub that doesn't
+// require a real database connection.
+var ExecuteQuery = func(ctx context.Context, args ExecuteQueryArgs) (*QueryResult, error) {
 	// Fetch database details
 	database, err := fetchDatabase(ctx, args.Client, args.ProjectID, args.DatabaseRef)
 	if err != nil {

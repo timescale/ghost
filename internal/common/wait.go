@@ -69,7 +69,10 @@ func WaitForDatabase(ctx context.Context, args WaitForDatabaseArgs) error {
 
 // WaitForDatabaseWithProgress waits for a database to be ready, showing an
 // animated spinner if both streams are terminals, or plain text otherwise.
-func WaitForDatabaseWithProgress(ctx context.Context, in io.Reader, out io.Writer, args WaitForDatabaseArgs) error {
+//
+// Declared as a var so tests can replace it with a stub that doesn't
+// require polling a real database.
+var WaitForDatabaseWithProgress = func(ctx context.Context, in io.Reader, out io.Writer, args WaitForDatabaseArgs) error {
 	if !util.IsTerminal(in) || !util.IsTerminal(out) {
 		return WaitForDatabase(ctx, args)
 	}
