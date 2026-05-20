@@ -96,9 +96,6 @@ func outputStatus(cmd *cobra.Command, status common.Status) {
 		}
 	}
 
-	if status.UserEmail != "" {
-		cmd.Printf("User: %s\n", status.UserEmail)
-	}
 	cmd.Printf("Space: %s\n", status.SpaceID)
 	cmd.Println("\nUsage\n-----")
 	cmd.Printf("Compute: %g/%g hours (%s)\n", computeHours, computeLimitHours, formatPercent(computePercent))
