@@ -120,7 +120,7 @@ func TestStatusCmd(t *testing.T) {
 			name:  "text output",
 			args:  []string{"status"},
 			setup: successSetup,
-			wantStdout: `Space Usage
+			wantStdout: `Space: test-project
 Compute: 2/10 hours (20%)
 Storage: 512MiB/1TiB (0%)
 Databases: 2 (1 running, 1 paused)
@@ -138,7 +138,8 @@ Databases: 2 (1 running, 1 paused)
   "databases": {
     "running": 1,
     "paused": 1
-  }
+  },
+  "space_id": "test-project"
 }
 `,
 		},
@@ -151,6 +152,7 @@ compute_minutes: 120
 databases:
   paused: 1
   running: 1
+space_id: test-project
 storage_limit_mib: 1.048576e+06
 storage_mib: 512
 `,
@@ -159,7 +161,7 @@ storage_mib: 512
 			name:  "usage alias",
 			args:  []string{"usage"},
 			setup: successSetup,
-			wantStdout: `Space Usage
+			wantStdout: `Space: test-project
 Compute: 2/10 hours (20%)
 Storage: 512MiB/1TiB (0%)
 Databases: 2 (1 running, 1 paused)
@@ -188,7 +190,7 @@ Databases: 2 (1 running, 1 paused)
 						JSON200:      &databases,
 					}, nil)
 			},
-			wantStdout: `Space Usage
+			wantStdout: `Space: test-project
 Compute: 2/10 hours (20%)
 Storage: 512MiB/1TiB (0%)
 Databases: 1 (1 running)
@@ -218,7 +220,7 @@ Cost: $12.34 so far this cycle ($27.50 estimated total)
 						JSON200:      &databases,
 					}, nil)
 			},
-			wantStdout: `Space Usage
+			wantStdout: `Space: test-project
 Compute: 2/10 hours (20%)
 Storage: 512MiB/1TiB (0%)
 Databases: 1 (1 running)
