@@ -38,12 +38,15 @@ type Status struct {
 	EstimatedTotalCost  *float64       `json:"estimated_total_cost,omitempty"`
 	BillingPeriodStart  *time.Time     `json:"billing_period_start,omitempty"`
 	BillingPeriodEnd    *time.Time     `json:"billing_period_end,omitempty"`
+	SpaceID             string         `json:"space_id"`
+	UserEmail           string         `json:"user_email,omitempty"`
 }
 
 // FetchStatus fetches space usage and database counts from the API.
 func FetchStatus(ctx context.Context, client api.ClientWithResponsesInterface, projectID string) (Status, error) {
 	var spaceStatus *api.SpaceStatus
 	var databases []api.DatabaseWithUsage
+	var email string
 
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -74,6 +77,25 @@ func FetchStatus(ctx context.Context, client api.ClientWithResponsesInterface, p
 			return errors.New("empty response from API")
 		}
 		databases = *resp.JSON200
+		return nil
+	})
+
+	g.Go(func() error {
+		resp, err := client.AuthInfoWithResponse(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to fetch auth info: %w", err)
+		}
+		if resp.StatusCode() != http.StatusOK {
+			return ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
+		}
+		if resp.JSON200 == nil {
+			return errors.New("empty response from API")
+		}
+		if resp.JSON200.User != nil {
+			email = resp.JSON200.User.Email
+		} else if resp.JSON200.ApiKey != nil {
+			email = resp.JSON200.ApiKey.UserEmail
+		}
 		return nil
 	})
 
@@ -120,5 +142,7 @@ func FetchStatus(ctx context.Context, client api.ClientWithResponsesInterface, p
 		EstimatedTotalCost:  spaceStatus.EstimatedTotalCost,
 		BillingPeriodStart:  spaceStatus.BillingPeriodStart,
 		BillingPeriodEnd:    spaceStatus.BillingPeriodEnd,
+		SpaceID:             projectID,
+		UserEmail:           email,
 	}, nil
 }

@@ -96,7 +96,11 @@ func outputStatus(cmd *cobra.Command, status common.Status) {
 		}
 	}
 
-	cmd.Println("Space Usage")
+	if status.UserEmail != "" {
+		cmd.Printf("User: %s\n", status.UserEmail)
+	}
+	cmd.Printf("Space: %s\n", status.SpaceID)
+	cmd.Println("\nUsage\n-----")
 	cmd.Printf("Compute: %g/%g hours (%s)\n", computeHours, computeLimitHours, formatPercent(computePercent))
 	cmd.Printf("Storage: %s/1TiB (%s)\n", storageStr, formatPercent(storagePercent))
 	if len(parts) > 0 {
