@@ -11,15 +11,15 @@ import (
 	"github.com/timescale/ghost/internal/util"
 )
 
-// StatusInput represents input for ghost_status (empty - no parameters)
-type StatusInput struct{}
+// UsageInput represents input for ghost_usage (empty - no parameters)
+type UsageInput struct{}
 
-func (StatusInput) Schema() *jsonschema.Schema {
-	return util.Must(jsonschema.For[StatusInput](nil))
+func (UsageInput) Schema() *jsonschema.Schema {
+	return util.Must(jsonschema.For[UsageInput](nil))
 }
 
-// StatusOutput represents output for ghost_status
-type StatusOutput struct {
+// UsageOutput represents output for ghost_usage
+type UsageOutput struct {
 	ComputeMinutes      int64                 `json:"compute_minutes"`
 	ComputeLimitMinutes int64                 `json:"compute_limit_minutes"`
 	Storage             string                `json:"storage"`
@@ -31,8 +31,8 @@ type StatusOutput struct {
 	BillingPeriodEnd    *time.Time            `json:"billing_period_end,omitempty"`
 }
 
-func (StatusOutput) Schema() *jsonschema.Schema {
-	schema := util.Must(jsonschema.For[StatusOutput](nil))
+func (UsageOutput) Schema() *jsonschema.Schema {
+	schema := util.Must(jsonschema.For[UsageOutput](nil))
 	schema.Properties["compute_minutes"].Description = "Current compute usage in minutes"
 	schema.Properties["compute_limit_minutes"].Description = "Compute limit in minutes"
 	schema.Properties["storage"].Description = "Current storage usage"
@@ -47,13 +47,13 @@ func (StatusOutput) Schema() *jsonschema.Schema {
 	return schema
 }
 
-func newStatusTool() *mcp.Tool {
+func newUsageTool() *mcp.Tool {
 	return &mcp.Tool{
-		Name:         "ghost_status",
+		Name:         "ghost_usage",
 		Title:        "Show Space Usage",
 		Description:  "Display database space usage including compute minutes, storage, and database counts by status.",
-		InputSchema:  StatusInput{}.Schema(),
-		OutputSchema: StatusOutput{}.Schema(),
+		InputSchema:  UsageInput{}.Schema(),
+		OutputSchema: UsageOutput{}.Schema(),
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(true),
@@ -62,18 +62,18 @@ func newStatusTool() *mcp.Tool {
 	}
 }
 
-func (s *Server) handleStatus(ctx context.Context, req *mcp.CallToolRequest, input StatusInput) (*mcp.CallToolResult, StatusOutput, error) {
+func (s *Server) handleUsage(ctx context.Context, req *mcp.CallToolRequest, input UsageInput) (*mcp.CallToolResult, UsageOutput, error) {
 	client, projectID, err := s.app.GetClient()
 	if err != nil {
-		return nil, StatusOutput{}, err
+		return nil, UsageOutput{}, err
 	}
 
 	status, err := common.FetchStatus(ctx, client, projectID)
 	if err != nil {
-		return nil, StatusOutput{}, err
+		return nil, UsageOutput{}, err
 	}
 
-	return nil, StatusOutput{
+	return nil, UsageOutput{
 		ComputeMinutes:      status.ComputeMinutes,
 		ComputeLimitMinutes: status.ComputeLimitMinutes,
 		Storage:             common.FormatStorageSize(new(int(status.StorageMib))),

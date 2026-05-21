@@ -84,7 +84,7 @@ ghost list        # List all databases
 | `schema` | Display database schema information |
 | `share` | Share a database |
 | `sql` | Execute SQL query on a database |
-| `status` | Show space usage |
+| `usage` | Show space usage |
 | `upgrade` | Upgrade the ghost CLI to the latest version |
 | `version` | Show version information |
 
@@ -118,7 +118,7 @@ The `ghost mcp` command installs a [Model Context Protocol](https://modelcontext
 | `ghost_share_list` | List database shares |
 | `ghost_share_revoke` | Revoke a database share |
 | `ghost_sql` | Execute a SQL query against a database |
-| `ghost_status` | Show space usage |
+| `ghost_usage` | Show space usage |
 | `search_docs` | Search PostgreSQL, PostGIS, and TimescaleDB documentation |
 | `view_skill` | Retrieve skills for PostgreSQL and TimescaleDB best practices |
 

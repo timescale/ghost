@@ -111,7 +111,7 @@ func (s *Server) registerTools(ctx context.Context) {
 	mcp.AddTool(s.mcpServer, newLoginTool(), s.handleLogin)
 
 	// Register Ghost database tools
-	mcp.AddTool(s.mcpServer, newStatusTool(), s.handleStatus)
+	mcp.AddTool(s.mcpServer, newUsageTool(), s.handleUsage)
 	mcp.AddTool(s.mcpServer, newListTool(), s.handleList)
 	mcp.AddTool(s.mcpServer, newCreateTool(), s.handleCreate)
 	mcp.AddTool(s.mcpServer, newDeleteTool(), s.handleDelete)

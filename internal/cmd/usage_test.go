@@ -9,7 +9,7 @@ import (
 	"github.com/timescale/ghost/internal/api/mock"
 )
 
-func TestStatusCmd(t *testing.T) {
+func TestUsageCmd(t *testing.T) {
 	successSetup := func(m *mock.MockClientWithResponsesInterface) {
 		m.EXPECT().SpaceStatusWithResponse(validCtx, "test-project").
 			Return(&api.SpaceStatusResponse{
@@ -39,13 +39,13 @@ func TestStatusCmd(t *testing.T) {
 	tests := []cmdTest{
 		{
 			name:    "not logged in",
-			args:    []string{"status"},
+			args:    []string{"usage"},
 			opts:    []runOption{withClientError(errors.New("authentication required: no credentials found"))},
 			wantErr: "authentication required: no credentials found",
 		},
 		{
 			name: "network error on space status",
-			args: []string{"status"},
+			args: []string{"usage"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
 				m.EXPECT().SpaceStatusWithResponse(validCtx, "test-project").
 					Return(nil, errors.New("connection refused"))
@@ -60,7 +60,7 @@ func TestStatusCmd(t *testing.T) {
 		},
 		{
 			name: "API error on space status",
-			args: []string{"status"},
+			args: []string{"usage"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
 				m.EXPECT().SpaceStatusWithResponse(validCtx, "test-project").
 					Return(&api.SpaceStatusResponse{
@@ -78,7 +78,7 @@ func TestStatusCmd(t *testing.T) {
 		},
 		{
 			name: "nil space status response body",
-			args: []string{"status"},
+			args: []string{"usage"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
 				m.EXPECT().SpaceStatusWithResponse(validCtx, "test-project").
 					Return(&api.SpaceStatusResponse{
@@ -96,7 +96,7 @@ func TestStatusCmd(t *testing.T) {
 		},
 		{
 			name: "nil list databases response body",
-			args: []string{"status"},
+			args: []string{"usage"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
 				m.EXPECT().SpaceStatusWithResponse(validCtx, "test-project").
 					Return(&api.SpaceStatusResponse{
@@ -118,7 +118,7 @@ func TestStatusCmd(t *testing.T) {
 		},
 		{
 			name:  "text output",
-			args:  []string{"status"},
+			args:  []string{"usage"},
 			setup: successSetup,
 			wantStdout: `Space: test-project
 Compute: 2/10 hours (20%)
@@ -128,7 +128,7 @@ Databases: 2 (1 running, 1 paused)
 		},
 		{
 			name:  "json output",
-			args:  []string{"status", "--json"},
+			args:  []string{"usage", "--json"},
 			setup: successSetup,
 			wantStdout: `{
   "compute_minutes": 120,
@@ -145,7 +145,7 @@ Databases: 2 (1 running, 1 paused)
 		},
 		{
 			name:  "yaml output",
-			args:  []string{"status", "--yaml"},
+			args:  []string{"usage", "--yaml"},
 			setup: successSetup,
 			wantStdout: `compute_limit_minutes: 600
 compute_minutes: 120
@@ -158,8 +158,8 @@ storage_mib: 512
 `,
 		},
 		{
-			name:  "usage alias",
-			args:  []string{"usage"},
+			name:  "status alias",
+			args:  []string{"status"},
 			setup: successSetup,
 			wantStdout: `Space: test-project
 Compute: 2/10 hours (20%)
@@ -169,7 +169,7 @@ Databases: 2 (1 running, 1 paused)
 		},
 		{
 			name: "text output with cost",
-			args: []string{"status"},
+			args: []string{"usage"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
 				m.EXPECT().SpaceStatusWithResponse(validCtx, "test-project").
 					Return(&api.SpaceStatusResponse{
@@ -199,7 +199,7 @@ Cost: $12.34 so far this cycle ($27.50 estimated total)
 		},
 		{
 			name: "text output with zero cost is omitted",
-			args: []string{"status"},
+			args: []string{"usage"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
 				m.EXPECT().SpaceStatusWithResponse(validCtx, "test-project").
 					Return(&api.SpaceStatusResponse{

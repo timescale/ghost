@@ -10,22 +10,22 @@ import (
 	"github.com/timescale/ghost/internal/util"
 )
 
-func buildStatusCmd(app *common.App) *cobra.Command {
+func buildUsageCmd(app *common.App) *cobra.Command {
 	var jsonOutput bool
 	var yamlOutput bool
 
 	cmd := &cobra.Command{
-		Use:     "status",
-		Aliases: []string{"usage"},
+		Use:     "usage",
+		Aliases: []string{"status"},
 		Short:   "Show space usage",
 		Example: `  # Show space usage
-  ghost status
+  ghost usage
 
   # Output as JSON
-  ghost status --json
+  ghost usage --json
 
   # Output as YAML
-  ghost status --yaml`,
+  ghost usage --yaml`,
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
@@ -46,7 +46,7 @@ func buildStatusCmd(app *common.App) *cobra.Command {
 			case yamlOutput:
 				return util.SerializeToYAML(cmd.OutOrStdout(), status)
 			default:
-				outputStatus(cmd, status)
+				outputUsage(cmd, status)
 				return nil
 			}
 		},
@@ -59,7 +59,7 @@ func buildStatusCmd(app *common.App) *cobra.Command {
 	return cmd
 }
 
-func outputStatus(cmd *cobra.Command, status common.Status) {
+func outputUsage(cmd *cobra.Command, status common.Status) {
 	computeHours := float64(status.ComputeMinutes) / 60
 	computeLimitHours := float64(status.ComputeLimitMinutes) / 60
 	computePercent := float64(status.ComputeMinutes) / float64(status.ComputeLimitMinutes) * 100

@@ -1,34 +1,34 @@
 ---
-title: "ghost status"
-slug: "ghost_status"
-description: "CLI reference for ghost status"
+title: "ghost usage"
+slug: "ghost_usage"
+description: "CLI reference for ghost usage"
 ---
 
-## ghost status
+## ghost usage
 
 Show space usage
 
 ```
-ghost status [flags]
+ghost usage [flags]
 ```
 
 ### Examples
 
 ```
   # Show space usage
-  ghost status
+  ghost usage
 
   # Output as JSON
-  ghost status --json
+  ghost usage --json
 
   # Output as YAML
-  ghost status --yaml
+  ghost usage --yaml
 ```
 
 ### Options
 
 ```
-  -h, --help   help for status
+  -h, --help   help for usage
       --json   Output in JSON format
       --yaml   Output in YAML format
 ```
