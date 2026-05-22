@@ -35,18 +35,18 @@ func buildUsageCmd(app *common.App) *cobra.Command {
 				return err
 			}
 
-			status, err := common.FetchStatus(cmd.Context(), client, projectID)
+			usage, err := common.FetchUsage(cmd.Context(), client, projectID)
 			if err != nil {
 				return err
 			}
 
 			switch {
 			case jsonOutput:
-				return util.SerializeToJSON(cmd.OutOrStdout(), status)
+				return util.SerializeToJSON(cmd.OutOrStdout(), usage)
 			case yamlOutput:
-				return util.SerializeToYAML(cmd.OutOrStdout(), status)
+				return util.SerializeToYAML(cmd.OutOrStdout(), usage)
 			default:
-				outputUsage(cmd, status)
+				outputUsage(cmd, usage)
 				return nil
 			}
 		},
@@ -59,14 +59,14 @@ func buildUsageCmd(app *common.App) *cobra.Command {
 	return cmd
 }
 
-func outputUsage(cmd *cobra.Command, status common.Status) {
-	computeHours := float64(status.ComputeMinutes) / 60
-	computeLimitHours := float64(status.ComputeLimitMinutes) / 60
-	computePercent := float64(status.ComputeMinutes) / float64(status.ComputeLimitMinutes) * 100
+func outputUsage(cmd *cobra.Command, usage common.Usage) {
+	computeHours := float64(usage.ComputeMinutes) / 60
+	computeLimitHours := float64(usage.ComputeLimitMinutes) / 60
+	computePercent := float64(usage.ComputeMinutes) / float64(usage.ComputeLimitMinutes) * 100
 
-	storageMibInt := int(status.StorageMib)
+	storageMibInt := int(usage.StorageMib)
 	storageStr := common.FormatStorageSize(&storageMibInt)
-	storagePercent := float64(status.StorageMib) / float64(status.StorageLimitMib) * 100
+	storagePercent := float64(usage.StorageMib) / float64(usage.StorageLimitMib) * 100
 
 	// Build status breakdown (only non-zero counts, in consistent order)
 	type statusEntry struct {
@@ -74,17 +74,17 @@ func outputUsage(cmd *cobra.Command, status common.Status) {
 		count int
 	}
 	entries := []statusEntry{
-		{"queued", status.Databases.Queued},
-		{"configuring", status.Databases.Configuring},
-		{"running", status.Databases.Running},
-		{"pausing", status.Databases.Pausing},
-		{"paused", status.Databases.Paused},
-		{"resuming", status.Databases.Resuming},
-		{"deleting", status.Databases.Deleting},
-		{"deleted", status.Databases.Deleted},
-		{"upgrading", status.Databases.Upgrading},
-		{"unstable", status.Databases.Unstable},
-		{"unknown", status.Databases.Unknown},
+		{"queued", usage.Databases.Queued},
+		{"configuring", usage.Databases.Configuring},
+		{"running", usage.Databases.Running},
+		{"pausing", usage.Databases.Pausing},
+		{"paused", usage.Databases.Paused},
+		{"resuming", usage.Databases.Resuming},
+		{"deleting", usage.Databases.Deleting},
+		{"deleted", usage.Databases.Deleted},
+		{"upgrading", usage.Databases.Upgrading},
+		{"unstable", usage.Databases.Unstable},
+		{"unknown", usage.Databases.Unknown},
 	}
 
 	var total int
@@ -96,7 +96,7 @@ func outputUsage(cmd *cobra.Command, status common.Status) {
 		}
 	}
 
-	cmd.Printf("Space: %s\n", status.SpaceID)
+	cmd.Printf("Space: %s\n", usage.SpaceID)
 	cmd.Printf("Compute: %g/%g hours (%s)\n", computeHours, computeLimitHours, formatPercent(computePercent))
 	cmd.Printf("Storage: %s/1TiB (%s)\n", storageStr, formatPercent(storagePercent))
 	if len(parts) > 0 {
@@ -106,8 +106,8 @@ func outputUsage(cmd *cobra.Command, status common.Status) {
 	}
 	// Show cost only when at least one field is non-zero. Free-tier users
 	// usually have zero cost, and "$0.00" adds noise.
-	costToDate := util.Deref(status.CostToDate)
-	estimatedTotalCost := util.Deref(status.EstimatedTotalCost)
+	costToDate := util.Deref(usage.CostToDate)
+	estimatedTotalCost := util.Deref(usage.EstimatedTotalCost)
 	if costToDate > 0 || estimatedTotalCost > 0 {
 		cmd.Printf("Cost: $%.2f so far this cycle ($%.2f estimated total)\n",
 			costToDate, estimatedTotalCost)

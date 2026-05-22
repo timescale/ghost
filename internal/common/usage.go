@@ -27,8 +27,8 @@ type DatabaseCounts struct {
 	Unknown     int `json:"unknown,omitempty"`
 }
 
-// Status represents space usage including compute, storage, and database counts.
-type Status struct {
+// Usage represents space usage including compute, storage, and database counts.
+type Usage struct {
 	ComputeMinutes      int64          `json:"compute_minutes"`
 	ComputeLimitMinutes int64          `json:"compute_limit_minutes"`
 	StorageMib          int64          `json:"storage_mib"`
@@ -41,8 +41,8 @@ type Status struct {
 	SpaceID             string         `json:"space_id"`
 }
 
-// FetchStatus fetches space usage and database counts from the API.
-func FetchStatus(ctx context.Context, client api.ClientWithResponsesInterface, projectID string) (Status, error) {
+// FetchUsage fetches space usage and database counts from the API.
+func FetchUsage(ctx context.Context, client api.ClientWithResponsesInterface, projectID string) (Usage, error) {
 	var spaceUsage *api.SpaceUsage
 	var databases []api.DatabaseWithUsage
 
@@ -79,7 +79,7 @@ func FetchStatus(ctx context.Context, client api.ClientWithResponsesInterface, p
 	})
 
 	if err := g.Wait(); err != nil {
-		return Status{}, err
+		return Usage{}, err
 	}
 
 	// Tally databases by status
@@ -111,7 +111,7 @@ func FetchStatus(ctx context.Context, client api.ClientWithResponsesInterface, p
 		}
 	}
 
-	return Status{
+	return Usage{
 		ComputeMinutes:      spaceUsage.ComputeMinutes,
 		ComputeLimitMinutes: spaceUsage.ComputeLimitMinutes,
 		StorageMib:          spaceUsage.StorageMib,

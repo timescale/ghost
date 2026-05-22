@@ -68,20 +68,20 @@ func (s *Server) handleUsage(ctx context.Context, req *mcp.CallToolRequest, inpu
 		return nil, UsageOutput{}, err
 	}
 
-	status, err := common.FetchStatus(ctx, client, projectID)
+	usage, err := common.FetchUsage(ctx, client, projectID)
 	if err != nil {
 		return nil, UsageOutput{}, err
 	}
 
 	return nil, UsageOutput{
-		ComputeMinutes:      status.ComputeMinutes,
-		ComputeLimitMinutes: status.ComputeLimitMinutes,
-		Storage:             common.FormatStorageSize(new(int(status.StorageMib))),
-		StorageLimit:        common.FormatStorageSize(new(int(status.StorageLimitMib))),
-		Databases:           status.Databases,
-		CostToDate:          status.CostToDate,
-		EstimatedTotalCost:  status.EstimatedTotalCost,
-		BillingPeriodStart:  status.BillingPeriodStart,
-		BillingPeriodEnd:    status.BillingPeriodEnd,
+		ComputeMinutes:      usage.ComputeMinutes,
+		ComputeLimitMinutes: usage.ComputeLimitMinutes,
+		Storage:             common.FormatStorageSize(new(int(usage.StorageMib))),
+		StorageLimit:        common.FormatStorageSize(new(int(usage.StorageLimitMib))),
+		Databases:           usage.Databases,
+		CostToDate:          usage.CostToDate,
+		EstimatedTotalCost:  usage.EstimatedTotalCost,
+		BillingPeriodStart:  usage.BillingPeriodStart,
+		BillingPeriodEnd:    usage.BillingPeriodEnd,
 	}, nil
 }
