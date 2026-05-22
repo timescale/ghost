@@ -446,8 +446,8 @@ type Space struct {
 	Name string `json:"name"`
 }
 
-// SpaceStatus Space-level usage and cost for the current billing cycle.
-type SpaceStatus struct {
+// SpaceUsage Space-level usage and cost for the current billing cycle.
+type SpaceUsage struct {
 	// BillingPeriodEnd End of the current billing cycle.
 	BillingPeriodEnd *time.Time `json:"billing_period_end,omitempty"`
 

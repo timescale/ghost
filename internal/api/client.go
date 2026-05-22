@@ -212,6 +212,9 @@ type ClientInterface interface {
 
 	// SpaceStatus request
 	SpaceStatus(ctx context.Context, spaceId SpaceId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SpaceUsage request
+	SpaceUsage(ctx context.Context, spaceId SpaceId, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) AnalyticsIdentifyWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -744,6 +747,18 @@ func (c *Client) RevokeShare(ctx context.Context, spaceId SpaceId, shareToken st
 
 func (c *Client) SpaceStatus(ctx context.Context, spaceId SpaceId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSpaceStatusRequest(c.Server, spaceId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SpaceUsage(ctx context.Context, spaceId SpaceId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSpaceUsageRequest(c.Server, spaceId)
 	if err != nil {
 		return nil, err
 	}
@@ -2140,6 +2155,40 @@ func NewSpaceStatusRequest(server string, spaceId SpaceId) (*http.Request, error
 	return req, nil
 }
 
+// NewSpaceUsageRequest generates requests for SpaceUsage
+func NewSpaceUsageRequest(server string, spaceId SpaceId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "space_id", runtime.ParamLocationPath, spaceId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/spaces/%s/usage", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -2306,6 +2355,9 @@ type ClientWithResponsesInterface interface {
 
 	// SpaceStatusWithResponse request
 	SpaceStatusWithResponse(ctx context.Context, spaceId SpaceId, reqEditors ...RequestEditorFn) (*SpaceStatusResponse, error)
+
+	// SpaceUsageWithResponse request
+	SpaceUsageWithResponse(ctx context.Context, spaceId SpaceId, reqEditors ...RequestEditorFn) (*SpaceUsageResponse, error)
 }
 
 type AnalyticsIdentifyResponse struct {
@@ -3061,7 +3113,7 @@ func (r RevokeShareResponse) StatusCode() int {
 type SpaceStatusResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *SpaceStatus
+	JSON200      *SpaceUsage
 	JSONDefault  *Error
 }
 
@@ -3075,6 +3127,29 @@ func (r SpaceStatusResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r SpaceStatusResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SpaceUsageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SpaceUsage
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r SpaceUsageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SpaceUsageResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -3473,6 +3548,15 @@ func (c *ClientWithResponses) SpaceStatusWithResponse(ctx context.Context, space
 		return nil, err
 	}
 	return ParseSpaceStatusResponse(rsp)
+}
+
+// SpaceUsageWithResponse request returning *SpaceUsageResponse
+func (c *ClientWithResponses) SpaceUsageWithResponse(ctx context.Context, spaceId SpaceId, reqEditors ...RequestEditorFn) (*SpaceUsageResponse, error) {
+	rsp, err := c.SpaceUsage(ctx, spaceId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSpaceUsageResponse(rsp)
 }
 
 // ParseAnalyticsIdentifyResponse parses an HTTP response from a AnalyticsIdentifyWithResponse call
@@ -4513,7 +4597,40 @@ func ParseSpaceStatusResponse(rsp *http.Response) (*SpaceStatusResponse, error) 
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SpaceStatus
+		var dest SpaceUsage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSpaceUsageResponse parses an HTTP response from a SpaceUsageWithResponse call
+func ParseSpaceUsageResponse(rsp *http.Response) (*SpaceUsageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SpaceUsageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SpaceUsage
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

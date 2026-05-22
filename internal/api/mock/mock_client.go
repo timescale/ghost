@@ -902,6 +902,26 @@ func (mr *MockClientInterfaceMockRecorder) SpaceStatus(ctx, spaceId any, reqEdit
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SpaceStatus", reflect.TypeOf((*MockClientInterface)(nil).SpaceStatus), varargs...)
 }
 
+// SpaceUsage mocks base method.
+func (m *MockClientInterface) SpaceUsage(ctx context.Context, spaceId api.SpaceId, reqEditors ...api.RequestEditorFn) (*http.Response, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, spaceId}
+	for _, a := range reqEditors {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "SpaceUsage", varargs...)
+	ret0, _ := ret[0].(*http.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SpaceUsage indicates an expected call of SpaceUsage.
+func (mr *MockClientInterfaceMockRecorder) SpaceUsage(ctx, spaceId any, reqEditors ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, spaceId}, reqEditors...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SpaceUsage", reflect.TypeOf((*MockClientInterface)(nil).SpaceUsage), varargs...)
+}
+
 // SubmitFeedback mocks base method.
 func (m *MockClientInterface) SubmitFeedback(ctx context.Context, body api.SubmitFeedbackJSONRequestBody, reqEditors ...api.RequestEditorFn) (*http.Response, error) {
 	m.ctrl.T.Helper()
@@ -1824,6 +1844,26 @@ func (mr *MockClientWithResponsesInterfaceMockRecorder) SpaceStatusWithResponse(
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]any{ctx, spaceId}, reqEditors...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SpaceStatusWithResponse", reflect.TypeOf((*MockClientWithResponsesInterface)(nil).SpaceStatusWithResponse), varargs...)
+}
+
+// SpaceUsageWithResponse mocks base method.
+func (m *MockClientWithResponsesInterface) SpaceUsageWithResponse(ctx context.Context, spaceId api.SpaceId, reqEditors ...api.RequestEditorFn) (*api.SpaceUsageResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, spaceId}
+	for _, a := range reqEditors {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "SpaceUsageWithResponse", varargs...)
+	ret0, _ := ret[0].(*api.SpaceUsageResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SpaceUsageWithResponse indicates an expected call of SpaceUsageWithResponse.
+func (mr *MockClientWithResponsesInterfaceMockRecorder) SpaceUsageWithResponse(ctx, spaceId any, reqEditors ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, spaceId}, reqEditors...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SpaceUsageWithResponse", reflect.TypeOf((*MockClientWithResponsesInterface)(nil).SpaceUsageWithResponse), varargs...)
 }
 
 // SubmitFeedbackWithBodyWithResponse mocks base method.

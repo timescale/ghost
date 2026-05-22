@@ -43,15 +43,15 @@ type Status struct {
 
 // FetchStatus fetches space usage and database counts from the API.
 func FetchStatus(ctx context.Context, client api.ClientWithResponsesInterface, projectID string) (Status, error) {
-	var spaceStatus *api.SpaceStatus
+	var spaceUsage *api.SpaceUsage
 	var databases []api.DatabaseWithUsage
 
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		resp, err := client.SpaceStatusWithResponse(ctx, projectID)
+		resp, err := client.SpaceUsageWithResponse(ctx, projectID)
 		if err != nil {
-			return fmt.Errorf("failed to get space status: %w", err)
+			return fmt.Errorf("failed to get space usage: %w", err)
 		}
 		if resp.StatusCode() != http.StatusOK {
 			return ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
@@ -59,7 +59,7 @@ func FetchStatus(ctx context.Context, client api.ClientWithResponsesInterface, p
 		if resp.JSON200 == nil {
 			return errors.New("empty response from API")
 		}
-		spaceStatus = resp.JSON200
+		spaceUsage = resp.JSON200
 		return nil
 	})
 
@@ -112,15 +112,15 @@ func FetchStatus(ctx context.Context, client api.ClientWithResponsesInterface, p
 	}
 
 	return Status{
-		ComputeMinutes:      spaceStatus.ComputeMinutes,
-		ComputeLimitMinutes: spaceStatus.ComputeLimitMinutes,
-		StorageMib:          spaceStatus.StorageMib,
-		StorageLimitMib:     spaceStatus.StorageLimitMib,
+		ComputeMinutes:      spaceUsage.ComputeMinutes,
+		ComputeLimitMinutes: spaceUsage.ComputeLimitMinutes,
+		StorageMib:          spaceUsage.StorageMib,
+		StorageLimitMib:     spaceUsage.StorageLimitMib,
 		Databases:           counts,
-		CostToDate:          spaceStatus.CostToDate,
-		EstimatedTotalCost:  spaceStatus.EstimatedTotalCost,
-		BillingPeriodStart:  spaceStatus.BillingPeriodStart,
-		BillingPeriodEnd:    spaceStatus.BillingPeriodEnd,
+		CostToDate:          spaceUsage.CostToDate,
+		EstimatedTotalCost:  spaceUsage.EstimatedTotalCost,
+		BillingPeriodStart:  spaceUsage.BillingPeriodStart,
+		BillingPeriodEnd:    spaceUsage.BillingPeriodEnd,
 		SpaceID:             projectID,
 	}, nil
 }

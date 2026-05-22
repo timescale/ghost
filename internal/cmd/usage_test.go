@@ -11,10 +11,10 @@ import (
 
 func TestUsageCmd(t *testing.T) {
 	successSetup := func(m *mock.MockClientWithResponsesInterface) {
-		m.EXPECT().SpaceStatusWithResponse(validCtx, "test-project").
-			Return(&api.SpaceStatusResponse{
+		m.EXPECT().SpaceUsageWithResponse(validCtx, "test-project").
+			Return(&api.SpaceUsageResponse{
 				HTTPResponse: httpResponse(http.StatusOK),
-				JSON200: &api.SpaceStatus{
+				JSON200: &api.SpaceUsage{
 					ComputeMinutes:      120,
 					ComputeLimitMinutes: 600,
 					StorageMib:          512,
@@ -44,10 +44,10 @@ func TestUsageCmd(t *testing.T) {
 			wantErr: "authentication required: no credentials found",
 		},
 		{
-			name: "network error on space status",
+			name: "network error on space usage",
 			args: []string{"usage"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
-				m.EXPECT().SpaceStatusWithResponse(validCtx, "test-project").
+				m.EXPECT().SpaceUsageWithResponse(validCtx, "test-project").
 					Return(nil, errors.New("connection refused"))
 				databases := []api.DatabaseWithUsage{}
 				m.EXPECT().ListDatabasesWithResponse(validCtx, "test-project").
@@ -56,14 +56,14 @@ func TestUsageCmd(t *testing.T) {
 						JSON200:      &databases,
 					}, nil).AnyTimes()
 			},
-			wantErr: "failed to get space status: connection refused",
+			wantErr: "failed to get space usage: connection refused",
 		},
 		{
-			name: "API error on space status",
+			name: "API error on space usage",
 			args: []string{"usage"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
-				m.EXPECT().SpaceStatusWithResponse(validCtx, "test-project").
-					Return(&api.SpaceStatusResponse{
+				m.EXPECT().SpaceUsageWithResponse(validCtx, "test-project").
+					Return(&api.SpaceUsageResponse{
 						HTTPResponse: httpResponse(http.StatusInternalServerError),
 						JSONDefault:  &api.Error{Message: "internal error"},
 					}, nil)
@@ -77,11 +77,11 @@ func TestUsageCmd(t *testing.T) {
 			wantErr: "internal error",
 		},
 		{
-			name: "nil space status response body",
+			name: "nil space usage response body",
 			args: []string{"usage"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
-				m.EXPECT().SpaceStatusWithResponse(validCtx, "test-project").
-					Return(&api.SpaceStatusResponse{
+				m.EXPECT().SpaceUsageWithResponse(validCtx, "test-project").
+					Return(&api.SpaceUsageResponse{
 						HTTPResponse: httpResponse(http.StatusOK),
 						JSON200:      nil,
 					}, nil)
@@ -98,10 +98,10 @@ func TestUsageCmd(t *testing.T) {
 			name: "nil list databases response body",
 			args: []string{"usage"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
-				m.EXPECT().SpaceStatusWithResponse(validCtx, "test-project").
-					Return(&api.SpaceStatusResponse{
+				m.EXPECT().SpaceUsageWithResponse(validCtx, "test-project").
+					Return(&api.SpaceUsageResponse{
 						HTTPResponse: httpResponse(http.StatusOK),
-						JSON200: &api.SpaceStatus{
+						JSON200: &api.SpaceUsage{
 							ComputeMinutes:      120,
 							ComputeLimitMinutes: 600,
 							StorageMib:          512,
@@ -171,10 +171,10 @@ Databases: 2 (1 running, 1 paused)
 			name: "text output with cost",
 			args: []string{"usage"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
-				m.EXPECT().SpaceStatusWithResponse(validCtx, "test-project").
-					Return(&api.SpaceStatusResponse{
+				m.EXPECT().SpaceUsageWithResponse(validCtx, "test-project").
+					Return(&api.SpaceUsageResponse{
 						HTTPResponse: httpResponse(http.StatusOK),
-						JSON200: &api.SpaceStatus{
+						JSON200: &api.SpaceUsage{
 							ComputeMinutes:      120,
 							ComputeLimitMinutes: 600,
 							StorageMib:          512,
@@ -201,10 +201,10 @@ Cost: $12.34 so far this cycle ($27.50 estimated total)
 			name: "text output with zero cost is omitted",
 			args: []string{"usage"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
-				m.EXPECT().SpaceStatusWithResponse(validCtx, "test-project").
-					Return(&api.SpaceStatusResponse{
+				m.EXPECT().SpaceUsageWithResponse(validCtx, "test-project").
+					Return(&api.SpaceUsageResponse{
 						HTTPResponse: httpResponse(http.StatusOK),
-						JSON200: &api.SpaceStatus{
+						JSON200: &api.SpaceUsage{
 							ComputeMinutes:      120,
 							ComputeLimitMinutes: 600,
 							StorageMib:          512,

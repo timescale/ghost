@@ -125,20 +125,38 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
-  /spaces/{space_id}/status:
+  /spaces/{space_id}/usage:
     get:
-      operationId: spaceStatus
-      summary: Get space status
-      description: Returns compute and storage usage for a space.
+      operationId: spaceUsage
+      summary: Get space usage
+      description: Returns compute usage, storage usage, and billing/cost information for a space.
       parameters:
         - $ref: "#/components/parameters/SpaceId"
       responses:
         "200":
-          description: Space status
+          description: Space usage
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SpaceStatus"
+                $ref: "#/components/schemas/SpaceUsage"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /spaces/{space_id}/status:
+    get:
+      operationId: spaceStatus
+      deprecated: true
+      summary: Get space usage (deprecated)
+      description: Deprecated alias for `GET /spaces/{space_id}/usage`. Use the `/usage` endpoint instead.
+      parameters:
+        - $ref: "#/components/parameters/SpaceId"
+      responses:
+        "200":
+          description: Space usage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaceUsage"
         default:
           $ref: "#/components/responses/Error"
 
@@ -926,7 +944,7 @@ components:
           type: string
           description: Name for the new space.
 
-    SpaceStatus:
+    SpaceUsage:
       type: object
       description: Space-level usage and cost for the current billing cycle.
       required:
