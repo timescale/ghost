@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	lipgloss "charm.land/lipgloss/v2"
@@ -18,23 +17,8 @@ import (
 	"golang.org/x/term"
 
 	"github.com/timescale/ghost/internal/common"
+	"github.com/timescale/ghost/internal/tutorial"
 	"github.com/timescale/ghost/internal/util"
-)
-
-const (
-	tutorialSetupSQL      = "CREATE TABLE ghost_tutorial_items (id serial PRIMARY KEY, name text NOT NULL, location text NOT NULL); INSERT INTO ghost_tutorial_items (name, location) VALUES ('apples', 'original'), ('bananas', 'original'), ('carrots', 'original');"
-	tutorialMutateForkSQL = "INSERT INTO ghost_tutorial_items (name, location) VALUES ('dragonfruit', 'fork'); UPDATE ghost_tutorial_items SET location = 'fork' WHERE name = 'bananas';"
-	tutorialQuerySQL      = "SELECT id, name, location FROM ghost_tutorial_items ORDER BY id;"
-
-	// Placeholder values used when rendering the markdown tutorial doc. The
-	// live `ghost tutorial` command never uses these — it generates a real
-	// suffix and reads the real IDs from the API — but the markdown renderer
-	// needs concrete-looking values so the example output reads naturally.
-	tutorialDocsOriginalDatabaseName = "tutorial-example"
-	tutorialDocsForkDatabaseName     = "tutorial-example-fork"
-	tutorialDocsOriginalDatabaseID   = "abc1234567"
-	tutorialDocsForkDatabaseID       = "def1234567"
-	tutorialDocsConnectionString     = "postgresql://tsdbadmin:<password>@<host>:5432/tsdb?sslmode=require"
 )
 
 var (
@@ -49,208 +33,6 @@ var (
 	tutorialPromptStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	tutorialSuccessStyle = lipgloss.NewStyle().Foreground(lipgloss.Green)
 )
-
-// tutorialTarget controls whether a block appears in the live CLI run, the
-// rendered markdown doc, or both. The zero value (tutorialTargetAll) means
-// the block is visible everywhere, which is the common case.
-type tutorialTarget int
-
-const (
-	tutorialTargetAll tutorialTarget = iota
-	tutorialTargetCLIOnly
-	tutorialTargetDocsOnly
-)
-
-// tutorialBlock is one unit of tutorial content: optional prose followed by
-// an optional ghost CLI command. expectedOutput is shown only in the markdown
-// doc — the live CLI prints whatever the sub-command actually emits. target
-// lets a block be doc-only (e.g. the cleanup preamble that explains how the
-// live tutorial transitions into Step 7) or CLI-only. createsDatabase and
-// removesDatabase track side effects on the cleanup list for the live
-// runtime; they are ignored by the markdown renderer.
-type tutorialBlock struct {
-	prose           string
-	args            []string
-	expectedOutput  string
-	target          tutorialTarget
-	createsDatabase string
-	removesDatabase string
-}
-
-// tutorialStep is a numbered group of blocks under a single heading. When
-// joinedBlocks is true, adjacent blocks render flush against each other (no
-// blank line between them) — used for tight sequences such as the paired
-// delete commands at the end of the tutorial.
-type tutorialStep struct {
-	title        string
-	blocks       []tutorialBlock
-	joinedBlocks bool
-}
-
-// tutorial bundles everything about one tutorial: the narrative shown in
-// docs/tutorials/<filename>, the steps run by the live `ghost tutorial`
-// command, and an optional cleanup step the live CLI conditionally runs
-// after a user prompt. New tutorials should be added to allTutorials().
-type tutorial struct {
-	filename   string
-	title      string
-	callout    string
-	intro      []string
-	steps      []tutorialStep
-	deleteStep tutorialStep
-}
-
-// allTutorials is the registry of every tutorial defined in this package.
-// AllTutorialDocs iterates this list to render markdown docs; the live
-// `ghost tutorial` CLI command picks one (currently always learn-the-basics).
-func allTutorials() []tutorial {
-	return []tutorial{
-		buildLearnTheBasicsTutorial(tutorialDocsOriginalDatabaseName, tutorialDocsForkDatabaseName),
-	}
-}
-
-// buildLearnTheBasicsTutorial constructs the tutorial using the provided
-// database names. The docs registry passes placeholder names so the
-// rendered markdown reads consistently; the live CLI passes dynamically
-// generated names so its sub-commands operate on real databases.
-func buildLearnTheBasicsTutorial(originalDatabaseName, forkDatabaseName string) tutorial {
-	return tutorial{
-		filename: "learn-the-basics.md",
-		title:    "Learn the basics of Ghost",
-		callout:  "Run `ghost tutorial` to step through this tutorial live in the CLI.",
-		intro: []string{
-			"This guided tour walks through the core Ghost workflow: create a database, load data, fork it, change the fork, compare the results, and clean up. Each step shows the exact `ghost` command the live tutorial runs and the output you can expect to see.",
-			fmt.Sprintf("Throughout this guide, the temporary databases are named `%s` and `%s`. The live `ghost tutorial` command generates a random suffix instead.", originalDatabaseName, forkDatabaseName),
-		},
-		steps:      buildTutorialSteps(originalDatabaseName, forkDatabaseName),
-		deleteStep: buildTutorialDeleteStep(originalDatabaseName, forkDatabaseName),
-	}
-}
-
-// filterTutorialBlocks returns the blocks visible to the given audience.
-// Blocks whose target is tutorialTargetAll always pass; otherwise the
-// target must match audience.
-func filterTutorialBlocks(blocks []tutorialBlock, audience tutorialTarget) []tutorialBlock {
-	out := make([]tutorialBlock, 0, len(blocks))
-	for _, block := range blocks {
-		if block.target == tutorialTargetAll || block.target == audience {
-			out = append(out, block)
-		}
-	}
-	return out
-}
-
-func buildTutorialSteps(originalDatabaseName, forkDatabaseName string) []tutorialStep {
-	threeRowQueryOutput := "" +
-		" id │ name    │ location \n" +
-		"────┼─────────┼──────────\n" +
-		" 1  │ apples  │ original \n" +
-		" 2  │ bananas │ original \n" +
-		" 3  │ carrots │ original \n" +
-		"(3 rows)"
-
-	return []tutorialStep{
-		{
-			title: "Create a database",
-			blocks: []tutorialBlock{
-				{
-					args:            []string{"create", "--name", originalDatabaseName, "--wait"},
-					createsDatabase: originalDatabaseName,
-					expectedOutput: "Created database '" + originalDatabaseName + "'\n" +
-						"ID: " + tutorialDocsOriginalDatabaseID + "\n" +
-						"Connection: " + tutorialDocsConnectionString,
-				},
-			},
-		},
-		{
-			title: "Add sample data with SQL",
-			blocks: []tutorialBlock{
-				{
-					prose:          "The sql command connects to the database and executes the query you provide.",
-					args:           []string{"sql", originalDatabaseName, tutorialSetupSQL},
-					expectedOutput: "CREATE TABLE\nINSERT 0 3",
-				},
-			},
-		},
-		{
-			title: "Query the original database",
-			blocks: []tutorialBlock{
-				{
-					args:           []string{"sql", originalDatabaseName, tutorialQuerySQL},
-					expectedOutput: threeRowQueryOutput,
-				},
-			},
-		},
-		{
-			title: "Fork the database",
-			blocks: []tutorialBlock{
-				{
-					prose:           "Forking creates an independent copy you can safely experiment with.",
-					args:            []string{"fork", originalDatabaseName, "--name", forkDatabaseName, "--wait"},
-					createsDatabase: forkDatabaseName,
-					expectedOutput: "Forked '" + originalDatabaseName + "' → '" + forkDatabaseName + "'\n" +
-						"ID: " + tutorialDocsForkDatabaseID + "\n" +
-						"Connection: " + tutorialDocsConnectionString,
-				},
-			},
-		},
-		{
-			title: "Mutate the fork",
-			blocks: []tutorialBlock{
-				{
-					prose:          "These changes are made only on the fork.",
-					args:           []string{"sql", forkDatabaseName, tutorialMutateForkSQL},
-					expectedOutput: "INSERT 0 1\nUPDATE 1",
-				},
-			},
-		},
-		{
-			title: "Compare the original and the fork",
-			blocks: []tutorialBlock{
-				{
-					prose:          "First, query the original database:",
-					args:           []string{"sql", originalDatabaseName, tutorialQuerySQL},
-					expectedOutput: threeRowQueryOutput,
-				},
-				{
-					prose: "Now query the fork. Notice the extra row and updated value:",
-					args:  []string{"sql", forkDatabaseName, tutorialQuerySQL},
-					expectedOutput: "" +
-						" id │ name        │ location \n" +
-						"────┼─────────────┼──────────\n" +
-						" 1  │ apples      │ original \n" +
-						" 2  │ bananas     │ fork     \n" +
-						" 3  │ carrots     │ original \n" +
-						" 4  │ dragonfruit │ fork     \n" +
-						"(4 rows)",
-				},
-			},
-		},
-	}
-}
-
-func buildTutorialDeleteStep(originalDatabaseName, forkDatabaseName string) tutorialStep {
-	return tutorialStep{
-		title:        "Delete the tutorial databases",
-		joinedBlocks: true,
-		blocks: []tutorialBlock{
-			{
-				prose:  "When the main steps finish, the live tutorial asks whether to delete the databases. To run the cleanup step yourself, use the following.",
-				target: tutorialTargetDocsOnly,
-			},
-			{
-				args:            []string{"delete", forkDatabaseName, "--confirm"},
-				removesDatabase: forkDatabaseName,
-				expectedOutput:  "Deleted '" + forkDatabaseName + "' (" + tutorialDocsForkDatabaseID + ")",
-			},
-			{
-				args:            []string{"delete", originalDatabaseName, "--confirm"},
-				removesDatabase: originalDatabaseName,
-				expectedOutput:  "Deleted '" + originalDatabaseName + "' (" + tutorialDocsOriginalDatabaseID + ")",
-			},
-		},
-	}
-}
 
 func buildTutorialCmd(app *common.App) *cobra.Command {
 	cmd := &cobra.Command{
@@ -319,8 +101,8 @@ func runTutorial(cmd *cobra.Command, app *common.App) (runErr error) {
 	cmd.Printf("  fork:     %s\n", forkDatabaseName)
 	cmd.Println()
 
-	t := buildLearnTheBasicsTutorial(originalDatabaseName, forkDatabaseName)
-	for i, step := range t.steps {
+	t := tutorial.BuildLearnTheBasicsTutorial(originalDatabaseName, forkDatabaseName)
+	for i, step := range t.Steps {
 		if err := runTutorialStep(cmd, promptReader, i+1, step, &createdDatabaseNames); err != nil {
 			return err
 		}
@@ -341,7 +123,7 @@ func runTutorial(cmd *cobra.Command, app *common.App) (runErr error) {
 	}
 
 	cmd.Println()
-	if err := runTutorialStep(cmd, promptReader, len(t.steps)+1, t.deleteStep, &createdDatabaseNames); err != nil {
+	if err := runTutorialStep(cmd, promptReader, len(t.Steps)+1, t.DeleteStep, &createdDatabaseNames); err != nil {
 		return err
 	}
 
@@ -349,26 +131,26 @@ func runTutorial(cmd *cobra.Command, app *common.App) (runErr error) {
 	return nil
 }
 
-func runTutorialStep(cmd *cobra.Command, promptReader *tutorialPromptReader, number int, step tutorialStep, createdDatabaseNames *[]string) error {
-	printTutorialStep(cmd, number, step.title)
-	visibleBlocks := filterTutorialBlocks(step.blocks, tutorialTargetCLIOnly)
+func runTutorialStep(cmd *cobra.Command, promptReader *tutorialPromptReader, number int, step tutorial.Step, createdDatabaseNames *[]string) error {
+	printTutorialStep(cmd, number, step.Title)
+	visibleBlocks := tutorial.FilterBlocks(step.Blocks, tutorial.TargetCLIOnly)
 	for i, block := range visibleBlocks {
-		if block.prose != "" {
-			cmd.Println(tutorialProseStyle.Render(block.prose))
+		if block.Prose != "" {
+			cmd.Println(tutorialProseStyle.Render(block.Prose))
 		}
-		if len(block.args) > 0 {
-			if err := runTutorialCommand(cmd, promptReader, block.args); err != nil {
+		if len(block.Args) > 0 {
+			if err := runTutorialCommand(cmd, promptReader, block.Args); err != nil {
 				return err
 			}
 		}
-		if block.createsDatabase != "" {
-			*createdDatabaseNames = append(*createdDatabaseNames, block.createsDatabase)
+		if block.CreatesDatabase != "" {
+			*createdDatabaseNames = append(*createdDatabaseNames, block.CreatesDatabase)
 		}
-		if block.removesDatabase != "" {
-			*createdDatabaseNames = removeTutorialName(*createdDatabaseNames, block.removesDatabase)
+		if block.RemovesDatabase != "" {
+			*createdDatabaseNames = removeTutorialName(*createdDatabaseNames, block.RemovesDatabase)
 		}
 		isLast := i == len(visibleBlocks)-1
-		if !step.joinedBlocks || isLast {
+		if !step.JoinedBlocks || isLast {
 			cmd.Println()
 		}
 	}
@@ -381,7 +163,7 @@ func runTutorialStep(cmd *cobra.Command, promptReader *tutorialPromptReader, num
 // that output streams in real time and progress indicators (like the
 // --wait spinner) work naturally.
 func runTutorialCommand(cmd *cobra.Command, promptReader *tutorialPromptReader, args []string) error {
-	printTutorialCommand(cmd, formatTutorialCommand(args))
+	printTutorialCommand(cmd, tutorial.FormatCommand(args))
 	cmd.PrintErr(tutorialPromptStyle.Render("Press any key to run this command..."))
 	if err := promptReader.readKey(cmd.Context()); err != nil {
 		return fmt.Errorf("failed to read key: %w", err)
@@ -408,17 +190,6 @@ func runTutorialCommand(cmd *cobra.Command, promptReader *tutorialPromptReader, 
 		return err
 	}
 	return nil
-}
-
-// formatTutorialCommand builds the user-facing echo string from the args
-// that will be passed to the sub-execution. The sql command's query argument
-// is rendered specially so multi-statement queries appear on multiple
-// indented, quoted lines instead of as a single long line.
-func formatTutorialCommand(args []string) string {
-	if len(args) == 3 && args[0] == "sql" {
-		return formatTutorialSQLCommand(args[1], args[2])
-	}
-	return "ghost " + strings.Join(args, " ")
 }
 
 // tutorialForwardedFlags returns persistent flag args the user set on the
@@ -448,39 +219,6 @@ func printTutorialCommand(cmd *cobra.Command, command string) {
 		}
 		cmd.Println(tutorialCommandStyle.Render(prefix + line))
 	}
-}
-
-func formatTutorialSQLCommand(databaseRef, query string) string {
-	statements := splitTutorialSQLStatements(query)
-	if len(statements) <= 1 {
-		return "ghost sql " + databaseRef + " " + strconv.Quote(query)
-	}
-
-	lines := []string{"ghost sql " + databaseRef + " \\"}
-	for i, statement := range statements {
-		quote := `"`
-		if i > 0 {
-			quote = " "
-		}
-		suffix := ";"
-		if i == len(statements)-1 {
-			suffix = `;"`
-		}
-		lines = append(lines, "  "+quote+statement+suffix)
-	}
-	return strings.Join(lines, "\n")
-}
-
-func splitTutorialSQLStatements(query string) []string {
-	parts := strings.Split(query, ";")
-	statements := make([]string, 0, len(parts))
-	for _, part := range parts {
-		statement := strings.TrimSpace(part)
-		if statement != "" {
-			statements = append(statements, statement)
-		}
-	}
-	return statements
 }
 
 func removeTutorialName(names []string, name string) []string {

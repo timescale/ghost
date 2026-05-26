@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/timescale/ghost/internal/cmd"
+	"github.com/timescale/ghost/internal/tutorial"
 )
 
 func main() {
@@ -18,9 +18,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	for _, doc := range cmd.AllTutorialDocs() {
-		path := filepath.Join(*outDir, doc.Filename)
-		if err := os.WriteFile(path, []byte(doc.Content), 0o644); err != nil {
+	for _, t := range tutorial.All() {
+		path := filepath.Join(*outDir, t.Filename)
+		if err := os.WriteFile(path, []byte(renderTutorialMarkdown(t)), 0o644); err != nil {
 			log.Fatal(err)
 		}
 		fmt.Printf("Generated %s\n", path)

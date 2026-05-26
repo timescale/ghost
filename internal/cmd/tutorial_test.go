@@ -11,6 +11,7 @@ import (
 	"github.com/timescale/ghost/internal/api"
 	"github.com/timescale/ghost/internal/api/mock"
 	"github.com/timescale/ghost/internal/common"
+	"github.com/timescale/ghost/internal/tutorial"
 )
 
 func TestTutorialCmd(t *testing.T) {
@@ -84,17 +85,17 @@ func TestTutorialCmd(t *testing.T) {
 		}
 		common.ExecuteQuery = func(_ context.Context, args common.ExecuteQueryArgs) (*common.QueryResult, error) {
 			switch args.Query {
-			case tutorialSetupSQL:
+			case tutorial.SetupSQL:
 				return &common.QueryResult{ResultSets: []common.ResultSet{
 					{CommandTag: "CREATE TABLE"},
 					{CommandTag: "INSERT 0 3"},
 				}}, nil
-			case tutorialMutateForkSQL:
+			case tutorial.MutateForkSQL:
 				return &common.QueryResult{ResultSets: []common.ResultSet{
 					{CommandTag: "INSERT 0 1"},
 					{CommandTag: "UPDATE 1"},
 				}}, nil
-			case tutorialQuerySQL:
+			case tutorial.QuerySQL:
 				rows := [][]string{
 					{"1", "apples", "original"},
 					{"2", "bananas", "original"},
