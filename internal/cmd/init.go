@@ -89,7 +89,12 @@ func runInit(cmd *cobra.Command, app *common.App, skipIfConfigured bool) error {
 	stdinIsTerminal := util.IsTerminal(cmd.InOrStdin())
 
 	if !stdinIsTerminal && !skipIfConfigured {
-		return errors.New("ghost init requires an interactive terminal; run it from a TTY")
+		return errors.New(`ghost init requires an interactive terminal and cannot run here. To complete setup non-interactively, run each of these commands in order:
+  1. ghost init path                  # add ghost to your PATH
+  2. ghost login                      # authenticate (or use --api-key)
+  3. ghost mcp install all            # install MCP server in all detected clients (or pass a specific client name)
+  4. ghost completion <shell>         # print completion script; append it to your shell rc file
+Or pass --skip-if-configured to exit cleanly when everything is already set up`)
 	}
 
 	states := detectInitStates(ctx, app)
@@ -100,7 +105,11 @@ func runInit(cmd *cobra.Command, app *common.App, skipIfConfigured bool) error {
 	}
 
 	if !stdinIsTerminal {
-		return errors.New("ghost init requires an interactive terminal; run it from a TTY")
+		return errors.New(`ghost init requires an interactive terminal, but not all steps are configured yet. Run each of these commands in order to finish setup non-interactively:
+  1. ghost init path                  # add ghost to your PATH
+  2. ghost login                      # authenticate (or use --api-key)
+  3. ghost mcp install all            # install MCP server in all detected clients (or pass a specific client name)
+  4. ghost completion <shell>         # print completion script; append it to your shell rc file`)
 	}
 
 	mainItems := buildMainMenuItems(states)

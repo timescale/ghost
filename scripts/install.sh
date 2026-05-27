@@ -491,7 +491,11 @@ run_ghost_init() {
     local binary_path="$1"
     if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
         "${binary_path}" --version-check=false init path || true
-        printf "\nRun '%s init' to finish configuring Ghost.\n" "${binary_path}" >&2
+        printf "\nNo interactive terminal detected. PATH has been configured; to finish setup non-interactively, run each of these:\n" >&2
+        printf "  %s login                      # authenticate (or use --api-key)\n" "${binary_path}" >&2
+        printf "  %s mcp install all            # install MCP server in all detected clients (or pass a specific client name)\n" "${binary_path}" >&2
+        printf "  %s completion <shell>         # print completion script; append it to your shell rc file\n" "${binary_path}" >&2
+        printf "Or run '%s init' from an interactive terminal to do all of the above with prompts.\n" "${binary_path}" >&2
         return 0
     fi
     "${binary_path}" --version-check=false init --skip-if-configured </dev/tty >/dev/tty 2>/dev/tty || true

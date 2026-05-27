@@ -23,7 +23,12 @@ func TestInit(t *testing.T) {
 			name:    "non-interactive stdin returns error before detecting state",
 			args:    []string{"init"},
 			opts:    []runOption{withIsTerminal(false)},
-			wantErr: "ghost init requires an interactive terminal; run it from a TTY",
+			wantErr: `ghost init requires an interactive terminal and cannot run here. To complete setup non-interactively, run each of these commands in order:
+  1. ghost init path                  # add ghost to your PATH
+  2. ghost login                      # authenticate (or use --api-key)
+  3. ghost mcp install all            # install MCP server in all detected clients (or pass a specific client name)
+  4. ghost completion <shell>         # print completion script; append it to your shell rc file
+Or pass --skip-if-configured to exit cleanly when everything is already set up`,
 		},
 	}
 
