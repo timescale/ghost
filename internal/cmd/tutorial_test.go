@@ -176,7 +176,7 @@ func TestTutorialCmd(t *testing.T) {
 			t.Fatalf("unexpected error: %v", result.err)
 		}
 		assertOutput(t, result.stdout, tutorialKeepExpectedStdout)
-		assertOutput(t, result.stderr, strings.Repeat("Press any key to run this command...\r\n", 7)+"Delete the tutorial databases now? [Y/n] ")
+		assertOutput(t, result.stderr, strings.Repeat("Press Enter to run this command...\n", 7)+"Delete the tutorial databases now? [Y/n] ")
 	})
 
 	t.Run("delete tutorial databases", func(t *testing.T) {
@@ -189,7 +189,65 @@ func TestTutorialCmd(t *testing.T) {
 			t.Fatalf("unexpected error: %v", result.err)
 		}
 		assertOutput(t, result.stdout, tutorialDeleteExpectedStdout)
-		assertOutput(t, result.stderr, strings.Repeat("Press any key to run this command...\r\n", 7)+"Delete the tutorial databases now? [Y/n] "+strings.Repeat("Press any key to run this command...\r\n", 2))
+		assertOutput(t, result.stderr, strings.Repeat("Press Enter to run this command...\n", 7)+"Delete the tutorial databases now? [Y/n] "+strings.Repeat("Press Enter to run this command...\n", 2))
+	})
+
+	setupCancelDuringCreate := func(m *mock.MockClientWithResponsesInterface, includeCleanupDelete bool) {
+		originalDatabase := sampleDatabase(func(db *api.Database) {
+			db.Id = "orig1234567"
+			db.Name = "tutorial-test"
+			db.Password = &password
+		})
+
+		m.EXPECT().CreateDatabaseWithResponse(validCtx, "test-project", api.CreateDatabaseRequest{Name: new("tutorial-test")}).
+			Return(&api.CreateDatabaseResponse{
+				HTTPResponse: httpResponse(http.StatusAccepted),
+				JSON202:      &originalDatabase,
+			}, nil)
+
+		if includeCleanupDelete {
+			m.EXPECT().GetDatabaseWithResponse(validCtx, "test-project", "tutorial-test").
+				Return(&api.GetDatabaseResponse{
+					HTTPResponse: httpResponse(http.StatusOK),
+					JSON200:      &originalDatabase,
+				}, nil)
+			m.EXPECT().DeleteDatabaseWithResponse(validCtx, "test-project", "orig1234567").
+				Return(&api.DeleteDatabaseResponse{HTTPResponse: httpResponse(http.StatusAccepted)}, nil)
+		}
+	}
+
+	t.Run("canceled during create, confirm cleanup", func(t *testing.T) {
+		withTutorialStubs(t)
+		common.WaitForDatabaseWithProgress = func(context.Context, io.Reader, io.Writer, common.WaitForDatabaseArgs) error {
+			return context.Canceled
+		}
+
+		result := runCommand(t, []string{"tutorial"}, func(m *mock.MockClientWithResponsesInterface) {
+			setupCancelDuringCreate(m, true)
+		}, withStdin("\ny\n"), withIsTerminal(true))
+
+		if result.err != nil {
+			t.Fatalf("unexpected error: %v", result.err)
+		}
+		assertOutput(t, result.stdout, tutorialCancelConfirmExpectedStdout)
+		assertOutput(t, result.stderr, tutorialCancelConfirmExpectedStderr)
+	})
+
+	t.Run("canceled during create, decline cleanup", func(t *testing.T) {
+		withTutorialStubs(t)
+		common.WaitForDatabaseWithProgress = func(context.Context, io.Reader, io.Writer, common.WaitForDatabaseArgs) error {
+			return context.Canceled
+		}
+
+		result := runCommand(t, []string{"tutorial"}, func(m *mock.MockClientWithResponsesInterface) {
+			setupCancelDuringCreate(m, false)
+		}, withStdin("\nn\n"), withIsTerminal(true))
+
+		if result.err != nil {
+			t.Fatalf("unexpected error: %v", result.err)
+		}
+		assertOutput(t, result.stdout, tutorialCancelDeclineExpectedStdout)
+		assertOutput(t, result.stderr, tutorialCancelDeclineExpectedStderr)
 	})
 }
 
@@ -289,3 +347,38 @@ Deleted 'tutorial-test' (orig1234567)
 
 Tutorial complete. You created, queried, forked, changed, compared, and deleted Ghost databases.
 `
+
+const tutorialCancelStepOneStdout = `Welcome to the Ghost tutorial!
+
+This guided tour will run real Ghost commands to demonstrate the core workflow:
+create a database, load data, fork it, change the fork, compare the results, and clean up.
+
+Temporary database names
+  original: tutorial-test
+  fork:     tutorial-test-fork
+
+Step 1 / Create a database
+--------------------------
+$ ghost create --name tutorial-test --wait
+Created database 'tutorial-test'
+ID: orig1234567
+Connection: postgresql://tsdbadmin:testpass123@host.example.com:5432/tsdb?sslmode=require
+`
+
+const tutorialCancelConfirmExpectedStdout = tutorialCancelStepOneStdout + `$ ghost delete tutorial-test --confirm
+Deleted 'tutorial-test' (orig1234567)
+`
+
+const tutorialCancelDeclineExpectedStdout = tutorialCancelStepOneStdout
+
+const tutorialCancelCommonStderr = "Press Enter to run this command...\n" +
+	"\nTutorial canceled.\n" +
+	"\n1 tutorial database was created:\n" +
+	"  tutorial-test\n" +
+	"\nDelete it now? [Y/n] "
+
+const tutorialCancelConfirmExpectedStderr = tutorialCancelCommonStderr + "\n"
+
+const tutorialCancelDeclineExpectedStderr = tutorialCancelCommonStderr +
+	"\nTo delete them later, run:\n" +
+	"  ghost delete tutorial-test --confirm\n"
