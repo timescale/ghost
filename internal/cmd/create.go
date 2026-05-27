@@ -154,7 +154,7 @@ func createDatabase(cmd *cobra.Command, app *common.App, args createDatabaseArgs
 		return nil
 	}
 
-	return common.WaitForDatabaseWithProgress(cmd.Context(), cmd.ErrOrStderr(), common.WaitForDatabaseArgs{
+	return common.WaitForDatabaseWithProgress(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), common.WaitForDatabaseArgs{
 		Client:      client,
 		ProjectID:   projectID,
 		DatabaseRef: database.Id,

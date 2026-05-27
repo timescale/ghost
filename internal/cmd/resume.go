@@ -76,7 +76,7 @@ func buildResumeCmd(app *common.App) *cobra.Command {
 				return nil
 			}
 
-			return common.WaitForDatabaseWithProgress(cmd.Context(), cmd.ErrOrStderr(), common.WaitForDatabaseArgs{
+			return common.WaitForDatabaseWithProgress(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), common.WaitForDatabaseArgs{
 				Client:      client,
 				ProjectID:   projectID,
 				DatabaseRef: database.Id,

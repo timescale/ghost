@@ -118,11 +118,13 @@ Use the `lipgloss` package (`charm.land/lipgloss/v2`) for colored/styled termina
 
 ## Interactive Terminal UIs
 
-Use BubbleTea (`charm.land/bubbletea/v2`) for interactive terminal menus and prompts. When creating a `tea.NewProgram`, always pass:
+Use BubbleTea (`charm.land/bubbletea/v2`) for interactive terminal menus, prompts, spinners, and progress indicators. When creating a `tea.NewProgram`, always pass:
 
-- `tea.WithInput(cmd.InOrStdin())` — or `tea.WithInput(nil)` if the program doesn't read input (e.g. a spinner). Without this, BubbleTea puts the terminal in raw mode where Ctrl+C is sent as a key press instead of triggering a signal.
+- `tea.WithInput(cmd.InOrStdin())` — **always**, even for write-only TUIs like spinners. On startup, BubbleTea enables the Kitty keyboard protocol, which modern terminals (Ghostty, Kitty, WezTerm) support and often have on by default. With it enabled, Ctrl+C is delivered as an escape sequence on stdin rather than as a SIGINT. If you pass `nil`, that sequence has nowhere to go and Ctrl+C silently does nothing. Always plumb stdin and handle `tea.KeyPressMsg` for `"ctrl+c"` in your model's `Update` method. For write-only programs (spinners, progress indicators), translate the keypress into a `context.CancelFunc` call so any background goroutines unwind cleanly (see `internal/common/wait.go` for the pattern).
 - `tea.WithOutput(cmd.OutOrStdout())` (or the appropriate writer) — so that color stripping applies.
-- `tea.WithoutSignalHandler()` — primarily useful when the BubbleTea program is **not reading input** (e.g. a spinner or progress indicator). In this case, BubbleTea can't handle Ctrl+C via key presses since it's not in raw mode, so signals should propagate normally and be handled via `context.Context` cancellation as usual.
+- `tea.WithoutSignalHandler()` — leave signal handling to the parent context. SIGINT from the controlling terminal arrives as a key press as described above; other signals (SIGTERM, or SIGINT delivered out-of-band) are caught by the signal handler installed in `main.go` and cancel the command context, which your model should respect.
+
+Gate every BubbleTea program on `util.IsTerminal(cmd.InOrStdin()) && util.IsTerminal(<output stream>)`. Both must be TTYs: stdin so the terminal can be put in raw mode for key input, output so the rendered UI is actually visible. If either is redirected (e.g. piped or sent to a file), fall back to a non-interactive code path.
 
 ## Configuration
 

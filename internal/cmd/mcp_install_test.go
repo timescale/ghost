@@ -116,7 +116,7 @@ func TestMCPInstallCmd(t *testing.T) {
 			name:       "no client non terminal",
 			args:       []string{"mcp", "install"},
 			isTerminal: &falseVal,
-			wantErr:    "no client specified and stdin is not a terminal; pass the client name or 'all' as an argument",
+			wantErr:    "no client specified and not running in an interactive terminal; pass the client name or 'all' as an argument",
 		},
 		{
 			name:      "all target skips already configured and installs json clients",

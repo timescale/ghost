@@ -171,7 +171,7 @@ func forkDatabase(cmd *cobra.Command, app *common.App, args forkDatabaseArgs) er
 		return nil
 	}
 
-	return common.WaitForDatabaseWithProgress(cmd.Context(), cmd.ErrOrStderr(), common.WaitForDatabaseArgs{
+	return common.WaitForDatabaseWithProgress(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), common.WaitForDatabaseArgs{
 		Client:      client,
 		ProjectID:   projectID,
 		DatabaseRef: forkedDatabase.Id,

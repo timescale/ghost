@@ -68,21 +68,30 @@ func WaitForDatabase(ctx context.Context, args WaitForDatabaseArgs) error {
 }
 
 // WaitForDatabaseWithProgress waits for a database to be ready, showing an
-// animated spinner if the writer is a terminal, or plain text otherwise.
-func WaitForDatabaseWithProgress(ctx context.Context, out io.Writer, args WaitForDatabaseArgs) error {
-	if !util.IsTerminal(out) {
+// animated spinner if both streams are terminals, or plain text otherwise.
+func WaitForDatabaseWithProgress(ctx context.Context, in io.Reader, out io.Writer, args WaitForDatabaseArgs) error {
+	if !util.IsTerminal(in) || !util.IsTerminal(out) {
 		return WaitForDatabase(ctx, args)
 	}
+
+	// Wrap the context so the model can cancel the polling goroutine when the
+	// user hits Ctrl+C. In raw mode bubbletea swallows Ctrl+C as a key press
+	// (and on terminals with kitty keyboard protocol enabled this happens
+	// regardless of whether stdin is attached), so we can't rely on the
+	// signal handler installed by the parent process.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	model := waitModel{
 		spinner: spinner.New(spinner.WithSpinner(spinner.Ellipsis)),
 		ctx:     ctx,
+		cancel:  cancel,
 		args:    args,
 	}
 
 	p := tea.NewProgram(
 		model,
-		tea.WithInput(nil),
+		tea.WithInput(in),
 		tea.WithOutput(out),
 		tea.WithoutSignalHandler(),
 	)
@@ -98,6 +107,7 @@ func WaitForDatabaseWithProgress(ctx context.Context, out io.Writer, args WaitFo
 type waitModel struct {
 	spinner spinner.Model
 	ctx     context.Context
+	cancel  context.CancelFunc
 	args    WaitForDatabaseArgs
 	done    bool
 	err     error
@@ -122,6 +132,13 @@ func (m waitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.done = true
 		m.err = msg.err
 		return m, tea.Quit
+	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
+			// Cancel the polling goroutine; it will return ctx.Err() via
+			// waitResultMsg, which drives the normal quit path.
+			m.cancel()
+		}
+		return m, nil
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)

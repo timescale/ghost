@@ -652,8 +652,8 @@ func mcpInstallSelectionOptions() mcpClientSelectionOptions {
 }
 
 var selectMCPClientsInteractively = func(cmd *cobra.Command, options mcpClientSelectionOptions) ([]clientConfig, error) {
-	if !util.IsTerminal(cmd.InOrStdin()) {
-		return nil, errors.New("no client specified and stdin is not a terminal; pass the client name or 'all' as an argument")
+	if !util.IsTerminal(cmd.InOrStdin()) || !util.IsTerminal(cmd.ErrOrStderr()) {
+		return nil, errors.New("no client specified and not running in an interactive terminal; pass the client name or 'all' as an argument")
 	}
 
 	items := make([]common.MultiSelectItem, len(supportedClients))

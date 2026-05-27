@@ -24,7 +24,7 @@ func buildPaymentInteractiveCmd(app *common.App) *cobra.Command {
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !util.IsTerminal(cmd.InOrStdin()) {
+			if !util.IsTerminal(cmd.InOrStdin()) || !util.IsTerminal(cmd.OutOrStdout()) {
 				// Fall back to list subcommand when not in a terminal
 				listCmd, _, err := cmd.Find([]string{"list"})
 				if err != nil {

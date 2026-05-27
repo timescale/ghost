@@ -290,7 +290,7 @@ func TestMCPUninstallCmd(t *testing.T) {
 			name:       "no client non terminal",
 			args:       []string{"mcp", "uninstall"},
 			isTerminal: &falseVal,
-			wantErr:    "no client specified and stdin is not a terminal; pass the client name or 'all' as an argument",
+			wantErr:    "no client specified and not running in an interactive terminal; pass the client name or 'all' as an argument",
 		},
 	}
 
