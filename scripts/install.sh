@@ -685,13 +685,16 @@ main() {
 # though it's defined below.
 # ============================================================================
 
-# RGB triplets (as `R;G;B` substrings of a 24-bit SGR escape) used to color
-# the intro-animation ghost. Defaults are tuned for dark terminals;
-# detect_and_apply_ghost_theme may swap them at runtime if it detects a
-# light background. Declared at file scope so `set -u` is satisfied even
-# when detection is skipped (non-TTY, dumb terminal, static-fallback path).
-GHOST_BODY_RGB='232;242;255'
-GHOST_EYE_RGB='102;247;65'
+# SGR parameter substrings (everything between `ESC[` and `m`) used by
+# draw_ghost_intro_frame to color the intro-animation ghost. We use
+# 256-color cube indices rather than 24-bit RGB so the colors render
+# consistently across terminals that don't advertise truecolor — most
+# notably macOS Terminal.app, which renders 24-bit escapes poorly enough
+# that the cube approximation actually looks better. Defaults are tuned
+# for dark terminals; detect_and_apply_ghost_theme may swap them at
+# runtime if it detects a light background.
+GHOST_BODY_SGR='38;5;231'   # near-white
+GHOST_EYE_SGR='38;5;83'     # bright spring green
 
 # Holds the stty mode string while detect_and_apply_ghost_theme has the
 # terminal in raw mode. install_cleanup_on_exit restores it if the script
@@ -706,8 +709,8 @@ _saved_terminal_stty=''
 apply_ghost_theme() {
     case "${1:-}" in
         light)
-            GHOST_BODY_RGB='90;105;130'
-            GHOST_EYE_RGB='30;130;40'
+            GHOST_BODY_SGR='38;5;60'  # muted slate
+            GHOST_EYE_SGR='38;5;28'   # dark green
             ;;
     esac
 }
@@ -967,8 +970,8 @@ draw_ghost_intro_frame() {
     if [ -n "${esc}" ]; then
         reset="${esc}0m"
         clear_line="${esc}2K"
-        body="${esc}38;2;${GHOST_BODY_RGB}m"
-        eyes="${esc}38;2;${GHOST_EYE_RGB}m"
+        body="${esc}${GHOST_BODY_SGR}m"
+        eyes="${esc}${GHOST_EYE_SGR}m"
     fi
 
     # Body rows are offset by `tilt` to suggest momentum at speed/direction
