@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	lipgloss "charm.land/lipgloss/v2"
@@ -174,7 +175,9 @@ func runTutorialBlock(cmd *cobra.Command, block tutorial.Block, createdDatabaseN
 		return err
 	}
 	if block.RemovesDatabase != "" {
-		*createdDatabaseNames = removeTutorialName(*createdDatabaseNames, block.RemovesDatabase)
+		*createdDatabaseNames = slices.DeleteFunc(*createdDatabaseNames, func(name string) bool {
+			return name == block.RemovesDatabase
+		})
 	}
 	return nil
 }
@@ -235,15 +238,6 @@ func printTutorialStep(cmd *cobra.Command, step int, title string) {
 	heading := fmt.Sprintf("Step %d / %s", step, title)
 	cmd.Println(tutorialStepStyle.Render(heading))
 	cmd.Println(tutorialRuleStyle.Render(strings.Repeat("-", len(heading))))
-}
-
-func removeTutorialName(names []string, name string) []string {
-	for i, n := range names {
-		if n == name {
-			return append(names[:i], names[i+1:]...)
-		}
-	}
-	return names
 }
 
 // promptTutorialCleanup asks at the end of the happy-path flow whether to
