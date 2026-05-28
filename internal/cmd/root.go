@@ -143,6 +143,9 @@ monthly usage.`,
 	cmd.AddCommand(buildUpgradeCmd(app))
 	cmd.AddCommand(buildInvoiceCmd(app))
 	cmd.AddCommand(buildOveragesCmd(app))
+	if app.Experimental {
+		cmd.AddCommand(buildServeCmd(app))
+	}
 
 	wrapCommands(cmd, app)
 

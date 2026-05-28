@@ -60,3 +60,11 @@ mcp-publisher
 # Local files
 todo.md
 new.md
+
+# ghost serve
+/download/
+web/node_modules/
+web/dist/
+web/.npmrc
+internal/serve/web/*
+!internal/serve/web/.gitkeep

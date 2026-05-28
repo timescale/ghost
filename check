@@ -1,6 +1,8 @@
 #!/bin/sh
 set -ex
 
+./scripts/build-web.sh
+
 go install ./...
 go fmt ./...
 go mod tidy
