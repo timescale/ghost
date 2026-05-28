@@ -447,10 +447,22 @@ Why not the memory-engine base64-into-TS approach: Go's `embed.FS` is the natura
 - [x] Discovery: `../ox/bun` self-bootstrap wrapper
 - [x] Discovery: `web-cloud/.yarnrc.yml` + deploy-to-dev GH workflow → bun equivalent
 - [x] Discovery: Arrow Go module path + pgx version pinning
-- [ ] Step 1 — `ghost serve` skeleton + static SPA + `/api/databases`
+- [x] Step 1 — `ghost serve` skeleton + static SPA + `/api/databases` (Go side validated end-to-end; SPA build pending widget npm auth — see below)
 - [ ] Step 2 — query execution path (executeQuery, arrowResults, sessions, cancel)
 - [ ] Step 3 — polish, docs, ungate from `GHOST_EXPERIMENTAL`
 - [ ] E2E test pass
+
+### Blocker: `@timescale/popsql-query-widget` private-registry auth
+
+Bun install gets 403 from `https://npm.pkg.github.com/@timescale%2fpopsql-query-widget` because the default `gh auth` token only has `repo` / `read:org` scopes, not `read:packages`. The bun bootstrap itself and the rest of the dependency graph (407 packages) resolved fine.
+
+Fix options for the user:
+1. `gh auth refresh -h github.com -s read:packages` (adds the scope to the existing gh CLI token; nothing else changes).
+2. Create a fine-grained PAT at github.com/settings/tokens with `read:packages` scope and export `NPM_AUTH_TOKEN=<pat>` (one-off / CI-friendly).
+
+In CI, the auto-provisioned `secrets.GITHUB_TOKEN` already has `read:packages` (it does for repos that own the package, which we assume `timescale/ghost` does — needs confirmation).
+
+Once auth is unblocked, `./scripts/build-web.sh` produces `web/dist/` and the embed pipeline picks it up automatically on the next Go build.
 
 ---
 

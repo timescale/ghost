@@ -66,5 +66,6 @@ new.md
 web/node_modules/
 web/dist/
 web/.npmrc
+web/tsconfig.tsbuildinfo
 internal/serve/web/*
 !internal/serve/web/.gitkeep
