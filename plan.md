@@ -484,7 +484,7 @@ Key patterns inherited:
 
 ### `../ox/bun` self-bootstrap wrapper
 
-431-byte bash script. Pinned to `bun-v1.3.11`. Downloads to `./download/bun/<version>/bin/bun` on first invocation via the official `https://bun.sh/install` script with `BUN_INSTALL` env override. `exec`s the downloaded binary with all forwarded args.
+431-byte bash script. Pinned to `bun-v1.3.14`. Downloads to `./download/bun/<version>/bin/bun` on first invocation via the official `https://bun.sh/install` script with `BUN_INSTALL` env override. `exec`s the downloaded binary with all forwarded args.
 
 **Action**: copy verbatim to `./bun` in this repo; add `download/` to `.gitignore`.
 

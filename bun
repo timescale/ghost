@@ -1,6 +1,6 @@
 #!/bin/bash
 
-version="bun-v1.3.11"
+version="bun-v1.3.14"
 scriptDir="$(cd "$(dirname "$0")" && pwd)"
 downloadDir="$scriptDir/download/bun/${version}"
 bunCmd="$downloadDir/bin/bun"
