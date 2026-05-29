@@ -25,6 +25,11 @@ jobs:
       - name: ShellCheck
         run: shellcheck scripts/install.sh
 
+      - name: Build web bundle
+        env:
+          NPM_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/build-web.sh
+
       - name: Mod
         run: go mod tidy -diff
 

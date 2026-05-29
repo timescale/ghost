@@ -25,6 +25,11 @@ jobs:
         with:
           go-version-file: "go.mod"
 
+      - name: Build web bundle
+        env:
+          NPM_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/build-web.sh
+
       - name: Install package_cloud gem
         run: sudo gem install package_cloud --no-doc
 
