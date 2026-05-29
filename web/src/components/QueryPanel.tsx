@@ -70,6 +70,8 @@ export function QueryPanel({ projectId, databaseId, databaseName }: Props) {
       <QueryWidgetProvider theme="light">
         <ContextMenuProvider>
           <QueryWidget
+            className="flex-auto"
+            resizeHandles="split"
             editorPlugins={editorPlugins}
             id={`ghost-${databaseId}`}
             query={query}
