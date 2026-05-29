@@ -50,6 +50,7 @@ npm install -g @ghost.build/cli
 ghost init        # Interactively configure Ghost (PATH, login, MCP, completions)
 ghost create      # Create a new Postgres database
 ghost list        # List all databases
+ghost serve       # Open a local web UI for running SQL queries
 ```
 
 Learn more about ghost's forking workflow and other features with the interactive tutorial:
@@ -81,6 +82,7 @@ ghost tutorial
 | `logout` | Remove stored credentials |
 | `mcp` | Ghost Model Context Protocol (MCP) server |
 | `password` | Reset the password for a database |
+| `serve` | Launch a local web UI for running SQL queries |
 | `pause` | Pause a running database |
 | `payment` | Manage payment methods |
 | `pricing` | Show compute overage and dedicated database pricing |

@@ -447,22 +447,14 @@ Why not the memory-engine base64-into-TS approach: Go's `embed.FS` is the natura
 - [x] Discovery: `../ox/bun` self-bootstrap wrapper
 - [x] Discovery: `web-cloud/.yarnrc.yml` + deploy-to-dev GH workflow → bun equivalent
 - [x] Discovery: Arrow Go module path + pgx version pinning
-- [x] Step 1 — `ghost serve` skeleton + static SPA + `/api/databases` (Go side validated end-to-end; SPA build pending widget npm auth — see below)
-- [ ] Step 2 — query execution path (executeQuery, arrowResults, sessions, cancel)
-- [ ] Step 3 — polish, docs, ungate from `GHOST_EXPERIMENTAL`
-- [ ] E2E test pass
+- [x] Step 1 — `ghost serve` skeleton + static SPA + `/api/databases` (validated end-to-end)
+- [x] Step 2 — query execution path (executeQuery, arrowResults, sessions, cancel) — widget integration + 6-type smoke test
+- [x] Step 3 — polish, docs, ungate from `GHOST_EXPERIMENTAL`
+- [x] E2E test pass (manual via Chrome DevTools MCP against a live Timescale Postgres)
 
-### Blocker: `@timescale/popsql-query-widget` private-registry auth
+### Resolved: `@timescale/popsql-query-widget` private-registry auth
 
-Bun install gets 403 from `https://npm.pkg.github.com/@timescale%2fpopsql-query-widget` because the default `gh auth` token only has `repo` / `read:org` scopes, not `read:packages`. The bun bootstrap itself and the rest of the dependency graph (407 packages) resolved fine.
-
-Fix options for the user:
-1. `gh auth refresh -h github.com -s read:packages` (adds the scope to the existing gh CLI token; nothing else changes).
-2. Create a fine-grained PAT at github.com/settings/tokens with `read:packages` scope and export `NPM_AUTH_TOKEN=<pat>` (one-off / CI-friendly).
-
-In CI, the auto-provisioned `secrets.GITHUB_TOKEN` already has `read:packages` (it does for repos that own the package, which we assume `timescale/ghost` does — needs confirmation).
-
-Once auth is unblocked, `./scripts/build-web.sh` produces `web/dist/` and the embed pipeline picks it up automatically on the next Go build.
+Initial `bun install` got 403 from `https://npm.pkg.github.com/@timescale%2fpopsql-query-widget` because the default `gh auth` token only had `repo` / `read:org`. Resolution: `gh auth refresh -h github.com -s read:packages` adds the missing scope; `scripts/build-web.sh` then resolves the widget cleanly. CI uses `secrets.GITHUB_TOKEN` which already has `read:packages` for owner-controlled packages.
 
 ---
 
@@ -525,13 +517,18 @@ Bun reads `.npmrc` natively (and `bunfig.toml` for bun-specific options). Plan:
 
 ---
 
-## Sequencing suggestion
+## Sequencing (as delivered)
 
-Single PR is plausible but reviewable in three logical sub-stacks:
+Three commits on `murrayju/serve`, in this order:
 
-1. **Step 1**: `ghost serve` command skeleton + `internal/serve/{server,assets,bootstrap,databases}.go`, `web/` with picker + "hello world" body. Builds, runs, opens browser, lists databases, no query execution yet. Behind `GHOST_EXPERIMENTAL`.
-2. **Step 2**: `internal/serve/{execute,arrow,runs,pgtypes,cancel}.go` and the Arrow Go dep. Wire `<QueryWidget>` into the SPA. End-to-end query execution working.
-3. **Step 3**: polish (cache reaping, error message tuning, README + `docs/cli/`); ungate from `GHOST_EXPERIMENTAL`.
-4. **Step 4 (later)**: session mode.
+1. `ae9e4f9` — Add ghost serve skeleton. Cobra command behind `GHOST_EXPERIMENTAL`, embed.FS asset handler with SPA fallback + cache headers, `/api/bootstrap` + `/api/databases`, Vite/React workspace with picker + empty body, bun self-bootstrap wrapper, scripts/build-web.sh.
+2. `2df095e` — Fix build-web.sh and pin widget version (`--cwd` doesn't apply to bun's `run`; widget pinned to `0.0.0-dev.156`).
+3. `43921bd` — Wire the popsql query widget into ghost serve. Ported dbtypes + dbdriver + arrow encoder from popsql-query, implemented executeQuery + arrowResults + sessions + cancel handlers, wired `<QueryWidget>` into the SPA with Vite worker/wasm asset emission + node polyfills, React 18 pin.
+4. *(this commit)* — Step 3 polish: ungate from `GHOST_EXPERIMENTAL`, CLAUDE.md + README updates, generated `docs/cli/ghost_serve.md`, tests for wire / assets / store / cmd, favicon + form-name a11y tidy-ups.
 
-Each step lands as its own PR with `murrayju/` prefix.
+## Follow-ups (out of scope for this branch)
+
+- Multi-result-set support: `sql.Rows` only iterates the first result, so multi-statement queries (e.g. two `SELECT`s in one Run) currently show only the first table.
+- `Decimal128` for NUMERIC instead of `Utf8` — needs a popsql-query upgrade too.
+- Query timeout enforcement (the widget sends `timeout` but we ignore it).
+- Server-side `slog` logging + log levels (currently silent by design).

@@ -73,6 +73,8 @@ export function App() {
             <span className="text-red-600">Failed to load databases</span>
           ) : (
             <select
+              name="database"
+              aria-label="Database"
               className="rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:border-slate-500 focus:outline-none"
               value={selectedId ?? ''}
               onChange={(e) => setSelectedId(e.target.value || null)}
