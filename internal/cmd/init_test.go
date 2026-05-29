@@ -3,10 +3,12 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -17,22 +19,116 @@ import (
 	"github.com/timescale/ghost/internal/common"
 )
 
-func TestInit(t *testing.T) {
-	tests := []cmdTest{
-		{
-			name:    "non-interactive stdin returns error before detecting state",
-			args:    []string{"init"},
-			opts:    []runOption{withIsTerminal(false)},
-			wantErr: `ghost init requires an interactive terminal and cannot run here. To complete setup non-interactively, run each of these commands in order:
-  1. ghost init path                  # add ghost to your PATH
-  2. ghost login                      # authenticate (or use --api-key)
-  3. ghost mcp install all            # install MCP server in all detected clients (or pass a specific client name)
-  4. ghost completion <shell>         # print completion script; append it to your shell rc file
-Or pass --skip-if-configured to exit cleanly when everything is already set up`,
-		},
+// TestInit_NonInteractiveAllUnconfigured verifies that running `ghost init`
+// without a TTY when nothing is configured returns an error listing every
+// standalone command, with the --skip-if-configured hint at the bottom.
+func TestInit_NonInteractiveAllUnconfigured(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("env-based completion detection is skipped on Windows")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHELL", "/bin/bash")
+	t.Setenv("PATH", filepath.Join(home, "not-in-path"))
+	t.Setenv("ZDOTDIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	withMCPClientCommandRunner(t, func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return nil, exec.ErrNotFound
+	})
+
+	result := runCommand(t, []string{"init"}, nil,
+		withIsTerminal(false),
+		withClientError(errors.New("not logged in")),
+	)
+	if result.err == nil {
+		t.Fatalf("expected error, got nil\nstderr: %s", result.stderr)
+	}
+	expected := `ghost init requires an interactive terminal and cannot run here. To complete setup non-interactively, run these commands in order:
+  ghost init path        # add ghost to your PATH
+  ghost login            # authenticate (or use --api-key)
+  ghost mcp install all  # install MCP server in all detected clients (or pass a specific client name)
+  ghost init completion  # install shell completions in your shell rc file
+Or pass --skip-if-configured to exit cleanly when everything is already set up`
+	assertOutput(t, result.err.Error(), expected)
+}
+
+// TestInit_NonInteractiveOnlyLoginUnconfigured verifies that when most steps
+// are already configured, the error only lists the remaining commands and
+// omits the --skip-if-configured hint (since the flag was already passed).
+func TestInit_NonInteractiveOnlyLoginUnconfigured(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("env-based completion detection is skipped on Windows")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	installDir := filepath.Dir(exe)
+	t.Setenv("PATH", installDir)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHELL", "/bin/bash")
+	t.Setenv("ZDOTDIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	if err := os.WriteFile(filepath.Join(home, ".bashrc"),
+		[]byte("source <(ghost completion bash)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cursorPath := filepath.Join(home, ".cursor", "mcp.json")
+	if err := os.MkdirAll(filepath.Dir(cursorPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cursorCfg := `{"mcpServers":{"ghost":{"command":"/usr/local/bin/ghost","args":["mcp","start"]}}}`
+	if err := os.WriteFile(cursorPath, []byte(cursorCfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withMCPClientCommandRunner(t, func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return nil, exec.ErrNotFound
+	})
+
+	result := runCommand(t, []string{"init", "--skip-if-configured"}, nil,
+		withIsTerminal(false),
+		withClientError(errors.New("not logged in")),
+	)
+	if result.err == nil {
+		t.Fatalf("expected error, got nil\nstderr: %s", result.stderr)
+	}
+	expected := `ghost init requires an interactive terminal and cannot run here. To complete setup non-interactively, run these commands in order:
+  ghost login  # authenticate (or use --api-key)`
+	assertOutput(t, result.err.Error(), expected)
+}
+
+func TestInitCompletionSubcommandNonInteractive(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell completions are not supported on Windows")
+	}
+	home := t.TempDir()
+	rcPath := filepath.Join(home, ".bashrc")
+	executablePath, err := getGhostExecutablePath()
+	if err != nil {
+		t.Fatalf("getGhostExecutablePath: %v", err)
 	}
 
-	runCmdTests(t, tests)
+	result := runCommand(t, []string{"init", "completion"}, nil,
+		withEnv("HOME", home),
+		withEnv("SHELL", "/bin/bash"),
+		withEnv("ZDOTDIR", ""),
+		withEnv("XDG_CONFIG_HOME", ""),
+		withIsTerminal(false),
+	)
+	if result.err != nil {
+		t.Fatalf("unexpected error: %v\nstderr: %s", result.err, result.stderr)
+	}
+	assertOutput(t, result.stdout, "")
+	assertOutput(t, result.stderr, "Added bash completions to "+rcPath+".\nRestart your shell to apply changes.\n")
+
+	gotRC, err := os.ReadFile(rcPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(gotRC), common.CompletionSnippet("bash", executablePath)) {
+		t.Fatalf("completion snippet not found in rc:\n%s", string(gotRC))
+	}
 }
 
 func TestInitPathSubcommandNonInteractive(t *testing.T) {

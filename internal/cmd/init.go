@@ -58,6 +58,7 @@ func buildInitCmd(app *common.App) *cobra.Command {
 	cmd.Flags().BoolVar(&skipIfConfigured, "skip-if-configured", false, "Exit with a short message if every step is already configured")
 
 	cmd.AddCommand(buildInitPathCmd())
+	cmd.AddCommand(buildInitCompletionCmd())
 
 	return cmd
 }
@@ -84,18 +85,31 @@ func buildInitPathCmd() *cobra.Command {
 	return cmd
 }
 
+func buildInitCompletionCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:               "completion",
+		Short:             "Install shell completions",
+		Long:              `Install Ghost shell completions by appending a sourcing line to your shell rc file. This command does not prompt for confirmation, so it can be used from scripts.`,
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
+		SilenceUsage:      true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			changed, err := runInitCompletions(cmd)
+			if err != nil {
+				return err
+			}
+			if changed {
+				cmd.PrintErrln("Restart your shell to apply changes.")
+			}
+			return nil
+		},
+	}
+	return cmd
+}
+
 func runInit(cmd *cobra.Command, app *common.App, skipIfConfigured bool) error {
 	ctx := cmd.Context()
 	stdinIsTerminal := util.IsTerminal(cmd.InOrStdin())
-
-	if !stdinIsTerminal && !skipIfConfigured {
-		return errors.New(`ghost init requires an interactive terminal and cannot run here. To complete setup non-interactively, run each of these commands in order:
-  1. ghost init path                  # add ghost to your PATH
-  2. ghost login                      # authenticate (or use --api-key)
-  3. ghost mcp install all            # install MCP server in all detected clients (or pass a specific client name)
-  4. ghost completion <shell>         # print completion script; append it to your shell rc file
-Or pass --skip-if-configured to exit cleanly when everything is already set up`)
-	}
 
 	states := detectInitStates(ctx, app)
 
@@ -105,11 +119,7 @@ Or pass --skip-if-configured to exit cleanly when everything is already set up`)
 	}
 
 	if !stdinIsTerminal {
-		return errors.New(`ghost init requires an interactive terminal, but not all steps are configured yet. Run each of these commands in order to finish setup non-interactively:
-  1. ghost init path                  # add ghost to your PATH
-  2. ghost login                      # authenticate (or use --api-key)
-  3. ghost mcp install all            # install MCP server in all detected clients (or pass a specific client name)
-  4. ghost completion <shell>         # print completion script; append it to your shell rc file`)
+		return nonInteractiveError(states, !skipIfConfigured)
 	}
 
 	mainItems := buildMainMenuItems(states)
@@ -159,6 +169,8 @@ func runSelectedInitSteps(cmd *cobra.Command, app *common.App, indices []int) er
 				return err
 			}
 		case stepCompletions:
+			cmd.PrintErrln()
+			cmd.PrintErrln("--- Shell completions ---")
 			changed, err := runInitCompletions(cmd)
 			if err != nil {
 				return err
@@ -189,6 +201,50 @@ func allConfigured(states []initStepState) bool {
 	return !slices.ContainsFunc(states, func(s initStepState) bool {
 		return !s.configured
 	})
+}
+
+// nonInteractiveCommandHints maps each init step to the standalone command
+// that completes it without prompts, plus a short explanation for the user.
+// Order matches the natural execution order so that printed lists read
+// top-to-bottom.
+var nonInteractiveCommandHints = []struct {
+	step    initStep
+	command string
+	comment string
+}{
+	{stepPATH, "ghost init path", "add ghost to your PATH"},
+	{stepLogin, "ghost login", "authenticate (or use --api-key)"},
+	{stepMCP, "ghost mcp install all", "install MCP server in all detected clients (or pass a specific client name)"},
+	{stepCompletions, "ghost init completion", "install shell completions in your shell rc file"},
+}
+
+// nonInteractiveError builds the error returned when `ghost init` is invoked
+// without a TTY. It lists only the commands for steps that aren't already
+// configured, so callers see exactly what's left to do. includeSkipHint
+// appends a reminder about --skip-if-configured (omit when the flag was
+// already passed).
+func nonInteractiveError(states []initStepState, includeSkipHint bool) error {
+	maxCmdLen := 0
+	for _, hint := range nonInteractiveCommandHints {
+		if states[hint.step].configured {
+			continue
+		}
+		if len(hint.command) > maxCmdLen {
+			maxCmdLen = len(hint.command)
+		}
+	}
+	var b strings.Builder
+	b.WriteString("ghost init requires an interactive terminal and cannot run here. To complete setup non-interactively, run these commands in order:")
+	for _, hint := range nonInteractiveCommandHints {
+		if states[hint.step].configured {
+			continue
+		}
+		fmt.Fprintf(&b, "\n  %-*s  # %s", maxCmdLen, hint.command, hint.comment)
+	}
+	if includeSkipHint {
+		b.WriteString("\nOr pass --skip-if-configured to exit cleanly when everything is already set up")
+	}
+	return errors.New(b.String())
 }
 
 func buildMainMenuItems(states []initStepState) []common.MultiSelectItem {
@@ -350,8 +406,6 @@ func runInitMCP(cmd *cobra.Command) error {
 // runInitCompletions appends Ghost's completion snippet to the user's rc
 // file. The returned bool reports whether the rc file was actually modified.
 func runInitCompletions(cmd *cobra.Command) (bool, error) {
-	cmd.PrintErrln()
-	cmd.PrintErrln("--- Shell completions ---")
 	if runtime.GOOS == "windows" {
 		cmd.PrintErrln("Shell completions are not supported on Windows; skipping.")
 		return false, nil
