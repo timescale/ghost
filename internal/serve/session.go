@@ -25,7 +25,15 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	enc := json.NewEncoder(w)
 
-	if req.ProjectID != s.cfg.ProjectID {
+	client, projectID, err := s.loadClient(r.Context())
+	if err != nil {
+		_ = enc.Encode(createSessionResponse{
+			Success: false,
+			Error:   &dbdriver.NormalizedError{Message: err.Error(), Source: "ghost", Connect: true},
+		})
+		return
+	}
+	if req.ProjectID != projectID {
 		_ = enc.Encode(createSessionResponse{
 			Success: false,
 			Error: &dbdriver.NormalizedError{
@@ -36,7 +44,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	driver, err := openDriverForService(r.Context(), s.cfg.Client, req.ProjectID, req.ServiceID)
+	driver, err := openDriverForService(r.Context(), client, req.ProjectID, req.ServiceID)
 	if err != nil {
 		ce := new(connectErr)
 		if errors.As(err, &ce) {
@@ -44,7 +52,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		} else {
 			_ = enc.Encode(createSessionResponse{
 				Success: false,
-				Error: &dbdriver.NormalizedError{Message: err.Error(), Source: "ghost", Connect: true},
+				Error:   &dbdriver.NormalizedError{Message: err.Error(), Source: "ghost", Connect: true},
 			})
 		}
 		return

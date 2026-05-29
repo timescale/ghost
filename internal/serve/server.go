@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/timescale/ghost/internal/api"
+	"github.com/timescale/ghost/internal/common"
 )
 
 // Config configures a Server instance.
@@ -19,10 +20,10 @@ type Config struct {
 	Host string
 	// Port is the bind port. 0 lets the OS choose a free port.
 	Port int
-	// Client is the authenticated ghost-api client.
-	Client api.ClientWithResponsesInterface
-	// ProjectID is the active space/project ID.
-	ProjectID string
+	// App provides access to the ghost-api client and active project. Handlers
+	// call App.Load on each request so OAuth tokens are refreshed and the user
+	// can log in/out in another terminal without restarting the server.
+	App *common.App
 }
 
 // Server wraps the HTTP server and exposes the resolved listen address.
@@ -42,11 +43,8 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Host == "" {
 		cfg.Host = "127.0.0.1"
 	}
-	if cfg.Client == nil {
-		return nil, errors.New("serve: api client is required")
-	}
-	if cfg.ProjectID == "" {
-		return nil, errors.New("serve: project id is required")
+	if cfg.App == nil {
+		return nil, errors.New("serve: app is required")
 	}
 
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
@@ -65,8 +63,8 @@ func New(cfg Config) (*Server, error) {
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", healthzHandler())
-	mux.Handle("GET /api/bootstrap", newBootstrapHandler(cfg.ProjectID))
-	mux.Handle("GET /api/databases", newDatabasesHandler(cfg.Client, cfg.ProjectID))
+	mux.Handle("GET /api/bootstrap", http.HandlerFunc(s.handleBootstrap))
+	mux.Handle("GET /api/databases", http.HandlerFunc(s.handleDatabases))
 	mux.Handle("POST /api/executeQuery", http.HandlerFunc(s.handleExecuteQuery))
 	mux.Handle("POST /api/executeSessionQuery", http.HandlerFunc(s.handleExecuteSessionQuery))
 	mux.Handle("POST /api/arrowResults", http.HandlerFunc(s.handleArrowResults))
@@ -117,4 +115,23 @@ func healthzHandler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	})
+}
+
+// loadClient reloads credentials from disk (refreshing the OAuth token if
+// needed) and returns a ghost-api client bound to the active project. Called
+// per request so a long-running server doesn't keep using a stale token after
+// it expires.
+func (s *Server) loadClient(ctx context.Context) (api.ClientWithResponsesInterface, string, error) {
+	_, client, projectID, err := s.cfg.App.Load(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if client == nil {
+		_, _, clientErr := s.cfg.App.GetClient()
+		if clientErr != nil {
+			return nil, "", clientErr
+		}
+		return nil, "", errors.New("authentication required")
+	}
+	return client, projectID, nil
 }

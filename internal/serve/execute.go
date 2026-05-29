@@ -20,11 +20,16 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if !s.checkProject(w, req.RunID, req.ProjectID) {
+	client, projectID, err := s.loadClient(r.Context())
+	if err != nil {
+		writeErrorTerminator(w, req.RunID, &dbdriver.NormalizedError{Message: err.Error(), Source: "ghost", Connect: true})
+		return
+	}
+	if !checkProject(w, req.RunID, req.ProjectID, projectID) {
 		return
 	}
 
-	driver, connErr := openDriverForService(r.Context(), s.cfg.Client, req.ProjectID, req.ServiceID)
+	driver, connErr := openDriverForService(r.Context(), client, req.ProjectID, req.ServiceID)
 	if connErr != nil {
 		ce := new(connectErr)
 		if errors.As(connErr, &ce) {
@@ -48,7 +53,12 @@ func (s *Server) handleExecuteSessionQuery(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if !s.checkProject(w, req.RunID, req.ProjectID) {
+	_, projectID, err := s.loadClient(r.Context())
+	if err != nil {
+		writeErrorTerminator(w, req.RunID, &dbdriver.NormalizedError{Message: err.Error(), Source: "ghost", Connect: true})
+		return
+	}
+	if !checkProject(w, req.RunID, req.ProjectID, projectID) {
 		return
 	}
 
@@ -231,8 +241,8 @@ func pickResultSetToSurface(results []bufferedResultSet) *bufferedResultSet {
 
 // checkProject rejects requests for a different project than the one the CLI
 // is logged into. Single-user defense in depth.
-func (s *Server) checkProject(w http.ResponseWriter, runID, projectID string) bool {
-	if projectID == s.cfg.ProjectID {
+func checkProject(w http.ResponseWriter, runID, requestProjectID, activeProjectID string) bool {
+	if requestProjectID == activeProjectID {
 		return true
 	}
 	writeErrorTerminator(w, runID, &dbdriver.NormalizedError{

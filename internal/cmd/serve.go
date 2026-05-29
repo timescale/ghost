@@ -27,16 +27,14 @@ the duration of this command — press Ctrl+C to stop it.`,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, projectID, err := app.GetClient()
-			if err != nil {
+			if _, _, err := app.GetClient(); err != nil {
 				return err
 			}
 
 			srv, err := serve.New(serve.Config{
-				Host:      host,
-				Port:      port,
-				Client:    client,
-				ProjectID: projectID,
+				Host: host,
+				Port: port,
+				App:  app,
 			})
 			if err != nil {
 				return err
