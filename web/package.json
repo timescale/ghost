@@ -13,18 +13,19 @@
     "@tanstack/react-query": "^5.62.7",
     "@timescale/popsql-query-widget": "0.0.0-dev.156",
     "framer-motion": "^12.0.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^7.0.0"
+    "vite": "^7.0.0",
+    "vite-plugin-node-polyfills": "^0.24.0"
   }
 }

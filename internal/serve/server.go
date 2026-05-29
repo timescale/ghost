@@ -27,10 +27,12 @@ type Config struct {
 
 // Server wraps the HTTP server and exposes the resolved listen address.
 type Server struct {
-	cfg    Config
-	srv    *http.Server
-	ln     net.Listener
-	addr   string
+	cfg      Config
+	srv      *http.Server
+	ln       net.Listener
+	addr     string
+	runs     *runStore
+	sessions *sessionStore
 }
 
 // New constructs a Server with all routes registered. The listener is bound
@@ -53,18 +55,29 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("listen on %s: %w", addr, err)
 	}
 
+	s := &Server{
+		cfg:      cfg,
+		ln:       ln,
+		addr:     ln.Addr().String(),
+		runs:     newRunStore(),
+		sessions: newSessionStore(),
+	}
+
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", healthzHandler())
 	mux.Handle("GET /api/bootstrap", newBootstrapHandler(cfg.ProjectID))
 	mux.Handle("GET /api/databases", newDatabasesHandler(cfg.Client, cfg.ProjectID))
+	mux.Handle("POST /api/executeQuery", http.HandlerFunc(s.handleExecuteQuery))
+	mux.Handle("POST /api/executeSessionQuery", http.HandlerFunc(s.handleExecuteSessionQuery))
+	mux.Handle("POST /api/arrowResults", http.HandlerFunc(s.handleArrowResults))
+	mux.Handle("POST /api/createSession", http.HandlerFunc(s.handleCreateSession))
+	mux.Handle("POST /api/closeSession", http.HandlerFunc(s.handleCloseSession))
+	mux.Handle("POST /api/sessionEvents", http.HandlerFunc(s.handleSessionEvents))
+	mux.Handle("POST /api/cancelRun", http.HandlerFunc(s.handleCancelRun))
 	mux.Handle("/", newAssetHandler())
 
-	return &Server{
-		cfg:  cfg,
-		srv:  &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second},
-		ln:   ln,
-		addr: ln.Addr().String(),
-	}, nil
+	s.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	return s, nil
 }
 
 // Addr returns the resolved listen address (with the OS-chosen port if Port
@@ -91,8 +104,10 @@ func (s *Server) Serve(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = s.srv.Shutdown(shutdownCtx)
+		s.sessions.closeAll()
 		return <-errCh
 	case err := <-errCh:
+		s.sessions.closeAll()
 		return err
 	}
 }

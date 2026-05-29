@@ -1,5 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import '@timescale/popsql-query-widget/index.css';
+
+import { QueryPanel } from './components/QueryPanel';
 
 interface Bootstrap {
   projectId: string;
@@ -91,23 +94,19 @@ export function App() {
           )}
         </div>
       </header>
-      <main className="flex flex-1 items-center justify-center">
+      <main className="flex flex-1 flex-col overflow-hidden p-2">
         {bootstrap.isError ? (
           <div className="text-red-600">Failed to load bootstrap config</div>
         ) : !selected ? (
           <div className="text-slate-500">Select a database to run queries.</div>
+        ) : !bootstrap.data ? (
+          <div className="text-slate-500">Loading…</div>
         ) : (
-          <div className="rounded border border-slate-200 bg-white p-6 text-slate-700">
-            <div className="text-sm text-slate-500">project</div>
-            <div className="font-mono text-sm">{bootstrap.data?.projectId ?? '…'}</div>
-            <div className="mt-3 text-sm text-slate-500">database</div>
-            <div className="font-mono text-sm">
-              {selected.name} <span className="text-slate-400">({selected.id})</span>
-            </div>
-            <div className="mt-4 text-sm text-slate-400">
-              Query widget will render here in step 2.
-            </div>
-          </div>
+          <QueryPanel
+            projectId={bootstrap.data.projectId}
+            databaseId={selected.id}
+            databaseName={selected.name}
+          />
         )}
       </main>
     </div>
