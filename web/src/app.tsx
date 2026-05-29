@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
 import '@timescale/popsql-query-widget/index.css';
 
 import { QueryPanel } from './components/QueryPanel';
+import { useServeStore, type PersistedState } from './store';
 
 interface Bootstrap {
   projectId: string;
@@ -16,40 +16,13 @@ interface Database {
   type?: string;
 }
 
-interface ServeState {
-  selectedDatabaseId?: string;
-  editorHeight?: number;
-  editorSql?: string;
-}
-
 async function fetchJSON<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${path}: ${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
 }
 
-async function putJSON(path: string, body: unknown): Promise<void> {
-  const res = await fetch(path, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`${path}: ${res.status} ${res.statusText}`);
-}
-
 const READY_STATUSES = new Set(['ready', 'running']);
-const DEFAULT_EDITOR_HEIGHT = 240;
-
-function getUrlDbId(): string | null {
-  return new URLSearchParams(window.location.search).get('db');
-}
-
-function setUrlDbId(id: string | null) {
-  const url = new URL(window.location.href);
-  if (id) url.searchParams.set('db', id);
-  else url.searchParams.delete('db');
-  window.history.replaceState(null, '', url.toString());
-}
 
 function pickDefaultDatabaseId(databases: Database[]): string | null {
   if (databases.length === 1) return databases[0]!.id;
@@ -65,10 +38,15 @@ export function App() {
   });
   const persistedState = useQuery({
     queryKey: ['state'],
-    queryFn: () => fetchJSON<ServeState>('/api/state'),
+    queryFn: async () => {
+      const data = await fetchJSON<PersistedState>('/api/state');
+      useServeStore.getState().hydrate(data);
+      return data;
+    },
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
+  const hydrated = useServeStore((s) => s.hydrated);
 
   if (bootstrap.isError || persistedState.isError) {
     return (
@@ -77,66 +55,36 @@ export function App() {
       </div>
     );
   }
-  if (!bootstrap.data || !persistedState.data) {
+  if (!bootstrap.data || !hydrated) {
     return null;
   }
-  return <ReadyApp bootstrap={bootstrap.data} initialState={persistedState.data} />;
+  return <ReadyApp bootstrap={bootstrap.data} />;
 }
 
 interface ReadyAppProps {
   bootstrap: Bootstrap;
-  initialState: ServeState;
 }
 
-function ReadyApp({ bootstrap, initialState }: ReadyAppProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(() => {
-    const initial = getUrlDbId() ?? initialState.selectedDatabaseId ?? null;
-    if (initial) setUrlDbId(initial);
-    return initial;
-  });
-  const [editorSql, setEditorSql] = useState<string>(initialState.editorSql ?? '');
-  const [editorHeight, setEditorHeight] = useState<number>(
-    initialState.editorHeight ?? DEFAULT_EDITOR_HEIGHT,
-  );
+function ReadyApp({ bootstrap }: ReadyAppProps) {
+  const selectedId = useServeStore((s) => s.selectedDatabaseId);
+  const setSelectedDatabaseId = useServeStore((s) => s.setSelectedDatabaseId);
+  const editorSql = useServeStore((s) => s.editorSql);
+  const setEditorSql = useServeStore((s) => s.setEditorSql);
+  const editorHeight = useServeStore((s) => s.editorHeight);
+  const setEditorHeight = useServeStore((s) => s.setEditorHeight);
 
   const databases = useQuery({
     queryKey: ['databases'],
     queryFn: async () => {
       const data = await fetchJSON<Database[]>('/api/databases');
-      if (!getUrlDbId() && !selectedId) {
+      if (!useServeStore.getState().selectedDatabaseId) {
         const defaultId = pickDefaultDatabaseId(data);
-        if (defaultId) {
-          setSelectedId(defaultId);
-          setUrlDbId(defaultId);
-        }
+        if (defaultId) useServeStore.getState().setSelectedDatabaseId(defaultId);
       }
       return data;
     },
     refetchInterval: 10_000,
   });
-
-  // Debounce-persist whenever any tracked state changes. Skip the first run
-  // so we don't immediately rewrite the file with values we just read.
-  const isFirstSave = useRef(true);
-  useEffect(() => {
-    if (isFirstSave.current) {
-      isFirstSave.current = false;
-      return;
-    }
-    const handle = setTimeout(() => {
-      void putJSON('/api/state', {
-        selectedDatabaseId: selectedId ?? undefined,
-        editorSql,
-        editorHeight,
-      });
-    }, 400);
-    return () => clearTimeout(handle);
-  }, [selectedId, editorSql, editorHeight]);
-
-  const handleSelectionChange = (id: string | null) => {
-    setSelectedId(id);
-    setUrlDbId(id);
-  };
 
   const selected = databases.data?.find((db) => db.id === selectedId) ?? null;
 
@@ -153,7 +101,7 @@ function ReadyApp({ bootstrap, initialState }: ReadyAppProps) {
               aria-label="Database"
               className="rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:border-slate-500 focus:outline-none"
               value={selectedId ?? ''}
-              onChange={(e) => handleSelectionChange(e.target.value || null)}
+              onChange={(e) => setSelectedDatabaseId(e.target.value || null)}
               disabled={databases.isLoading}
             >
               <option value="">
