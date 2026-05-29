@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import '@timescale/popsql-query-widget/index.css';
 
 import { QueryPanel } from './components/QueryPanel';
@@ -16,13 +16,29 @@ interface Database {
   type?: string;
 }
 
+interface ServeState {
+  selectedDatabaseId?: string;
+  editorHeight?: number;
+  editorSql?: string;
+}
+
 async function fetchJSON<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${path}: ${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
 }
 
+async function putJSON(path: string, body: unknown): Promise<void> {
+  const res = await fetch(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${path}: ${res.status} ${res.statusText}`);
+}
+
 const READY_STATUSES = new Set(['ready', 'running']);
+const DEFAULT_EDITOR_HEIGHT = 240;
 
 function getUrlDbId(): string | null {
   return new URLSearchParams(window.location.search).get('db');
@@ -47,12 +63,45 @@ export function App() {
     queryKey: ['bootstrap'],
     queryFn: () => fetchJSON<Bootstrap>('/api/bootstrap'),
   });
-  const [selectedId, setSelectedId] = useState<string | null>(getUrlDbId);
+  const persistedState = useQuery({
+    queryKey: ['state'],
+    queryFn: () => fetchJSON<ServeState>('/api/state'),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
+
+  if (bootstrap.isError || persistedState.isError) {
+    return (
+      <div className="flex h-full items-center justify-center text-red-600">
+        Failed to load app config
+      </div>
+    );
+  }
+  if (!bootstrap.data || !persistedState.data) {
+    return null;
+  }
+  return <ReadyApp bootstrap={bootstrap.data} initialState={persistedState.data} />;
+}
+
+interface ReadyAppProps {
+  bootstrap: Bootstrap;
+  initialState: ServeState;
+}
+
+function ReadyApp({ bootstrap, initialState }: ReadyAppProps) {
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => getUrlDbId() ?? initialState.selectedDatabaseId ?? null,
+  );
+  const [editorSql, setEditorSql] = useState<string>(initialState.editorSql ?? '');
+  const [editorHeight, setEditorHeight] = useState<number>(
+    initialState.editorHeight ?? DEFAULT_EDITOR_HEIGHT,
+  );
+
   const databases = useQuery({
     queryKey: ['databases'],
     queryFn: async () => {
       const data = await fetchJSON<Database[]>('/api/databases');
-      if (!getUrlDbId()) {
+      if (!getUrlDbId() && !selectedId) {
         const defaultId = pickDefaultDatabaseId(data);
         if (defaultId) {
           setSelectedId(defaultId);
@@ -63,6 +112,24 @@ export function App() {
     },
     refetchInterval: 10_000,
   });
+
+  // Debounce-persist whenever any tracked state changes. Skip the first run
+  // so we don't immediately rewrite the file with values we just read.
+  const isFirstSave = useRef(true);
+  useEffect(() => {
+    if (isFirstSave.current) {
+      isFirstSave.current = false;
+      return;
+    }
+    const handle = setTimeout(() => {
+      void putJSON('/api/state', {
+        selectedDatabaseId: selectedId ?? undefined,
+        editorSql,
+        editorHeight,
+      });
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [selectedId, editorSql, editorHeight]);
 
   const handleSelectionChange = (id: string | null) => {
     setSelectedId(id);
@@ -104,17 +171,17 @@ export function App() {
         </div>
       </header>
       <main className="flex flex-auto flex-col overflow-hidden p-4">
-        {bootstrap.isError ? (
-          <div className="text-red-600">Failed to load bootstrap config</div>
-        ) : !selected ? (
+        {!selected ? (
           <div className="text-slate-500">Select a database to run queries.</div>
-        ) : !bootstrap.data ? (
-          <div className="text-slate-500">Loading…</div>
         ) : (
           <QueryPanel
-            projectId={bootstrap.data.projectId}
+            projectId={bootstrap.projectId}
             databaseId={selected.id}
             databaseName={selected.name}
+            query={editorSql}
+            onQueryChange={setEditorSql}
+            editorHeight={editorHeight}
+            onResizeEditor={setEditorHeight}
           />
         )}
       </main>

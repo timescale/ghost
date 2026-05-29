@@ -51,14 +51,25 @@ interface Props {
   projectId: string;
   databaseId: string;
   databaseName: string;
+  query: string;
+  onQueryChange: (next: string) => void;
+  editorHeight: number;
+  onResizeEditor: (height: number) => void;
 }
 
 // QueryPanel renders the PopSQL query widget targeted at a single ghost
 // database. The sessionKey is derived from the database ID so switching
 // databases automatically invalidates the session (and tears down the
 // in-process PG connection on the Go side).
-export function QueryPanel({ projectId, databaseId, databaseName }: Props) {
-  const [query, setQuery] = useState(`-- ${databaseName}\nSELECT 1;\n`);
+export function QueryPanel({
+  projectId,
+  databaseId,
+  databaseName: _databaseName,
+  query,
+  onQueryChange,
+  editorHeight,
+  onResizeEditor,
+}: Props) {
   const [statementCount, setStatementCount] = useState(0);
   const lastRunSQLRef = useRef<string>('');
   // Plugin must be stable across renders so PopsqlEditor's initDeps don't
@@ -73,10 +84,12 @@ export function QueryPanel({ projectId, databaseId, databaseName }: Props) {
             className="flex-auto"
             resizeHandles="split"
             editorMinHeight={200}
+            editorHeight={editorHeight}
+            onResizeEditor={onResizeEditor}
             editorPlugins={editorPlugins}
             id={`ghost-${databaseId}`}
             query={query}
-            onQueryChange={setQuery}
+            onQueryChange={onQueryChange}
             sessionKey={`ghost-${databaseId}`}
             runSelection
             runButtonLabelWithSelection="Run selection"

@@ -34,6 +34,7 @@ type Server struct {
 	addr     string
 	runs     *runStore
 	sessions *sessionStore
+	state    *stateStore
 }
 
 // New constructs a Server with all routes registered. The listener is bound
@@ -53,12 +54,14 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("listen on %s: %w", addr, err)
 	}
 
+	configDir := cfg.App.GetConfig().ConfigDir
 	s := &Server{
 		cfg:      cfg,
 		ln:       ln,
 		addr:     ln.Addr().String(),
 		runs:     newRunStore(),
 		sessions: newSessionStore(),
+		state:    newStateStore(configDir),
 	}
 
 	mux := http.NewServeMux()
@@ -72,6 +75,8 @@ func New(cfg Config) (*Server, error) {
 	mux.Handle("POST /api/closeSession", http.HandlerFunc(s.handleCloseSession))
 	mux.Handle("POST /api/sessionEvents", http.HandlerFunc(s.handleSessionEvents))
 	mux.Handle("POST /api/cancelRun", http.HandlerFunc(s.handleCancelRun))
+	mux.Handle("GET /api/state", http.HandlerFunc(s.handleGetState))
+	mux.Handle("PUT /api/state", http.HandlerFunc(s.handlePutState))
 	mux.Handle("/", newAssetHandler())
 
 	s.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
