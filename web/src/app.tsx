@@ -89,9 +89,11 @@ interface ReadyAppProps {
 }
 
 function ReadyApp({ bootstrap, initialState }: ReadyAppProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(
-    () => getUrlDbId() ?? initialState.selectedDatabaseId ?? null,
-  );
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    const initial = getUrlDbId() ?? initialState.selectedDatabaseId ?? null;
+    if (initial) setUrlDbId(initial);
+    return initial;
+  });
   const [editorSql, setEditorSql] = useState<string>(initialState.editorSql ?? '');
   const [editorHeight, setEditorHeight] = useState<number>(
     initialState.editorHeight ?? DEFAULT_EDITOR_HEIGHT,
