@@ -524,7 +524,8 @@ Three commits on `murrayju/serve`, in this order:
 1. `ae9e4f9` — Add ghost serve skeleton. Cobra command behind `GHOST_EXPERIMENTAL`, embed.FS asset handler with SPA fallback + cache headers, `/api/bootstrap` + `/api/databases`, Vite/React workspace with picker + empty body, bun self-bootstrap wrapper, scripts/build-web.sh.
 2. `2df095e` — Fix build-web.sh and pin widget version (`--cwd` doesn't apply to bun's `run`; widget pinned to `0.0.0-dev.156`).
 3. `43921bd` — Wire the popsql query widget into ghost serve. Ported dbtypes + dbdriver + arrow encoder from popsql-query, implemented executeQuery + arrowResults + sessions + cancel handlers, wired `<QueryWidget>` into the SPA with Vite worker/wasm asset emission + node polyfills, React 18 pin.
-4. *(this commit)* — Step 3 polish: ungate from `GHOST_EXPERIMENTAL`, CLAUDE.md + README updates, generated `docs/cli/ghost_serve.md`, tests for wire / assets / store / cmd, favicon + form-name a11y tidy-ups.
+4. `d741355` — Polish ghost serve and ungate from GHOST_EXPERIMENTAL. CLAUDE.md + README updates, generated `docs/cli/ghost_serve.md`, tests for wire / assets / store / cmd, favicon + form-name a11y tidy-ups.
+5. `045261e` — Build the web bundle in CI before Go builds. Both `.github/workflows/{test,release}.yaml` now run `./scripts/build-web.sh` before any Go command, sourcing the widget from GitHub Packages via the auto-provisioned `secrets.GITHUB_TOKEN`.
 
 ## Follow-ups (out of scope for this branch)
 
