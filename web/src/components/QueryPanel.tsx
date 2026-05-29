@@ -72,6 +72,7 @@ export function QueryPanel({ projectId, databaseId, databaseName }: Props) {
           <QueryWidget
             className="flex-auto"
             resizeHandles="split"
+            editorMinHeight={200}
             editorPlugins={editorPlugins}
             id={`ghost-${databaseId}`}
             query={query}
