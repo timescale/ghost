@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import '@timescale/popsql-query-widget/index.css';
 
 import { QueryPanel } from './components/QueryPanel';
@@ -35,32 +35,39 @@ function setUrlDbId(id: string | null) {
   window.history.replaceState(null, '', url.toString());
 }
 
+function pickDefaultDatabaseId(databases: Database[]): string | null {
+  if (databases.length === 1) return databases[0]!.id;
+  const ready = databases.filter((db) => READY_STATUSES.has(db.status));
+  if (ready.length === 1) return ready[0]!.id;
+  return null;
+}
+
 export function App() {
   const bootstrap = useQuery({
     queryKey: ['bootstrap'],
     queryFn: () => fetchJSON<Bootstrap>('/api/bootstrap'),
   });
+  const [selectedId, setSelectedId] = useState<string | null>(getUrlDbId);
   const databases = useQuery({
     queryKey: ['databases'],
-    queryFn: () => fetchJSON<Database[]>('/api/databases'),
+    queryFn: async () => {
+      const data = await fetchJSON<Database[]>('/api/databases');
+      if (!getUrlDbId()) {
+        const defaultId = pickDefaultDatabaseId(data);
+        if (defaultId) {
+          setSelectedId(defaultId);
+          setUrlDbId(defaultId);
+        }
+      }
+      return data;
+    },
     refetchInterval: 10_000,
   });
 
-  const [selectedId, setSelectedId] = useState<string | null>(getUrlDbId);
-
-  useEffect(() => {
-    if (!databases.data || selectedId) return;
-    const ready = databases.data.find((db) => READY_STATUSES.has(db.status));
-    if (databases.data.length === 1) {
-      setSelectedId(databases.data[0]!.id);
-    } else if (ready && databases.data.filter((db) => READY_STATUSES.has(db.status)).length === 1) {
-      setSelectedId(ready.id);
-    }
-  }, [databases.data, selectedId]);
-
-  useEffect(() => {
-    setUrlDbId(selectedId);
-  }, [selectedId]);
+  const handleSelectionChange = (id: string | null) => {
+    setSelectedId(id);
+    setUrlDbId(id);
+  };
 
   const selected = databases.data?.find((db) => db.id === selectedId) ?? null;
 
@@ -77,7 +84,7 @@ export function App() {
               aria-label="Database"
               className="rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:border-slate-500 focus:outline-none"
               value={selectedId ?? ''}
-              onChange={(e) => setSelectedId(e.target.value || null)}
+              onChange={(e) => handleSelectionChange(e.target.value || null)}
               disabled={databases.isLoading}
             >
               <option value="">
