@@ -253,11 +253,15 @@ type stringish interface{ ~string | ~[]byte }
 
 func castToStr[T stringish](value T) string { return string(value) }
 
-type int64ish interface{ ~int | ~int8 | ~int16 | ~int32 | ~int64 }
+type int64ish interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64
+}
 
 func castToInt64[T int64ish](value T) int64 { return int64(value) }
 
-type uint64ish interface{ ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 }
+type uint64ish interface {
+	~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64
+}
 
 func castToUint64[T uint64ish](value T) uint64 { return uint64(value) }
 

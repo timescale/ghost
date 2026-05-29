@@ -109,8 +109,8 @@ func (r *baseRows) buildColumn(deduper deduper, ct *sql.ColumnType) Column {
 	return column
 }
 
-func (r *baseRows) Metadata(ctx context.Context) (*Metadata, error)       { return nil, nil }
-func (r *baseRows) RowsAffected(ctx context.Context) (*int64, error)      { return nil, nil }
+func (r *baseRows) Metadata(ctx context.Context) (*Metadata, error)  { return nil, nil }
+func (r *baseRows) RowsAffected(ctx context.Context) (*int64, error) { return nil, nil }
 
 type deduper map[string]int
 

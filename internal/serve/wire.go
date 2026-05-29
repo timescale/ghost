@@ -1,6 +1,8 @@
 package serve
 
 import (
+	"strings"
+
 	"github.com/timescale/ghost/internal/serve/dbdriver"
 )
 
@@ -26,11 +28,12 @@ type executeQueryRequest struct {
 // array (widget's canonical field) and falls back to the raw query.
 func (r executeQueryRequest) SQL() string {
 	if len(r.Statements) > 0 {
-		joined := r.Statements[0]
+		var joined strings.Builder
+		joined.WriteString(r.Statements[0])
 		for _, s := range r.Statements[1:] {
-			joined += "; " + s
+			joined.WriteString("; " + s)
 		}
-		return joined
+		return joined.String()
 	}
 	return r.Query
 }
@@ -70,16 +73,16 @@ type sessionRefRequest struct {
 
 // createSessionResponse matches CreateSessionResponse (one of two shapes).
 type createSessionResponse struct {
-	Success bool                       `json:"success"`
-	ID      string                     `json:"id,omitempty"`
-	Error   *dbdriver.NormalizedError  `json:"error,omitempty"`
+	Success bool                      `json:"success"`
+	ID      string                    `json:"id,omitempty"`
+	Error   *dbdriver.NormalizedError `json:"error,omitempty"`
 }
 
 // columnsResult is the first NDJSON line written by executeQuery. The widget
 // uses 'columns' as the discriminator.
 type columnsResult struct {
-	RunID    string            `json:"runId"`
-	Columns  dbdriver.Columns  `json:"columns"`
+	RunID    string             `json:"runId"`
+	Columns  dbdriver.Columns   `json:"columns"`
 	Metadata *dbdriver.Metadata `json:"meta,omitempty"`
 }
 
@@ -94,8 +97,8 @@ type successResult struct {
 
 // errorResult is the final NDJSON line on a failed (or canceled) run.
 type errorResult struct {
-	RunID   string                   `json:"runId"`
-	Success bool                     `json:"success"`
+	RunID   string                    `json:"runId"`
+	Success bool                      `json:"success"`
 	Error   *dbdriver.NormalizedError `json:"error"`
 }
 

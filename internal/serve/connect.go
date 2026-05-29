@@ -19,7 +19,7 @@ type connectErr struct {
 	norm *dbdriver.NormalizedError
 }
 
-func (c *connectErr) Error() string { return c.norm.Message }
+func (c *connectErr) Error() string                         { return c.norm.Message }
 func (c *connectErr) Normalized() *dbdriver.NormalizedError { return c.norm }
 
 func newConnectErr(format string, args ...any) *connectErr {
