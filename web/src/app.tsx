@@ -103,7 +103,7 @@ export function App() {
           )}
         </div>
       </header>
-      <main className="flex flex-auto flex-col overflow-hidden p-2">
+      <main className="flex flex-auto flex-col overflow-hidden p-4">
         {bootstrap.isError ? (
           <div className="text-red-600">Failed to load bootstrap config</div>
         ) : !selected ? (
