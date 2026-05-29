@@ -62,7 +62,7 @@ todo.md
 new.md
 
 # ghost serve
-/download/
+web/download/
 web/node_modules/
 web/dist/
 web/.npmrc

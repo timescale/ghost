@@ -15,8 +15,8 @@ if [ ! -f web/.npmrc ]; then
     cp web/.npmrc.example web/.npmrc
 fi
 
-(cd web && ../bun install)
-(cd web && ../bun run build)
+(cd web && ./bun install)
+(cd web && ./bun run build)
 
 embedDir="internal/serve/web"
 find "$embedDir" -mindepth 1 ! -name '.gitkeep' -delete
