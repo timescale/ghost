@@ -9,35 +9,40 @@ import (
 )
 
 // Run coordinates a single in-flight query between the executeQuery and
-// arrowResults handlers. The widget always fires both: executeQuery streams
-// a columns NDJSON line and then blocks on Run.done; arrowResults consumes
-// the rows + streams Arrow IPC, then closes Run.done so executeQuery can
-// emit the success/error terminator.
+// arrowResults handlers. executeQuery runs the query to completion (all
+// result sets buffered), populates the chosen result set's columns + rows,
+// signals ready, writes the columns NDJSON line, then blocks on done.
+// arrowResults waits for ready, walks bufferedRows into an Arrow IPC stream,
+// then closes done so executeQuery can emit the success/error terminator.
 type Run struct {
 	id        string
 	projectID string
 	serviceID string
 	startedAt time.Time
 
-	// driver is non-nil only when this Run owns the driver (one-shot mode).
-	// In session mode the driver is owned by the Session and reused across
-	// runs; we leave this nil so cleanup doesn't close it.
-	driver  dbdriver.Driver
-	rows    dbdriver.Rows
-	columns dbdriver.Columns
+	// Populated by executeQuery before closing ready. These describe the
+	// single result set we surface to the widget (per the user-facing rule:
+	// last result set with columns, or the last result set if none had
+	// columns).
+	columns      dbdriver.Columns
+	bufferedRows [][]any
+	rowCount     int64
+	rowsAffected *int64
 
-	cancelQuery   context.CancelFunc
-	driverCleanup context.CancelFunc
+	// Number of result sets the database returned for this run — used by the
+	// UI to show "Executed N statements" when N > 1.
+	executedStatements int64
 
-	queryCtx context.Context
+	// cancelQuery aborts the in-flight query via pg_cancel_backend (wired
+	// through driver.Context's cancelContext). Used by /api/cancelRun and
+	// by client-disconnect detection in executeQuery.
+	cancelQuery context.CancelFunc
 
 	ready chan struct{}
 	done  chan struct{}
 
-	rowCount     int64
-	rowsAffected *int64
-	err          *dbdriver.NormalizedError
-	errOnce      sync.Once
+	err     *dbdriver.NormalizedError
+	errOnce sync.Once
 }
 
 func (r *Run) setError(e *dbdriver.NormalizedError) {

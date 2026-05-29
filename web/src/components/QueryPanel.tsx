@@ -7,7 +7,9 @@ import {
   QueryWidgetProvider,
   TimescaleResultsCacheContextProvider,
 } from '@timescale/popsql-query-widget';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+
+import { countStatements } from '../lib/sql';
 
 interface Props {
   projectId: string;
@@ -21,6 +23,8 @@ interface Props {
 // in-process PG connection on the Go side).
 export function QueryPanel({ projectId, databaseId, databaseName }: Props) {
   const [query, setQuery] = useState(`-- ${databaseName}\nSELECT 1;\n`);
+  const [statementCount, setStatementCount] = useState(0);
+  const lastRunSQLRef = useRef<string>('');
 
   return (
     <TimescaleResultsCacheContextProvider baseUrl={window.location.origin}>
@@ -31,6 +35,29 @@ export function QueryPanel({ projectId, databaseId, databaseName }: Props) {
             query={query}
             onQueryChange={setQuery}
             sessionKey={`ghost-${databaseId}`}
+            runSelection
+            runButtonLabelWithSelection="Run selection"
+            onQueryRun={({ query: executedSQL }) => {
+              lastRunSQLRef.current = executedSQL;
+            }}
+            onQueryComplete={(args) => {
+              // Only surface the counter when the run actually succeeded;
+              // for errors / cancels, hide it to avoid implying anything
+              // about what got committed.
+              if ('rowsAffected' in args) {
+                setStatementCount(countStatements(lastRunSQLRef.current));
+              } else {
+                setStatementCount(0);
+              }
+            }}
+            renderToolbarAppendLeft={({ isRunning }) => {
+              if (isRunning || statementCount <= 1) return null;
+              return (
+                <span className="ml-2 text-xs text-slate-500">
+                  Executed {statementCount} statements
+                </span>
+              );
+            }}
             getExecuteQueryData={({ runId, query }) => ({
               engine: ExecuteQueryEngine.timescaleQuery,
               params: {

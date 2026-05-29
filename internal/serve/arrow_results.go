@@ -13,9 +13,11 @@ const arrowBatchRows = 1024
 
 // handleArrowResults serves POST /api/arrowResults. The widget fires this
 // immediately after seeing the executeQuery columns line and expects a raw
-// Arrow IPC stream of rows. We iterate the run's rows in-place, build
-// record batches, and stream them out; when iteration finishes we signal
-// Run.done so the executeQuery handler can emit its terminator.
+// Apache Arrow IPC stream of rows. Rows have already been scanned into
+// run.bufferedRows by executeQuery (so we can pick the right result set out
+// of a multi-statement run); we just convert them to Arrow record batches
+// and stream them out. When we're done we signal Run.done so the
+// executeQuery handler can emit its terminator.
 func (s *Server) handleArrowResults(w http.ResponseWriter, r *http.Request) {
 	var req arrowResultsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -44,25 +46,21 @@ func (s *Server) handleArrowResults(w http.ResponseWriter, r *http.Request) {
 
 	ipcWriter := ipc.NewWriter(w, ipc.WithSchema(rb.Schema()))
 	defer ipcWriter.Close()
+	defer run.closeDone()
 
-	targets := run.columns.ScanTargets()
-	for run.rows.Next() {
+	for _, row := range run.bufferedRows {
 		if err := r.Context().Err(); err != nil {
 			run.setError(&dbdriver.NormalizedError{Message: "request canceled", Source: "ghost", Cancel: true})
-			break
+			return
 		}
-		if err := run.rows.Scan(targets...); err != nil {
+		if err := rb.AppendRow(row); err != nil {
 			run.setError(&dbdriver.NormalizedError{Message: err.Error(), Source: "ghost"})
-			break
-		}
-		if err := rb.AppendRow(targets.Values()); err != nil {
-			run.setError(&dbdriver.NormalizedError{Message: err.Error(), Source: "ghost"})
-			break
+			return
 		}
 		if rb.RecordRowCount() >= arrowBatchRows {
 			if err := flushBatch(ipcWriter, rb, w); err != nil {
 				run.setError(&dbdriver.NormalizedError{Message: err.Error(), Source: "ghost"})
-				break
+				return
 			}
 		}
 	}
@@ -71,21 +69,6 @@ func (s *Server) handleArrowResults(w http.ResponseWriter, r *http.Request) {
 			run.setError(&dbdriver.NormalizedError{Message: err.Error(), Source: "ghost"})
 		}
 	}
-
-	if err := run.rows.Err(); err != nil && run.err == nil {
-		// Defer to the driver's normalizer so PG errors carry code/hint/etc.
-		if run.driver != nil {
-			run.setError(run.driver.NormalizeError(run.queryCtx, err))
-		} else {
-			run.setError(&dbdriver.NormalizedError{Message: err.Error(), Source: "postgres"})
-		}
-	}
-
-	run.rowCount = rb.TotalRowCount()
-	if rowsAffected, _ := run.rows.RowsAffected(r.Context()); rowsAffected != nil {
-		run.rowsAffected = rowsAffected
-	}
-	run.closeDone()
 }
 
 func flushBatch(ipcWriter *ipc.Writer, rb *RecordBuilder, w http.ResponseWriter) error {

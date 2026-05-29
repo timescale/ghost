@@ -529,7 +529,6 @@ Three commits on `murrayju/serve`, in this order:
 
 ## Follow-ups (out of scope for this branch)
 
-- Multi-result-set support: `sql.Rows` only iterates the first result, so multi-statement queries (e.g. two `SELECT`s in one Run) currently show only the first table.
-- `Decimal128` for NUMERIC instead of `Utf8` — needs a popsql-query upgrade too.
+- **Decimal128 for NUMERIC — declined.** Postgres `NUMERIC` accepts NaN, ±Infinity, and unbounded precision; Arrow `Decimal128` is 38 digits and can't carry any of those, so an implementation would need per-row fallback branching and an upstream change in popsql-query (which uses the same string encoding for the same reasons). The widget's table already gets `isNumeric: true` for right-align + sort, so the on-wire string is a non-issue for UX. Not worth doing.
 - Query timeout enforcement (the widget sends `timeout` but we ignore it).
 - Server-side `slog` logging + log levels (currently silent by design).

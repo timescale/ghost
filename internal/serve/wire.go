@@ -85,10 +85,11 @@ type columnsResult struct {
 
 // successResult is the final NDJSON line on a successful run.
 type successResult struct {
-	RunID        string `json:"runId"`
-	Success      bool   `json:"success"`
-	RowCount     int64  `json:"rowCount"`
-	RowsAffected *int64 `json:"rowsAffected,omitempty"`
+	RunID              string `json:"runId"`
+	Success            bool   `json:"success"`
+	RowCount           int64  `json:"rowCount"`
+	RowsAffected       *int64 `json:"rowsAffected,omitempty"`
+	ExecutedStatements int64  `json:"executedStatements,omitempty"`
 }
 
 // errorResult is the final NDJSON line on a failed (or canceled) run.

@@ -36,7 +36,7 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	defer driver.Close()
 
-	s.runQuery(w, r, req, driver, true)
+	s.runQuery(w, r, req, driver)
 }
 
 // handleExecuteSessionQuery serves POST /api/executeSessionQuery. The
@@ -60,58 +60,74 @@ func (s *Server) handleExecuteSessionQuery(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	s.runQuery(w, r, req.executeQueryRequest, session.driver, false)
+	s.runQuery(w, r, req.executeQueryRequest, session.driver)
+}
+
+// bufferedResultSet is one result set materialized in memory: its column
+// descriptors plus every scanned row in order.
+type bufferedResultSet struct {
+	columns      dbdriver.Columns
+	rows         [][]any
+	rowsAffected *int64
 }
 
 // runQuery is the shared body of handleExecuteQuery / handleExecuteSessionQuery.
-// ownsDriver controls whether arrowResults' cleanup will close the driver
-// (true in one-shot mode, false in session mode).
-func (s *Server) runQuery(w http.ResponseWriter, r *http.Request, req executeQueryRequest, driver dbdriver.Driver, ownsDriver bool) {
+//
+// Multi-statement behavior: the widget's worker splits the editor text into a
+// statements array which we join with `; ` and run via pgx's simple text
+// protocol. PG returns one result set per statement. We buffer all of them
+// and surface the last result set that has columns; if none have columns
+// (e.g. only DDL/DML), we surface the last result set so its rowsAffected
+// still shows.
+func (s *Server) runQuery(w http.ResponseWriter, r *http.Request, req executeQueryRequest, driver dbdriver.Driver) {
 	driverCtx, driverCleanup := driver.Context(r.Context())
 	defer driverCleanup()
 
-	rows, err := driver.Query(driverCtx, dbdriver.QueryArgs{Query: req.SQL()})
-	if err != nil {
-		writeErrorTerminator(w, req.RunID, driver.NormalizeError(driverCtx, err))
-		return
-	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		writeErrorTerminator(w, req.RunID, driver.NormalizeError(driverCtx, err))
-		return
-	}
-
-	queryCtx, cancelQuery := context.WithCancel(r.Context())
+	queryCtx, cancelQuery := context.WithCancel(driverCtx)
 	defer cancelQuery()
 
 	run := &Run{
-		id:            req.RunID,
-		projectID:     req.ProjectID,
-		serviceID:     req.ServiceID,
-		startedAt:     time.Now(),
-		rows:          rows,
-		columns:       columns,
-		queryCtx:      queryCtx,
-		cancelQuery:   cancelQuery,
-		driverCleanup: driverCleanup,
-		ready:         make(chan struct{}),
-		done:          make(chan struct{}),
-	}
-	if ownsDriver {
-		run.driver = driver
+		id:          req.RunID,
+		projectID:   req.ProjectID,
+		serviceID:   req.ServiceID,
+		startedAt:   time.Now(),
+		cancelQuery: cancelQuery,
+		ready:       make(chan struct{}),
+		done:        make(chan struct{}),
 	}
 	s.runs.add(run)
 	defer s.runs.delete(req.RunID)
+
+	statements := req.Statements
+	if len(statements) == 0 && req.Query != "" {
+		statements = []string{req.Query}
+	}
+
+	results, bufErr := bufferStatements(queryCtx, driver, statements)
+	if bufErr != nil {
+		writeErrorTerminator(w, req.RunID, driver.NormalizeError(queryCtx, bufErr))
+		return
+	}
+	chosen := pickResultSetToSurface(results)
+	if chosen == nil {
+		// Should not happen: bufferStatements always emits at least one entry
+		// on success. Defensively surface an empty result.
+		chosen = &bufferedResultSet{}
+	}
+
+	run.columns = chosen.columns
+	run.bufferedRows = chosen.rows
+	run.rowCount = int64(len(chosen.rows))
+	run.rowsAffected = chosen.rowsAffected
+	run.executedStatements = int64(len(results))
 	close(run.ready)
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Cache-Control", "no-store")
 
 	enc := json.NewEncoder(w)
-	if err := enc.Encode(columnsResult{RunID: req.RunID, Columns: columns}); err != nil {
-		// Client gone before the columns line could be written; bail.
+	if err := enc.Encode(columnsResult{RunID: req.RunID, Columns: chosen.columns}); err != nil {
+		// Client disconnected before columns reached the wire.
 		cancelQuery()
 		return
 	}
@@ -122,9 +138,6 @@ func (s *Server) runQuery(w http.ResponseWriter, r *http.Request, req executeQue
 	case <-run.done:
 	case <-r.Context().Done():
 		cancelQuery()
-		// Give arrowResults a brief window to wrap up cleanly so it sets the
-		// real rowCount + error. If it doesn't return promptly we mark the
-		// run as canceled and proceed.
 		select {
 		case <-run.done:
 		case <-time.After(2 * time.Second):
@@ -137,13 +150,83 @@ func (s *Server) runQuery(w http.ResponseWriter, r *http.Request, req executeQue
 		_ = enc.Encode(errorResult{RunID: req.RunID, Success: false, Error: run.err})
 	} else {
 		_ = enc.Encode(successResult{
-			RunID:        req.RunID,
-			Success:      true,
-			RowCount:     run.rowCount,
-			RowsAffected: run.rowsAffected,
+			RunID:              req.RunID,
+			Success:            true,
+			RowCount:           run.rowCount,
+			RowsAffected:       run.rowsAffected,
+			ExecutedStatements: run.executedStatements,
 		})
 	}
 	flushWriter(w)
+}
+
+// bufferStatements runs each statement in order against the same driver
+// connection (so TEMP tables and other session state from earlier
+// statements are visible to later ones) and buffers the rows from each
+// result set into memory.
+//
+// Iterating per-statement (rather than relying on sql.Rows.NextResultSet)
+// is necessary because pgx's stdlib wrapper only surfaces the first
+// result set of a multi-statement Query call. The widget already does the
+// SQL-aware statement split for us, so we leverage that here.
+func bufferStatements(ctx context.Context, driver dbdriver.Driver, statements []string) ([]bufferedResultSet, error) {
+	out := make([]bufferedResultSet, 0, len(statements))
+	for _, stmt := range statements {
+		rs, err := bufferOneStatement(ctx, driver, stmt)
+		if err != nil {
+			return out, err
+		}
+		out = append(out, rs)
+	}
+	return out, nil
+}
+
+func bufferOneStatement(ctx context.Context, driver dbdriver.Driver, stmt string) (bufferedResultSet, error) {
+	rows, err := driver.Query(ctx, dbdriver.QueryArgs{Query: stmt})
+	if err != nil {
+		return bufferedResultSet{}, err
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return bufferedResultSet{}, err
+	}
+
+	buf := bufferedResultSet{columns: cols}
+	targets := cols.ScanTargets()
+	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return buf, err
+		}
+		if err := rows.Scan(targets...); err != nil {
+			return buf, err
+		}
+		buf.rows = append(buf.rows, targets.Values())
+	}
+	if err := rows.Err(); err != nil {
+		return buf, err
+	}
+	if ra, _ := rows.RowsAffected(ctx); ra != nil {
+		buf.rowsAffected = ra
+	}
+	return buf, nil
+}
+
+// pickResultSetToSurface picks the result set we display to the widget,
+// matching the rule the user asked for: prefer the last result set that
+// returned columns; fall back to the last result set if none have columns;
+// nil if the slice is empty.
+func pickResultSetToSurface(results []bufferedResultSet) *bufferedResultSet {
+	if len(results) == 0 {
+		return nil
+	}
+	for i := len(results) - 1; i >= 0; i-- {
+		if len(results[i].columns) > 0 {
+			return &results[i]
+		}
+	}
+	return &results[len(results)-1]
 }
 
 // checkProject rejects requests for a different project than the one the CLI
