@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import '@timescale/popsql-query-widget/index.css';
 
 import { QueryPanel } from './components/QueryPanel';
-import { useServeStore, type PersistedState } from './store';
+import { type PersistedState, useServeStore } from './store';
 
 interface Bootstrap {
   projectId: string;
@@ -25,9 +25,9 @@ async function fetchJSON<T>(path: string): Promise<T> {
 const READY_STATUSES = new Set(['ready', 'running']);
 
 function pickDefaultDatabaseId(databases: Database[]): string | null {
-  if (databases.length === 1) return databases[0]!.id;
+  if (databases.length === 1) return databases[0]?.id ?? null;
   const ready = databases.filter((db) => READY_STATUSES.has(db.status));
-  if (ready.length === 1) return ready[0]!.id;
+  if (ready.length === 1) return ready[0]?.id ?? null;
   return null;
 }
 
@@ -79,7 +79,8 @@ function ReadyApp({ bootstrap }: ReadyAppProps) {
       const data = await fetchJSON<Database[]>('/api/databases');
       if (!useServeStore.getState().selectedDatabaseId) {
         const defaultId = pickDefaultDatabaseId(data);
-        if (defaultId) useServeStore.getState().setSelectedDatabaseId(defaultId);
+        if (defaultId)
+          useServeStore.getState().setSelectedDatabaseId(defaultId);
       }
       return data;
     },
@@ -91,7 +92,9 @@ function ReadyApp({ bootstrap }: ReadyAppProps) {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
-        <div className="font-mono text-lg font-semibold tracking-tight">ghost</div>
+        <div className="font-mono text-lg font-semibold tracking-tight">
+          ghost
+        </div>
         <div className="flex items-center gap-2 text-sm">
           {databases.isError ? (
             <span className="text-red-600">Failed to load databases</span>
@@ -122,7 +125,9 @@ function ReadyApp({ bootstrap }: ReadyAppProps) {
       </header>
       <main className="flex flex-auto flex-col overflow-hidden p-4">
         {!selected ? (
-          <div className="text-slate-500">Select a database to run queries.</div>
+          <div className="text-slate-500">
+            Select a database to run queries.
+          </div>
         ) : (
           <QueryPanel
             projectId={bootstrap.projectId}

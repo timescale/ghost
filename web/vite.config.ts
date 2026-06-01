@@ -1,9 +1,9 @@
-import { defineConfig, type Plugin } from 'vite';
-import react from '@vitejs/plugin-react';
-import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import react from '@vitejs/plugin-react';
+import { defineConfig, type Plugin } from 'vite';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 const ghostServePort = process.env.GHOST_SERVE_DEV_PORT ?? '5174';
 
@@ -18,9 +18,12 @@ function copyPopsqlQueryWidgetAssets(): Plugin {
     apply: 'build',
     async generateBundle() {
       const require = createRequire(import.meta.url);
-      const widgetPkgJson = require.resolve('@timescale/popsql-query-widget/package.json');
+      const widgetPkgJson = require.resolve(
+        '@timescale/popsql-query-widget/package.json',
+      );
       const widgetDir = dirname(widgetPkgJson);
-      const pattern = /^(duckdb-browser-(?:eh|mvp)\.worker\.js|editor\.worker\.js|.+\.wasm)$/;
+      const pattern =
+        /^(duckdb-browser-(?:eh|mvp)\.worker\.js|editor\.worker\.js|.+\.wasm)$/;
       for (const entry of readdirSync(widgetDir, { withFileTypes: true })) {
         if (!entry.isFile() || !pattern.test(entry.name)) continue;
         this.emitFile({
@@ -50,8 +53,14 @@ export default defineConfig({
     port: 5173,
     strictPort: false,
     proxy: {
-      '/api': { target: `http://127.0.0.1:${ghostServePort}`, changeOrigin: true },
-      '/healthz': { target: `http://127.0.0.1:${ghostServePort}`, changeOrigin: true },
+      '/api': {
+        target: `http://127.0.0.1:${ghostServePort}`,
+        changeOrigin: true,
+      },
+      '/healthz': {
+        target: `http://127.0.0.1:${ghostServePort}`,
+        changeOrigin: true,
+      },
     },
   },
   build: {

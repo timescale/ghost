@@ -1,4 +1,3 @@
-import type React from 'react';
 import {
   ContextMenuContext,
   ContextMenuProvider,
@@ -7,6 +6,7 @@ import {
   QueryWidgetProvider,
   TimescaleResultsCacheContextProvider,
 } from '@timescale/popsql-query-widget';
+import type React from 'react';
 import { useCallback, useState } from 'react';
 
 interface Props {
