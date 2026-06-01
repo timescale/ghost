@@ -7,9 +7,7 @@ import {
   QueryWidgetProvider,
   TimescaleResultsCacheContextProvider,
 } from '@timescale/popsql-query-widget';
-import { useMemo, useRef, useState } from 'react';
-
-import { countStatements } from '../lib/sql';
+import { useMemo, useState } from 'react';
 
 // Monaco's KeyMod/KeyCode constants are numeric and stable; hardcoding
 // avoids dragging another copy of monaco-editor into this bundle just to
@@ -71,7 +69,6 @@ export function QueryPanel({
   onResizeEditor,
 }: Props) {
   const [statementCount, setStatementCount] = useState(0);
-  const lastRunSQLRef = useRef<string>('');
   // Plugin must be stable across renders so PopsqlEditor's initDeps don't
   // think the plugin set changed and re-create the editor.
   const editorPlugins = useMemo(() => [preserveSelectionPlugin] as any, []);
@@ -93,15 +90,12 @@ export function QueryPanel({
             sessionKey={`ghost-${databaseId}`}
             runSelection
             runButtonLabelWithSelection="Run selection"
-            onQueryRun={({ query: executedSQL }) => {
-              lastRunSQLRef.current = executedSQL;
-            }}
             onQueryComplete={(args) => {
               // Only surface the counter when the run actually succeeded;
               // for errors / cancels, hide it to avoid implying anything
               // about what got committed.
               if ('rowsAffected' in args) {
-                setStatementCount(countStatements(lastRunSQLRef.current));
+                setStatementCount(args.statementCount ?? 0);
               } else {
                 setStatementCount(0);
               }
