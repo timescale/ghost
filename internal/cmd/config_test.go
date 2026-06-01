@@ -68,15 +68,15 @@ version_check: true
 		{
 			name: "all flag text output",
 			args: []string{"config", "--all"},
-			wantStdout: "analytics        true                            \n" +
-				"color            true                            \n" +
-				"read_only        false                           \n" +
-				"version_check    true                            \n" +
-				"api_url          https://api.ghost.build/v0      \n" +
-				"disable_keyring  false                           \n" +
-				"docs_mcp_url     https://mcp.tigerdata.com/docs  \n" +
-				"releases_url     https://install.ghost.build     \n" +
-				"share_url        https://ghost.build/share       \n",
+			wantStdout: "analytics      true                            \n" +
+				"color          true                            \n" +
+				"read_only      false                           \n" +
+				"version_check  true                            \n" +
+				"api_url        https://api.ghost.build/v0      \n" +
+				"docs_mcp_url   https://mcp.tigerdata.com/docs  \n" +
+				"keyring        true                            \n" +
+				"releases_url   https://install.ghost.build     \n" +
+				"share_url      https://ghost.build/share       \n",
 		},
 		{
 			name: "all flag json output",
@@ -85,8 +85,8 @@ version_check: true
   "api_url": "https://api.ghost.build/v0",
   "analytics": true,
   "color": true,
-  "disable_keyring": false,
   "docs_mcp_url": "https://mcp.tigerdata.com/docs",
+  "keyring": true,
   "read_only": false,
   "releases_url": "https://install.ghost.build",
   "share_url": "https://ghost.build/share",
@@ -100,8 +100,8 @@ version_check: true
 			wantStdout: `analytics: true
 api_url: https://api.ghost.build/v0
 color: true
-disable_keyring: false
 docs_mcp_url: https://mcp.tigerdata.com/docs
+keyring: true
 read_only: false
 releases_url: https://install.ghost.build
 share_url: https://ghost.build/share
@@ -112,15 +112,15 @@ version_check: true
 			name: "env and all flags text output",
 			args: []string{"config", "--env", "--all"},
 			opts: []runOption{withEnv("GHOST_COLOR", "false")},
-			wantStdout: "analytics        true                            \n" +
-				"color            false                           \n" +
-				"read_only        false                           \n" +
-				"version_check    true                            \n" +
-				"api_url          https://api.ghost.build/v0      \n" +
-				"disable_keyring  false                           \n" +
-				"docs_mcp_url     https://mcp.tigerdata.com/docs  \n" +
-				"releases_url     https://install.ghost.build     \n" +
-				"share_url        https://ghost.build/share       \n",
+			wantStdout: "analytics      true                            \n" +
+				"color          false                           \n" +
+				"read_only      false                           \n" +
+				"version_check  true                            \n" +
+				"api_url        https://api.ghost.build/v0      \n" +
+				"docs_mcp_url   https://mcp.tigerdata.com/docs  \n" +
+				"keyring        true                            \n" +
+				"releases_url   https://install.ghost.build     \n" +
+				"share_url      https://ghost.build/share       \n",
 		},
 		{
 			name: "env and all flags json output",
@@ -130,8 +130,8 @@ version_check: true
   "api_url": "https://api.ghost.build/v0",
   "analytics": true,
   "color": false,
-  "disable_keyring": false,
   "docs_mcp_url": "https://mcp.tigerdata.com/docs",
+  "keyring": true,
   "read_only": false,
   "releases_url": "https://install.ghost.build",
   "share_url": "https://ghost.build/share",
@@ -146,8 +146,8 @@ version_check: true
 			wantStdout: `analytics: true
 api_url: https://api.ghost.build/v0
 color: false
-disable_keyring: false
 docs_mcp_url: https://mcp.tigerdata.com/docs
+keyring: true
 read_only: false
 releases_url: https://install.ghost.build
 share_url: https://ghost.build/share

@@ -37,7 +37,7 @@ func (c *Config) StoreCredentials(creds Credentials) error {
 	}
 
 	// Try keyring first, unless disabled
-	if !c.DisableKeyring {
+	if c.Keyring {
 		if err := c.storeToKeyring(string(credentialsJSON)); err == nil {
 			return nil
 		}
@@ -80,7 +80,7 @@ var ErrNotLoggedIn = errors.New("not logged in")
 // GetCredentials retrieves stored credentials (OAuth token or API key + project ID).
 func (c *Config) GetCredentials() (Credentials, error) {
 	// Try keyring first, unless disabled
-	if !c.DisableKeyring {
+	if c.Keyring {
 		if creds, err := c.getCredentialsFromKeyring(); err == nil {
 			return creds, nil
 		}
@@ -136,10 +136,10 @@ func parseCredentials(combined string) (Credentials, error) {
 }
 
 // RemoveCredentials removes stored credentials from keyring and file fallback.
-// When DisableKeyring is set, the keyring is left untouched so that a logout in
+// When Keyring is disabled, the keyring is left untouched so that a logout in
 // one config dir doesn't wipe credentials shared by another.
 func (c *Config) RemoveCredentials() error {
-	if !c.DisableKeyring {
+	if c.Keyring {
 		// Remove from keyring (ignore errors as it might not exist)
 		c.removeCredentialsFromKeyring()
 	}

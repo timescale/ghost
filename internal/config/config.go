@@ -17,30 +17,30 @@ import (
 )
 
 type Config struct {
-	APIURL         string `mapstructure:"api_url"`
-	Analytics      bool   `mapstructure:"analytics"`
-	Color          bool   `mapstructure:"color"`
-	DisableKeyring bool   `mapstructure:"disable_keyring"`
-	DocsMCPURL     string `mapstructure:"docs_mcp_url"`
-	ReadOnly       bool   `mapstructure:"read_only"`
-	ReleasesURL    string `mapstructure:"releases_url"`
-	ShareURL       string `mapstructure:"share_url"`
-	VersionCheck   bool   `mapstructure:"version_check"`
+	APIURL       string `mapstructure:"api_url"`
+	Analytics    bool   `mapstructure:"analytics"`
+	Color        bool   `mapstructure:"color"`
+	DocsMCPURL   string `mapstructure:"docs_mcp_url"`
+	Keyring      bool   `mapstructure:"keyring"`
+	ReadOnly     bool   `mapstructure:"read_only"`
+	ReleasesURL  string `mapstructure:"releases_url"`
+	ShareURL     string `mapstructure:"share_url"`
+	VersionCheck bool   `mapstructure:"version_check"`
 
 	ConfigDir string         `mapstructure:"-"`
 	flags     *pflag.FlagSet `mapstructure:"-"`
 }
 
 type ConfigOutput struct {
-	APIURL         *string `mapstructure:"api_url" json:"api_url,omitempty"`
-	Analytics      *bool   `mapstructure:"analytics" json:"analytics,omitempty"`
-	Color          *bool   `mapstructure:"color" json:"color,omitempty"`
-	DisableKeyring *bool   `mapstructure:"disable_keyring" json:"disable_keyring,omitempty"`
-	DocsMCPURL     *string `mapstructure:"docs_mcp_url" json:"docs_mcp_url,omitempty"`
-	ReadOnly       *bool   `mapstructure:"read_only" json:"read_only,omitempty"`
-	ReleasesURL    *string `mapstructure:"releases_url" json:"releases_url,omitempty"`
-	ShareURL       *string `mapstructure:"share_url" json:"share_url,omitempty"`
-	VersionCheck   *bool   `mapstructure:"version_check" json:"version_check,omitempty"`
+	APIURL       *string `mapstructure:"api_url" json:"api_url,omitempty"`
+	Analytics    *bool   `mapstructure:"analytics" json:"analytics,omitempty"`
+	Color        *bool   `mapstructure:"color" json:"color,omitempty"`
+	DocsMCPURL   *string `mapstructure:"docs_mcp_url" json:"docs_mcp_url,omitempty"`
+	Keyring      *bool   `mapstructure:"keyring" json:"keyring,omitempty"`
+	ReadOnly     *bool   `mapstructure:"read_only" json:"read_only,omitempty"`
+	ReleasesURL  *string `mapstructure:"releases_url" json:"releases_url,omitempty"`
+	ShareURL     *string `mapstructure:"share_url" json:"share_url,omitempty"`
+	VersionCheck *bool   `mapstructure:"version_check" json:"version_check,omitempty"`
 
 	ConfigDir string       `mapstructure:"-" json:"-"`
 	viper     *viper.Viper `mapstructure:"-" json:"-"`
@@ -49,15 +49,15 @@ type ConfigOutput struct {
 const configFileName = "config.yaml"
 
 const (
-	defaultAPIURL         = "https://api.ghost.build/v0"
-	defaultAnalytics      = true
-	defaultColor          = true
-	defaultDisableKeyring = false
-	defaultDocsMCPURL     = "https://mcp.tigerdata.com/docs"
-	defaultReadOnly       = false
-	defaultReleasesURL    = "https://install.ghost.build"
-	defaultShareURL       = "https://ghost.build/share"
-	defaultVersionCheck   = true
+	defaultAPIURL       = "https://api.ghost.build/v0"
+	defaultAnalytics    = true
+	defaultColor        = true
+	defaultDocsMCPURL   = "https://mcp.tigerdata.com/docs"
+	defaultKeyring      = true
+	defaultReadOnly     = false
+	defaultReleasesURL  = "https://install.ghost.build"
+	defaultShareURL     = "https://ghost.build/share"
+	defaultVersionCheck = true
 )
 
 var publicDefaultValues = map[string]any{
@@ -68,11 +68,11 @@ var publicDefaultValues = map[string]any{
 }
 
 var privateDefaultValues = map[string]any{
-	"api_url":         defaultAPIURL,
-	"disable_keyring": defaultDisableKeyring,
-	"docs_mcp_url":    defaultDocsMCPURL,
-	"releases_url":    defaultReleasesURL,
-	"share_url":       defaultShareURL,
+	"api_url":      defaultAPIURL,
+	"docs_mcp_url": defaultDocsMCPURL,
+	"keyring":      defaultKeyring,
+	"releases_url": defaultReleasesURL,
+	"share_url":    defaultShareURL,
 }
 
 var defaultValues = func() map[string]any {
@@ -300,7 +300,7 @@ func validateValue(key, val string) (any, error) {
 	switch key {
 	case "api_url", "docs_mcp_url", "releases_url", "share_url":
 		return val, nil
-	case "analytics", "color", "disable_keyring", "read_only", "version_check":
+	case "analytics", "color", "keyring", "read_only", "version_check":
 		return parseBool(key, val)
 	default:
 		return nil, fmt.Errorf("unknown configuration key: %s", key)
