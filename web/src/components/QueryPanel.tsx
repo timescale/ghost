@@ -91,14 +91,7 @@ export function QueryPanel({
             runSelection
             runButtonLabelWithSelection="Run selection"
             onQueryComplete={(args) => {
-              // Only surface the counter when the run actually succeeded;
-              // for errors / cancels, hide it to avoid implying anything
-              // about what got committed.
-              if ('rowsAffected' in args) {
-                setStatementCount(args.statementCount ?? 0);
-              } else {
-                setStatementCount(0);
-              }
+              setStatementCount(args.statementCount ?? 0);
             }}
             renderToolbarAppendLeft={({ isRunning }) => {
               if (isRunning || statementCount <= 1) return null;
