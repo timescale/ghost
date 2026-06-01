@@ -36,9 +36,11 @@ func (c *Config) StoreCredentials(creds Credentials) error {
 		return fmt.Errorf("failed to marshal credentials: %w", err)
 	}
 
-	// Try keyring first
-	if err := c.storeToKeyring(string(credentialsJSON)); err == nil {
-		return nil
+	// Try keyring first, unless disabled
+	if !c.DisableKeyring {
+		if err := c.storeToKeyring(string(credentialsJSON)); err == nil {
+			return nil
+		}
 	}
 
 	// Fallback to file storage
@@ -77,9 +79,11 @@ var ErrNotLoggedIn = errors.New("not logged in")
 
 // GetCredentials retrieves stored credentials (OAuth token or API key + project ID).
 func (c *Config) GetCredentials() (Credentials, error) {
-	// Try keyring first
-	if creds, err := c.getCredentialsFromKeyring(); err == nil {
-		return creds, nil
+	// Try keyring first, unless disabled
+	if !c.DisableKeyring {
+		if creds, err := c.getCredentialsFromKeyring(); err == nil {
+			return creds, nil
+		}
 	}
 
 	// Fallback to file storage
@@ -131,10 +135,14 @@ func parseCredentials(combined string) (Credentials, error) {
 	return creds, nil
 }
 
-// RemoveCredentials removes stored credentials from keyring and file fallback
+// RemoveCredentials removes stored credentials from keyring and file fallback.
+// When DisableKeyring is set, the keyring is left untouched so that a logout in
+// one config dir doesn't wipe credentials shared by another.
 func (c *Config) RemoveCredentials() error {
-	// Remove from keyring (ignore errors as it might not exist)
-	c.removeCredentialsFromKeyring()
+	if !c.DisableKeyring {
+		// Remove from keyring (ignore errors as it might not exist)
+		c.removeCredentialsFromKeyring()
+	}
 	return c.removeCredentialsFile()
 }
 
