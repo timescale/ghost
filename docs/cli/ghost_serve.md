@@ -10,9 +10,9 @@ Launch a local web UI for running SQL queries
 
 ### Synopsis
 
-Start a local web server on 127.0.0.1 and open a browser to a UI that lets
-you run SQL queries against your ghost databases. The server runs only for
-the duration of this command — press Ctrl+C to stop it.
+Start a local web server and open a browser to a UI that lets you run SQL
+queries against your ghost databases. The server runs only for the duration
+of this command — press Ctrl+C to stop it.
 
 ```
 ghost serve [flags]
