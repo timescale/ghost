@@ -7,43 +7,7 @@ import {
   QueryWidgetProvider,
   TimescaleResultsCacheContextProvider,
 } from '@timescale/popsql-query-widget';
-import { useMemo, useState } from 'react';
-
-// Monaco's KeyMod/KeyCode constants are numeric and stable; hardcoding
-// avoids dragging another copy of monaco-editor into this bundle just to
-// reference the enum values.
-const KEYMOD_CTRLCMD = 1 << 11; // 2048
-const KEYMOD_WINCTRL = 1 << 8; // 256
-const KEYCODE_ENTER = 3;
-
-// preserveSelectionPlugin keeps the editor selection intact when the user
-// fires the run-query keybinding. The widget's own `execute-query` action
-// somehow loses the selection (cursor jumps to the document start), even
-// though the equivalent button click does not. We register our own action
-// for the same keybindings; Monaco prefers later-registered actions, so
-// ours wins. We snapshot the selection, dispatch the widget's action via
-// `trigger`, then restore the selection.
-const preserveSelectionPlugin = {
-  id: 'preserve-selection-on-run',
-  init: ({ editor }: { editor: any }) => {
-    const disposer = editor.addAction({
-      id: 'ghost-execute-query-preserve-selection',
-      label: 'Execute query (preserve selection)',
-      keybindings: [
-        KEYMOD_CTRLCMD | KEYCODE_ENTER,
-        KEYMOD_WINCTRL | KEYCODE_ENTER,
-      ],
-      run: (ed: any) => {
-        const selection = ed.getSelection();
-        ed.trigger('keyboard', 'execute-query', null);
-        if (selection && !selection.isEmpty()) {
-          ed.setSelection(selection);
-        }
-      },
-    });
-    return [disposer];
-  },
-};
+import { useCallback, useState } from 'react';
 
 interface Props {
   projectId: string;
@@ -69,9 +33,38 @@ export function QueryPanel({
   onResizeEditor,
 }: Props) {
   const [statementCount, setStatementCount] = useState(0);
-  // Plugin must be stable across renders so PopsqlEditor's initDeps don't
-  // think the plugin set changed and re-create the editor.
-  const editorPlugins = useMemo(() => [preserveSelectionPlugin] as any, []);
+
+  const handleQueryComplete = useCallback(
+    (args: { statementCount?: number }) => {
+      setStatementCount(args.statementCount ?? 0);
+    },
+    [],
+  );
+
+  const renderToolbarAppendLeft = useCallback(
+    ({ isRunning }: { isRunning: boolean }) => {
+      if (isRunning || statementCount <= 1) return null;
+      return (
+        <span className="ml-2 text-xs text-slate-500">
+          Executed {statementCount} statements
+        </span>
+      );
+    },
+    [statementCount],
+  );
+
+  const getExecuteQueryData = useCallback(
+    ({ runId, query: q }: { runId: string; query: string }) => ({
+      engine: ExecuteQueryEngine.timescaleQuery,
+      params: {
+        projectId,
+        serviceId: databaseId,
+        query: q,
+        runId,
+      },
+    }),
+    [projectId, databaseId],
+  );
 
   return (
     <TimescaleResultsCacheContextProvider baseUrl={window.location.origin}>
@@ -83,33 +76,15 @@ export function QueryPanel({
             editorMinHeight={200}
             editorHeight={editorHeight}
             onResizeEditor={onResizeEditor}
-            editorPlugins={editorPlugins}
-            id={`ghost-${databaseId}`}
+            id={databaseId}
             query={query}
             onQueryChange={onQueryChange}
-            sessionKey={`ghost-${databaseId}`}
+            sessionKey={databaseId}
             runSelection
             runButtonLabelWithSelection="Run selection"
-            onQueryComplete={(args) => {
-              setStatementCount(args.statementCount ?? 0);
-            }}
-            renderToolbarAppendLeft={({ isRunning }) => {
-              if (isRunning || statementCount <= 1) return null;
-              return (
-                <span className="ml-2 text-xs text-slate-500">
-                  Executed {statementCount} statements
-                </span>
-              );
-            }}
-            getExecuteQueryData={({ runId, query }) => ({
-              engine: ExecuteQueryEngine.timescaleQuery,
-              params: {
-                projectId,
-                serviceId: databaseId,
-                query,
-                runId,
-              },
-            })}
+            onQueryComplete={handleQueryComplete}
+            renderToolbarAppendLeft={renderToolbarAppendLeft}
+            getExecuteQueryData={getExecuteQueryData}
           />
           <ContextMenuContext.Consumer>
             {({ render }: { render: () => React.ReactNode }) => render()}
