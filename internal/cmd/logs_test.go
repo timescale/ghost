@@ -13,16 +13,20 @@ import (
 )
 
 // logsParamsMatcher returns a gomock.Matcher that checks DatabaseLogsParams
-// fields. Page must match exactly. If until is non-zero, Until must match
-// exactly; otherwise Until is only checked for non-nil (since FetchLogs
-// defaults to time.Now()).
-func logsParamsMatcher(page int, until time.Time) gomock.Matcher {
+// fields. The cursor argument must match exactly (nil for the first call,
+// pointing to the expected value for subsequent calls). If until is non-zero,
+// Until must match exactly; otherwise Until is only checked for non-nil
+// (since FetchLogs defaults to time.Now()).
+func logsParamsMatcher(cursor *string, until time.Time) gomock.Matcher {
 	return gomock.Cond(func(x any) bool {
 		params, ok := x.(*api.DatabaseLogsParams)
 		if !ok || params == nil {
 			return false
 		}
-		if params.Page == nil || *params.Page != page {
+		switch {
+		case cursor == nil && params.Cursor != nil:
+			return false
+		case cursor != nil && (params.Cursor == nil || *params.Cursor != *cursor):
 			return false
 		}
 		if !until.IsZero() {
@@ -32,7 +36,20 @@ func logsParamsMatcher(page int, until time.Time) gomock.Matcher {
 	})
 }
 
+// logEntry is a test helper that builds a LogEntry with the given timestamp
+// and message, using the default LOG severity.
+func logEntry(timestamp time.Time, message string) api.LogEntry {
+	return api.LogEntry{
+		Timestamp: timestamp,
+		Message:   message,
+		Severity:  "LOG",
+	}
+}
+
 func TestLogsCmd(t *testing.T) {
+	t1 := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	t2 := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+
 	tests := []cmdTest{
 		{
 			name:    "not logged in",
@@ -44,7 +61,7 @@ func TestLogsCmd(t *testing.T) {
 			name: "network error",
 			args: []string{"logs", "abc1234567"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
-				m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(0, time.Time{})).
+				m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(nil, time.Time{})).
 					Return(nil, errors.New("connection refused"))
 			},
 			wantErr: "failed to fetch logs: connection refused",
@@ -53,7 +70,7 @@ func TestLogsCmd(t *testing.T) {
 			name: "API error",
 			args: []string{"logs", "abc1234567"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
-				m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(0, time.Time{})).
+				m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(nil, time.Time{})).
 					Return(&api.DatabaseLogsResponse{
 						HTTPResponse: httpResponse(http.StatusInternalServerError),
 						JSONDefault:  &api.Error{Message: "internal error"},
@@ -65,7 +82,7 @@ func TestLogsCmd(t *testing.T) {
 			name: "nil response body",
 			args: []string{"logs", "abc1234567"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
-				m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(0, time.Time{})).
+				m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(nil, time.Time{})).
 					Return(&api.DatabaseLogsResponse{
 						HTTPResponse: httpResponse(http.StatusOK),
 						JSON200:      nil,
@@ -77,41 +94,37 @@ func TestLogsCmd(t *testing.T) {
 			name: "text output",
 			args: []string{"logs", "abc1234567"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
-				gomock.InOrder(
-					m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(0, time.Time{})).
-						Return(&api.DatabaseLogsResponse{
-							HTTPResponse: httpResponse(http.StatusOK),
-							JSON200:      &api.LogsResponse{Logs: []string{"2024-01-02 LOG: msg2", "2024-01-01 LOG: msg1"}},
-						}, nil),
-					m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(1, time.Time{})).
-						Return(&api.DatabaseLogsResponse{
-							HTTPResponse: httpResponse(http.StatusOK),
-							JSON200:      &api.LogsResponse{Logs: []string{}},
-						}, nil),
-				)
+				m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(nil, time.Time{})).
+					Return(&api.DatabaseLogsResponse{
+						HTTPResponse: httpResponse(http.StatusOK),
+						JSON200: &api.LogsResponse{
+							Entries: []api.LogEntry{
+								logEntry(t2, "msg2"),
+								logEntry(t1, "msg1"),
+							},
+						},
+					}, nil)
 			},
-			wantStdout: "2024-01-01 LOG: msg1\n2024-01-02 LOG: msg2\n", // ANSI stripped by test helper
+			wantStdout: "2024-01-01 00:00:00 UTC msg1\n2024-01-02 00:00:00 UTC msg2\n",
 		},
 		{
 			name: "json output",
 			args: []string{"logs", "abc1234567", "--json"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
-				gomock.InOrder(
-					m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(0, time.Time{})).
-						Return(&api.DatabaseLogsResponse{
-							HTTPResponse: httpResponse(http.StatusOK),
-							JSON200:      &api.LogsResponse{Logs: []string{"2024-01-02 LOG: msg2", "2024-01-01 LOG: msg1"}},
-						}, nil),
-					m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(1, time.Time{})).
-						Return(&api.DatabaseLogsResponse{
-							HTTPResponse: httpResponse(http.StatusOK),
-							JSON200:      &api.LogsResponse{Logs: []string{}},
-						}, nil),
-				)
+				m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(nil, time.Time{})).
+					Return(&api.DatabaseLogsResponse{
+						HTTPResponse: httpResponse(http.StatusOK),
+						JSON200: &api.LogsResponse{
+							Entries: []api.LogEntry{
+								logEntry(t2, "msg2"),
+								logEntry(t1, "msg1"),
+							},
+						},
+					}, nil)
 			},
 			wantStdout: `[
-  "2024-01-01 LOG: msg1",
-  "2024-01-02 LOG: msg2"
+  "2024-01-01 00:00:00 UTC msg1",
+  "2024-01-02 00:00:00 UTC msg2"
 ]
 `,
 		},
@@ -119,31 +132,29 @@ func TestLogsCmd(t *testing.T) {
 			name: "yaml output",
 			args: []string{"logs", "abc1234567", "--yaml"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
-				gomock.InOrder(
-					m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(0, time.Time{})).
-						Return(&api.DatabaseLogsResponse{
-							HTTPResponse: httpResponse(http.StatusOK),
-							JSON200:      &api.LogsResponse{Logs: []string{"2024-01-02 LOG: msg2", "2024-01-01 LOG: msg1"}},
-						}, nil),
-					m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(1, time.Time{})).
-						Return(&api.DatabaseLogsResponse{
-							HTTPResponse: httpResponse(http.StatusOK),
-							JSON200:      &api.LogsResponse{Logs: []string{}},
-						}, nil),
-				)
+				m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(nil, time.Time{})).
+					Return(&api.DatabaseLogsResponse{
+						HTTPResponse: httpResponse(http.StatusOK),
+						JSON200: &api.LogsResponse{
+							Entries: []api.LogEntry{
+								logEntry(t2, "msg2"),
+								logEntry(t1, "msg1"),
+							},
+						},
+					}, nil)
 			},
-			wantStdout: `- '2024-01-01 LOG: msg1'
-- '2024-01-02 LOG: msg2'
+			wantStdout: `- 2024-01-01 00:00:00 UTC msg1
+- 2024-01-02 00:00:00 UTC msg2
 `,
 		},
 		{
 			name: "empty logs",
 			args: []string{"logs", "abc1234567"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
-				m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(0, time.Time{})).
+				m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(nil, time.Time{})).
 					Return(&api.DatabaseLogsResponse{
 						HTTPResponse: httpResponse(http.StatusOK),
-						JSON200:      &api.LogsResponse{Logs: []string{}},
+						JSON200:      &api.LogsResponse{Entries: []api.LogEntry{}},
 					}, nil)
 			},
 			wantStdout: "",
@@ -152,33 +163,61 @@ func TestLogsCmd(t *testing.T) {
 			name: "tail flag",
 			args: []string{"logs", "abc1234567", "--tail", "1"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
-				m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(0, time.Time{})).
+				m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(nil, time.Time{})).
 					Return(&api.DatabaseLogsResponse{
 						HTTPResponse: httpResponse(http.StatusOK),
-						JSON200:      &api.LogsResponse{Logs: []string{"log2", "log1"}},
+						JSON200: &api.LogsResponse{
+							Entries: []api.LogEntry{
+								logEntry(t2, "msg2"),
+								logEntry(t1, "msg1"),
+							},
+						},
 					}, nil)
 			},
-			wantStdout: "log2\n",
+			wantStdout: "2024-01-02 00:00:00 UTC msg2\n",
+		},
+		{
+			name: "cursor pagination",
+			args: []string{"logs", "abc1234567", "--tail", "3"},
+			setup: func(m *mock.MockClientWithResponsesInterface) {
+				cursor := "page-2-cursor"
+				gomock.InOrder(
+					m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(nil, time.Time{})).
+						Return(&api.DatabaseLogsResponse{
+							HTTPResponse: httpResponse(http.StatusOK),
+							JSON200: &api.LogsResponse{
+								Entries: []api.LogEntry{
+									logEntry(t2, "msg3"),
+									logEntry(t2, "msg2"),
+								},
+								LastCursor: &cursor,
+							},
+						}, nil),
+					m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(&cursor, time.Time{})).
+						Return(&api.DatabaseLogsResponse{
+							HTTPResponse: httpResponse(http.StatusOK),
+							JSON200: &api.LogsResponse{
+								Entries: []api.LogEntry{logEntry(t1, "msg1")},
+							},
+						}, nil),
+				)
+			},
+			wantStdout: "2024-01-01 00:00:00 UTC msg1\n2024-01-02 00:00:00 UTC msg2\n2024-01-02 00:00:00 UTC msg3\n",
 		},
 		{
 			name: "until flag",
 			args: []string{"logs", "abc1234567", "--until", "2024-06-15T10:00:00Z"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {
 				until := time.Date(2024, 6, 15, 10, 0, 0, 0, time.UTC)
-				gomock.InOrder(
-					m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(0, until)).
-						Return(&api.DatabaseLogsResponse{
-							HTTPResponse: httpResponse(http.StatusOK),
-							JSON200:      &api.LogsResponse{Logs: []string{"log before cutoff"}},
-						}, nil),
-					m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(1, until)).
-						Return(&api.DatabaseLogsResponse{
-							HTTPResponse: httpResponse(http.StatusOK),
-							JSON200:      &api.LogsResponse{Logs: []string{}},
-						}, nil),
-				)
+				m.EXPECT().DatabaseLogsWithResponse(validCtx, "test-project", "abc1234567", logsParamsMatcher(nil, until)).
+					Return(&api.DatabaseLogsResponse{
+						HTTPResponse: httpResponse(http.StatusOK),
+						JSON200: &api.LogsResponse{
+							Entries: []api.LogEntry{logEntry(t1, "log before cutoff")},
+						},
+					}, nil)
 			},
-			wantStdout: "log before cutoff\n",
+			wantStdout: "2024-01-01 00:00:00 UTC log before cutoff\n",
 		},
 	}
 

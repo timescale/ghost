@@ -368,6 +368,18 @@ type InvoicesResponse struct {
 	Invoices []Invoice `json:"invoices"`
 }
 
+// LogEntry defines model for LogEntry.
+type LogEntry struct {
+	// Message Log message text
+	Message string `json:"message"`
+
+	// Severity PostgreSQL severity level (e.g. LOG, WARNING, ERROR, FATAL)
+	Severity string `json:"severity"`
+
+	// Timestamp Timestamp of the log entry (RFC3339 format)
+	Timestamp time.Time `json:"timestamp"`
+}
+
 // LogoutRequest defines model for LogoutRequest.
 type LogoutRequest struct {
 	// RefreshToken Refresh token to revoke.
@@ -376,8 +388,14 @@ type LogoutRequest struct {
 
 // LogsResponse defines model for LogsResponse.
 type LogsResponse struct {
-	// Logs Log lines, most recent first.
-	Logs []string `json:"logs"`
+	// Entries Log entries, most recent first.
+	Entries []LogEntry `json:"entries"`
+
+	// LastCursor Opaque cursor for the next page of results. Present when more log
+	// entries exist older than the last entry in this response. Pass
+	// this value as the `cursor` query parameter to retrieve the next
+	// page. Absent when there are no further results.
+	LastCursor *string `json:"last_cursor,omitempty"`
 }
 
 // PaymentMethod A payment method on file for a space.
@@ -582,11 +600,26 @@ type SpaceId = string
 
 // DatabaseLogsParams defines parameters for DatabaseLogs.
 type DatabaseLogsParams struct {
-	// Page Zero-indexed page number for backward pagination. Page 0 returns the most recent logs; each successive page fetches older entries.
-	Page *int `form:"page,omitempty" json:"page,omitempty"`
+	// Cursor Opaque pagination cursor returned as `last_cursor` in a previous
+	// response. When provided, returns the next page of logs older than
+	// the cursor position.
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 
-	// Until Return logs at or before this timestamp. Defaults to now.
+	// Until Upper bound timestamp — return logs at or before this time (RFC3339 format, e.g., 2024-01-15T10:00:00Z). Defaults to now.
 	Until *time.Time `form:"until,omitempty" json:"until,omitempty"`
+
+	// Since Lower bound timestamp — fetch logs after this time (RFC3339 format, e.g., 2024-01-15T09:00:00Z)
+	Since *time.Time `form:"since,omitempty" json:"since,omitempty"`
+
+	// Search Full-text search terms to filter log lines. Repeat the parameter
+	// for multiple values (e.g. `?search=slow+query&search=ERROR`).
+	Search *[]string `form:"search,omitempty" json:"search,omitempty"`
+
+	// Severity Severity levels to filter results. Repeat the parameter for multiple
+	// values (e.g. `?severity=ERROR&severity=WARNING`). Common values
+	// include `LOG`, `WARNING`, `ERROR`, and `FATAL`; PostgreSQL may also
+	// emit `DEBUG*`, `INFO`, `NOTICE`, and `PANIC`.
+	Severity *[]string `form:"severity,omitempty" json:"severity,omitempty"`
 }
 
 // AnalyticsIdentifyJSONRequestBody defines body for AnalyticsIdentify for application/json ContentType.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"slices"
 	"time"
 
@@ -19,16 +20,32 @@ type FetchLogsArgs struct {
 	Until       time.Time
 }
 
-// FetchLogs fetches database logs with pagination up to the specified tail
-// limit. Returns logs in ascending chronological order (oldest first).
+// leadingTimestampPattern matches log lines that already begin with an
+// embedded timestamp in the form "YYYY-MM-DD HH:MM:SS" (with either a space
+// or 'T' separator). Used to avoid double-prefixing a timestamp onto lines
+// that already have one (e.g. pgbackrest output).
+var leadingTimestampPattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}`)
+
+// formatLogEntry renders a structured log entry as a single string of the
+// form `YYYY-MM-DD HH:MM:SS UTC <message>`. Lines that already begin with
+// an embedded timestamp (e.g. pgbackrest output) are returned unprefixed.
+func formatLogEntry(entry api.LogEntry) string {
+	if leadingTimestampPattern.MatchString(entry.Message) {
+		return entry.Message
+	}
+	return entry.Timestamp.UTC().Format("2006-01-02 15:04:05 UTC") + " " + entry.Message
+}
+
+// FetchLogs fetches database logs with cursor-based pagination up to the
+// specified tail limit. Returns logs in ascending chronological order
+// (oldest first), formatted as `YYYY-MM-DD HH:MM:SS UTC <message>`.
 func FetchLogs(ctx context.Context, args FetchLogsArgs) ([]string, error) {
 	params := &api.DatabaseLogsParams{
-		Page:  new(0),
 		Until: &args.Until,
 	}
 
 	// Set until to current time if not provided, so pagination is consistent
-	// across multiple page requests.
+	// across multiple cursor requests.
 	if params.Until.IsZero() {
 		params.Until = new(time.Now())
 	}
@@ -48,18 +65,17 @@ func FetchLogs(ctx context.Context, args FetchLogsArgs) ([]string, error) {
 			return nil, errors.New("empty response from API")
 		}
 
-		pageLogs := resp.JSON200.Logs
-		logs = append(logs, pageLogs...)
+		for _, entry := range resp.JSON200.Entries {
+			logs = append(logs, formatLogEntry(entry))
+		}
 
-		// Stop if page is empty or we have enough logs
-		if len(pageLogs) == 0 || len(logs) >= args.Tail {
+		if len(logs) >= args.Tail || resp.JSON200.LastCursor == nil {
 			break
 		}
 
-		*params.Page++
+		params.Cursor = resp.JSON200.LastCursor
 	}
 
-	// Trim to tail limit
 	if len(logs) > args.Tail {
 		logs = logs[:args.Tail]
 	}

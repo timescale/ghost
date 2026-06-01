@@ -402,23 +402,62 @@ paths:
     get:
       operationId: databaseLogs
       summary: Get database logs
-      description: Gets database logs.
+      description: |
+        Fetch logs for a specific database. Returns up to 500 log entries in
+        reverse chronological order. Supports cursor-based pagination via the
+        `cursor` parameter and the `last_cursor` field in the response.
       parameters:
         - $ref: "#/components/parameters/SpaceId"
         - $ref: "#/components/parameters/DatabaseRef"
-        - name: page
+        - name: cursor
           in: query
           required: false
-          description: Zero-indexed page number for backward pagination. Page 0 returns the most recent logs; each successive page fetches older entries.
           schema:
-            type: integer
+            type: string
+          description: |
+            Opaque pagination cursor returned as `last_cursor` in a previous
+            response. When provided, returns the next page of logs older than
+            the cursor position.
         - name: until
           in: query
           required: false
-          description: Return logs at or before this timestamp. Defaults to now.
+          description: Upper bound timestamp — return logs at or before this time (RFC3339 format, e.g., 2024-01-15T10:00:00Z). Defaults to now.
           schema:
             type: string
             format: date-time
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Lower bound timestamp — fetch logs after this time (RFC3339 format, e.g., 2024-01-15T09:00:00Z)
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: |
+            Full-text search terms to filter log lines. Repeat the parameter
+            for multiple values (e.g. `?search=slow+query&search=ERROR`).
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: |
+            Severity levels to filter results. Repeat the parameter for multiple
+            values (e.g. `?severity=ERROR&severity=WARNING`). Common values
+            include `LOG`, `WARNING`, `ERROR`, and `FATAL`; PostgreSQL may also
+            emit `DEBUG*`, `INFO`, `NOTICE`, and `PANIC`.
       responses:
         "200":
           description: Database logs
@@ -1245,13 +1284,38 @@ components:
     LogsResponse:
       type: object
       required:
-        - logs
+        - entries
       properties:
-        logs:
+        entries:
           type: array
-          description: Log lines, most recent first.
           items:
-            type: string
+            $ref: "#/components/schemas/LogEntry"
+          description: Log entries, most recent first.
+        last_cursor:
+          type: string
+          description: |
+            Opaque cursor for the next page of results. Present when more log
+            entries exist older than the last entry in this response. Pass
+            this value as the `cursor` query parameter to retrieve the next
+            page. Absent when there are no further results.
+
+    LogEntry:
+      type: object
+      required:
+        - timestamp
+        - message
+        - severity
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the log entry (RFC3339 format)
+        message:
+          type: string
+          description: Log message text
+        severity:
+          type: string
+          description: PostgreSQL severity level (e.g. LOG, WARNING, ERROR, FATAL)
 
     # --- Shares ---
 
