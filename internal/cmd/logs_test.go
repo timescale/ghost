@@ -160,6 +160,16 @@ func TestLogsCmd(t *testing.T) {
 			wantStdout: "",
 		},
 		{
+			name:    "negative tail",
+			args:    []string{"logs", "abc1234567", "--tail", "-1"},
+			wantErr: "--tail must be at least 1, got -1",
+		},
+		{
+			name:    "zero tail",
+			args:    []string{"logs", "abc1234567", "--tail", "0"},
+			wantErr: "--tail must be at least 1, got 0",
+		},
+		{
 			name: "tail flag",
 			args: []string{"logs", "abc1234567", "--tail", "1"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {

@@ -67,6 +67,9 @@ func FetchLogs(ctx context.Context, args FetchLogsArgs) ([]string, error) {
 
 		for _, entry := range resp.JSON200.Entries {
 			logs = append(logs, formatLogEntry(entry))
+			if len(logs) >= args.Tail {
+				break
+			}
 		}
 
 		if len(logs) >= args.Tail || resp.JSON200.LastCursor == nil {
@@ -74,10 +77,6 @@ func FetchLogs(ctx context.Context, args FetchLogsArgs) ([]string, error) {
 		}
 
 		params.Cursor = resp.JSON200.LastCursor
-	}
-
-	if len(logs) > args.Tail {
-		logs = logs[:args.Tail]
 	}
 
 	// Reverse so oldest logs appear first (API returns newest first)

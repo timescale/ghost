@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -42,6 +43,10 @@ most recent entries at the bottom.`,
 		SilenceUsage:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			databaseRef := args[0]
+
+			if tail < 1 {
+				return fmt.Errorf("--tail must be at least 1, got %d", tail)
+			}
 
 			client, projectID, err := app.GetClient()
 			if err != nil {
