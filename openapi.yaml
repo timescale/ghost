@@ -439,8 +439,6 @@ paths:
             type: array
             items:
               type: string
-          style: form
-          explode: true
           description: |
             Full-text search terms to filter log lines. Repeat the parameter
             for multiple values (e.g. `?search=slow+query&search=ERROR`).
@@ -1309,7 +1307,7 @@ components:
         timestamp:
           type: string
           format: date-time
-          description: Timestamp of the log entry (RFC3339 format)
+          description: Timestamp of the log entry (RFC3339 format, with nanosecond precision)
         message:
           type: string
           description: Log message text

@@ -376,7 +376,7 @@ type LogEntry struct {
 	// Severity PostgreSQL severity level (e.g. LOG, WARNING, ERROR, FATAL)
 	Severity string `json:"severity"`
 
-	// Timestamp Timestamp of the log entry (RFC3339 format)
+	// Timestamp Timestamp of the log entry (RFC3339 format, with nanosecond precision)
 	Timestamp time.Time `json:"timestamp"`
 }
 
