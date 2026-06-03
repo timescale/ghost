@@ -219,6 +219,11 @@ type State struct {
 	SelectedDatabaseID string `json:"selectedDatabaseId,omitempty"`
 	EditorHeight       int    `json:"editorHeight,omitempty"`
 	EditorSQL          string `json:"editorSql,omitempty"`
+	SchemaPaneWidth    int    `json:"schemaPaneWidth,omitempty"`
+	// SchemaPaneVisible is a pointer so that an explicit false (pane hidden) is
+	// persisted; the web client defaults a missing value to true.
+	SchemaPaneVisible  *bool               `json:"schemaPaneVisible,omitempty"`
+	SchemaTreeExpanded map[string][]string `json:"schemaTreeExpanded,omitempty"`
 }
 
 // GetStateResponse is the response body of the GET /api/state endpoint.

@@ -4,6 +4,9 @@ export interface PersistedState {
   selectedDatabaseId?: string;
   editorHeight?: number;
   editorSql?: string;
+  schemaPaneWidth?: number;
+  schemaPaneVisible?: boolean;
+  schemaTreeExpanded?: Record<string, string[]>;
 }
 
 interface ServeStore {
@@ -11,13 +14,24 @@ interface ServeStore {
   selectedDatabaseId: string | null;
   editorHeight: number;
   editorSql: string;
+  schemaPaneWidth: number;
+  schemaPaneVisible: boolean;
+  schemaTreeExpanded: Record<string, string[]>;
   hydrate: (saved: PersistedState) => void;
   setSelectedDatabaseId: (id: string | null) => void;
   setEditorSql: (sql: string) => void;
+  appendEditorSql: (sql: string) => void;
   setEditorHeight: (height: number) => void;
+  setSchemaPaneWidth: (width: number) => void;
+  setSchemaPaneVisible: (visible: boolean) => void;
+  toggleSchemaNode: (databaseId: string, key: string) => void;
+  setSchemaExpanded: (databaseId: string, keys: string[]) => void;
 }
 
 export const DEFAULT_EDITOR_HEIGHT = 240;
+export const DEFAULT_SCHEMA_PANE_WIDTH = 280;
+export const MIN_SCHEMA_PANE_WIDTH = 200;
+export const MAX_SCHEMA_PANE_WIDTH = 600;
 
 function getUrlDbId(): string | null {
   return new URLSearchParams(window.location.search).get('db');
@@ -50,7 +64,14 @@ function snapshotFor(store: ServeStore): PersistedState {
     selectedDatabaseId: store.selectedDatabaseId ?? undefined,
     editorSql: store.editorSql,
     editorHeight: store.editorHeight,
+    schemaPaneWidth: store.schemaPaneWidth,
+    schemaPaneVisible: store.schemaPaneVisible,
+    schemaTreeExpanded: store.schemaTreeExpanded,
   };
+}
+
+function clamp(value: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, value));
 }
 
 export const useServeStore = create<ServeStore>((set, get) => ({
@@ -58,11 +79,10 @@ export const useServeStore = create<ServeStore>((set, get) => ({
   selectedDatabaseId: null,
   editorHeight: DEFAULT_EDITOR_HEIGHT,
   editorSql: '',
+  schemaPaneWidth: DEFAULT_SCHEMA_PANE_WIDTH,
+  schemaPaneVisible: true,
+  schemaTreeExpanded: {},
   hydrate: (saved) => {
-    // URL takes precedence over saved state for the selected DB. Write the
-    // resolved id back to the URL so the address bar always reflects the
-    // active selection (matches the behavior of later setSelectedDatabaseId
-    // calls).
     const selectedDatabaseId = getUrlDbId() ?? saved.selectedDatabaseId ?? null;
     if (selectedDatabaseId) setUrlDbId(selectedDatabaseId);
     set({
@@ -70,6 +90,13 @@ export const useServeStore = create<ServeStore>((set, get) => ({
       selectedDatabaseId,
       editorSql: saved.editorSql ?? '',
       editorHeight: saved.editorHeight ?? DEFAULT_EDITOR_HEIGHT,
+      schemaPaneWidth: clamp(
+        saved.schemaPaneWidth ?? DEFAULT_SCHEMA_PANE_WIDTH,
+        MIN_SCHEMA_PANE_WIDTH,
+        MAX_SCHEMA_PANE_WIDTH,
+      ),
+      schemaPaneVisible: saved.schemaPaneVisible ?? true,
+      schemaTreeExpanded: saved.schemaTreeExpanded ?? {},
     });
   },
   setSelectedDatabaseId: (id) => {
@@ -81,8 +108,44 @@ export const useServeStore = create<ServeStore>((set, get) => ({
     set({ editorSql: sql });
     schedulePersist(snapshotFor(get()));
   },
+  appendEditorSql: (sql) => {
+    const current = get().editorSql;
+    const next = current.trim() ? `${current.trimEnd()}\n\n${sql}` : sql;
+    set({ editorSql: next });
+    schedulePersist(snapshotFor(get()));
+  },
   setEditorHeight: (height) => {
     set({ editorHeight: height });
+    schedulePersist(snapshotFor(get()));
+  },
+  setSchemaPaneWidth: (width) => {
+    set({
+      schemaPaneWidth: clamp(
+        Math.round(width),
+        MIN_SCHEMA_PANE_WIDTH,
+        MAX_SCHEMA_PANE_WIDTH,
+      ),
+    });
+    schedulePersist(snapshotFor(get()));
+  },
+  setSchemaPaneVisible: (visible) => {
+    set({ schemaPaneVisible: visible });
+    schedulePersist(snapshotFor(get()));
+  },
+  toggleSchemaNode: (databaseId, key) => {
+    const prev = get().schemaTreeExpanded[databaseId] ?? [];
+    const next = prev.includes(key)
+      ? prev.filter((k) => k !== key)
+      : [...prev, key];
+    set({
+      schemaTreeExpanded: { ...get().schemaTreeExpanded, [databaseId]: next },
+    });
+    schedulePersist(snapshotFor(get()));
+  },
+  setSchemaExpanded: (databaseId, keys) => {
+    set({
+      schemaTreeExpanded: { ...get().schemaTreeExpanded, [databaseId]: keys },
+    });
     schedulePersist(snapshotFor(get()));
   },
 }));
