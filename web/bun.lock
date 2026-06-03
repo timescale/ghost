@@ -6,7 +6,7 @@
       "name": "@ghost-cli/web",
       "dependencies": {
         "@tanstack/react-query": "^5.62.7",
-        "@timescale/popsql-query-widget": "0.0.0-dev.158",
+        "@timescale/popsql-query-widget-cdn": "0.0.0-dev.161",
         "framer-motion": "^12.0.0",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
@@ -214,7 +214,7 @@
 
     "@tanstack/react-query": ["@tanstack/react-query@5.100.14", "", { "dependencies": { "@tanstack/query-core": "5.100.14" }, "peerDependencies": { "react": "^18 || ^19" } }, "sha512-oOr6aRdSFEwWhzxEkD/9ZcItM3+LjBSkeVmadWKwUssAHTsqd/7bOjWrX4AbvEkoEhgAxzN0Xk6H/aYzXiYBAw=="],
 
-    "@timescale/popsql-query-widget": ["@timescale/popsql-query-widget@0.0.0-dev.158", "https://npm.pkg.github.com/download/@timescale/popsql-query-widget/0.0.0-dev.158/60d4cfaf757bf689dc4f896e8d5c23751ef2d356", { "peerDependencies": { "framer-motion": "12.x", "react": "17.x || 18.x", "react-dom": "17.x || 18.x" } }, "sha512-pz3/lgiVmfwOQjeGTPwcbDX9yXljXYenm+0pM5Fq2mdqFWEgzNyEtHADyTbYufRw7tqlnVovSpNtiij4TII+ig=="],
+    "@timescale/popsql-query-widget-cdn": ["@timescale/popsql-query-widget-cdn@0.0.0-dev.161", "https://npm.pkg.github.com/download/@timescale/popsql-query-widget-cdn/0.0.0-dev.161/6c6c601988cbe8240d2657ef8655c687d3e80c5e", { "peerDependencies": { "framer-motion": "12.x", "react": "17.x || 18.x", "react-dom": "17.x || 18.x" } }, "sha512-HoXOeTQf+ibNDYJkUruy0G2PnaUpc8GTBDXwBIQ4fjGMwwSHXTqj3nTosYbaARsWmQrBMFFlfoWPVH3dLi1Zig=="],
 
     "@types/babel__core": ["@types/babel__core@7.20.5", "", { "dependencies": { "@babel/parser": "^7.20.7", "@babel/types": "^7.20.7", "@types/babel__generator": "*", "@types/babel__template": "*", "@types/babel__traverse": "*" } }, "sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA=="],
 

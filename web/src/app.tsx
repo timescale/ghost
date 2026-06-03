@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import '@timescale/popsql-query-widget/index.css';
+import '@timescale/popsql-query-widget-cdn/index.css';
 
 import { QueryPanel } from './components/QueryPanel';
 import { type PersistedState, useServeStore } from './store';

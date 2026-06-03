@@ -5,7 +5,7 @@ import {
   QueryWidget,
   QueryWidgetProvider,
   TimescaleResultsCacheContextProvider,
-} from '@timescale/popsql-query-widget';
+} from '@timescale/popsql-query-widget-cdn';
 import type React from 'react';
 import { useCallback, useState } from 'react';
 

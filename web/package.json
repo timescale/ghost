@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.7",
-    "@timescale/popsql-query-widget": "0.0.0-dev.158",
+    "@timescale/popsql-query-widget-cdn": "0.0.0-dev.161",
     "framer-motion": "^12.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
