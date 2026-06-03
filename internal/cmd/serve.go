@@ -30,6 +30,9 @@ of this command — press Ctrl+C to stop it.`,
 			if _, _, err := app.GetClient(); err != nil {
 				return err
 			}
+			if host != "127.0.0.1" && host != "localhost" && host != "::1" {
+				cmd.PrintErrf("Warning: binding to %q exposes the SQL UI to your network. Consider using 127.0.0.1.\n", host)
+			}
 
 			srv, err := serve.New(serve.Config{
 				Host: host,
