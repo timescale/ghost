@@ -69,6 +69,56 @@ func TestDetectShellRC(t *testing.T) {
 	}
 }
 
+func TestPackageInstalledCompletionPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		shell string
+		// relPath is created (with an empty file) under a fresh
+		// HOMEBREW_PREFIX temp dir before invoking the function. Empty
+		// means "no file created".
+		relPath  string
+		wantFile bool
+	}{
+		{name: "bash with no file", shell: "bash"},
+		{name: "bash homebrew", shell: "bash", relPath: "etc/bash_completion.d/ghost", wantFile: true},
+		{name: "zsh homebrew", shell: "zsh", relPath: "share/zsh/site-functions/_ghost", wantFile: true},
+		{name: "fish homebrew", shell: "fish", relPath: "share/fish/vendor_completions.d/ghost.fish", wantFile: true},
+		{name: "unsupported shell", shell: "ksh"},
+		{name: "empty shell", shell: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prefix := t.TempDir()
+			t.Setenv("HOMEBREW_PREFIX", prefix)
+
+			var want string
+			if tt.relPath != "" {
+				want = filepath.Join(prefix, tt.relPath)
+				if err := os.MkdirAll(filepath.Dir(want), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(want, nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			got := PackageInstalledCompletionPath(tt.shell)
+			if tt.wantFile {
+				if got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				return
+			}
+			// Without a fake file we expect "" — but a real package install
+			// on the dev machine (e.g. /usr/share/...) could match. Treat
+			// that as a skip rather than a failure.
+			if got != "" {
+				t.Skipf("real package completion present at %q; can't validate empty case", got)
+			}
+		})
+	}
+}
+
 func TestIsInPath(t *testing.T) {
 	t.Setenv("PATH", "/foo:/bar:/baz")
 	if !IsInPath("/bar") {
