@@ -57,6 +57,16 @@ func withStdin(input string) runOption {
 	}
 }
 
+// withContext sets the context passed to cmd.ExecuteContext. Use this for
+// commands that block until the context is cancelled (e.g. `ghost serve`):
+// pass an already-cancelled context to exercise the command without leaving
+// a server running for the duration of the test.
+func withContext(ctx context.Context) runOption {
+	return func(rc *runConfig) {
+		rc.ctx = ctx
+	}
+}
+
 // withIsTerminal overrides util.IsTerminal for the duration of the test.
 // Use this with withStdin to simulate interactive terminal input.
 func withIsTerminal(isTerminal bool) runOption {
