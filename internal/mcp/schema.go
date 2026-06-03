@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -12,12 +13,17 @@ import (
 
 // SchemaInput represents input for ghost_schema
 type SchemaInput struct {
-	Ref string `json:"name_or_id"`
+	Ref        string `json:"name_or_id"`
+	SchemaName string `json:"schema,omitempty"`
+	Internal   bool   `json:"internal,omitempty"`
 }
 
 func (SchemaInput) Schema() *jsonschema.Schema {
 	schema := util.Must(jsonschema.For[SchemaInput](nil))
 	databaseRefInputProperties(schema)
+	schema.Properties["schema"].Description = "Restrict output to a single Postgres schema (e.g. 'public', 'reporting'). If omitted, all user-visible schemas are returned."
+	schema.Properties["internal"].Description = "Include system schemas (information_schema, pg_*, _timescaledb_*) and extension-owned objects. Defaults to false."
+	schema.Properties["internal"].Default = json.RawMessage("false")
 	return schema
 }
 
@@ -25,9 +31,8 @@ func newSchemaTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "ghost_schema",
 		Title:       "Show Database Schema",
-		Description: "Display database schema including tables, views, materialized views, and enum types with their columns, constraints, and indexes.",
+		Description: "Display database schema including tables, views, materialized views, enum types, functions, procedures, indexes, triggers, and TimescaleDB hypertable metadata across all user-visible schemas.",
 		InputSchema: SchemaInput{}.Schema(),
-		// No OutputSchema - we return raw text content
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(true),
@@ -43,15 +48,16 @@ func (s *Server) handleSchema(ctx context.Context, req *mcp.CallToolRequest, inp
 	}
 
 	schema, err := common.FetchDatabaseSchema(ctx, common.FetchDatabaseSchemaArgs{
-		Client:      client,
-		ProjectID:   projectID,
-		DatabaseRef: input.Ref,
+		Client:          client,
+		ProjectID:       projectID,
+		DatabaseRef:     input.Ref,
+		Schema:          input.SchemaName,
+		IncludeInternal: input.Internal,
 	})
 	if err != nil {
 		return nil, nil, handleDatabaseError(err)
 	}
 
-	// Return raw text content
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{Text: common.FormatSchema(schema)},

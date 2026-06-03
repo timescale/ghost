@@ -208,6 +208,19 @@ func (f schemaFilter) onExtensionObject(classidExpr, oidExpr string) string {
         )`, classidExpr, oidExpr)
 }
 
+// onOwner returns a clause that excludes objects whose owner role the
+// current session role isn't a member of. Filters out platform-managed
+// objects (e.g. `postgres`-owned helper functions that ship with Tiger
+// Cloud) while keeping anything the user can rightfully claim. ownerCol
+// is the SQL expression identifying the owner role OID (e.g.
+// `c.relowner`, `p.proowner`, `t.typowner`).
+func (f schemaFilter) onOwner(ownerCol string) string {
+	if f.includeInternal {
+		return ""
+	}
+	return fmt.Sprintf(" AND pg_catalog.pg_has_role(current_user, %s, 'MEMBER')", ownerCol)
+}
+
 // Row types for scanning query results
 
 type relationColumnRow struct {
@@ -302,9 +315,11 @@ WHERE c.relkind IN ('r', 'v', 'm')
   AND NOT a.attisdropped
   %s
   %s
+  %s
 ORDER BY n.nspname, c.relname, a.attnum`,
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_class'::regclass", "c.oid"),
+		f.onOwner("c.relowner"),
 	)
 }
 
@@ -334,9 +349,11 @@ LEFT JOIN pg_class confrel ON confrel.oid = con.confrelid
 WHERE con.contype IN ('p', 'u', 'f', 'c', 'x')
   %s
   %s
+  %s
 ORDER BY n.nspname, c.relname, con.contype, con.conname`,
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_class'::regclass", "c.oid"),
+		f.onOwner("c.relowner"),
 	)
 }
 
@@ -372,9 +389,11 @@ WHERE t.relkind IN ('r', 'm')
   )
   %s
   %s
+  %s
 ORDER BY n.nspname, t.relname, i.relname`,
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_class'::regclass", "t.oid"),
+		f.onOwner("t.relowner"),
 	)
 }
 
@@ -390,10 +409,12 @@ JOIN pg_enum e ON e.enumtypid = t.oid
 WHERE TRUE
   %s
   %s
+  %s
 GROUP BY n.nspname, t.typname
 ORDER BY n.nspname, t.typname`,
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_type'::regclass", "t.oid"),
+		f.onOwner("t.typowner"),
 	)
 }
 
@@ -436,9 +457,11 @@ JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE p.prokind IN ('f', 'p')
   %s
   %s
+  %s
 ORDER BY n.nspname, p.proname`,
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_proc'::regclass", "p.oid"),
+		f.onOwner("p.proowner"),
 	)
 }
 
