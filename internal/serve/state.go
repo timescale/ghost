@@ -79,7 +79,7 @@ func (s *stateStore) save(state serveState) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp file: %w", err)
 	}
-	if err := os.Chmod(tmpName, 0644); err != nil {
+	if err := os.Chmod(tmpName, 0600); err != nil {
 		return fmt.Errorf("chmod temp file: %w", err)
 	}
 	if err := os.Rename(tmpName, s.path); err != nil {
