@@ -53,6 +53,9 @@ func (h *Handler) Handler() http.Handler {
 	router.GET("/api/databases",
 		h.databasesHandler,
 	)
+	router.GET("/api/schema",
+		h.schemaHandler,
+	)
 	router.GET("/api/state",
 		h.loadStateHandler,
 	)
