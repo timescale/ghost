@@ -135,8 +135,13 @@ function SchemaTreeBody({
 
 // ---- Tree implementation ---------------------------------------------------
 
-const INDENT_PX = 20;
-const CARET_PX = 14;
+// Indent layout matches popsql: each indent column is a fixed-width span
+// carrying the vertical guide line on its right edge. Total per indent =
+// INDENT_PAD + INDENT_GAP, and the guide line sits at INDENT_PAD from the
+// indent's left edge.
+const INDENT_PAD = 14;
+const INDENT_GAP = 6;
+const CARET_PX = 12;
 
 interface TreeContext {
   expanded: Set<string>;
@@ -187,7 +192,7 @@ function SchemaTree({ databaseId, schemas, searchTerm }: SchemaTreeProps) {
   );
 
   return (
-    <div className="select-none py-2 text-sm">
+    <div className="select-none py-1 text-[13px] leading-[1.4]">
       {schemas.map((ns) =>
         ctx.searchActive && !ctx.searchMatches?.has(schemaKey(ns)) ? null : (
           <SchemaNode key={ns.name} ns={ns} ctx={ctx} />
@@ -294,10 +299,7 @@ function GroupNode({ ns, group, ctx }: GroupNodeProps) {
         ctx.searchMatches?.has(childKey(ns, group.kind, item.name)),
       )
     : items;
-  // While a search is active, hide groups that contain no matching items —
-  // the user is asking us to narrow the view. Otherwise always render the
-  // group (even with a zero count), matching popsql.
-  if (ctx.searchActive && visibleItems.length === 0) return null;
+  if (visibleItems.length === 0) return null;
 
   return (
     <TreeRow
@@ -418,53 +420,59 @@ function TableNode({ ns, table, ctx }: TableNodeProps) {
         });
       }}
     >
-      <TreeRow
-        ctx={ctx}
-        nodeKey={`${key}/columns`}
-        label="Columns"
-        depth={3}
-        hasChildren={cols.length > 0}
-        count={ctx.searchActive ? cols.length : allCols.length}
-      >
-        {cols.map((col) => (
-          <ColumnRow
-            key={col.name}
-            parent={table}
-            ns={ns}
-            parentName={table.name}
-            col={col}
-            ctx={ctx}
-          />
-        ))}
-      </TreeRow>
-      <TreeRow
-        ctx={ctx}
-        nodeKey={`${key}/indexes`}
-        label="Indexes"
-        depth={3}
-        hasChildren={indexes.length > 0}
-        count={ctx.searchActive ? indexes.length : allIndexes.length}
-      >
-        {indexes.map((idx) => (
-          <IndexRow key={idx.name} index={idx} ctx={ctx} />
-        ))}
-      </TreeRow>
-      <TreeRow
-        ctx={ctx}
-        nodeKey={`${key}/triggers`}
-        label="Triggers"
-        depth={3}
-        hasChildren={triggers.length > 0}
-        count={ctx.searchActive ? triggers.length : allTriggers.length}
-      >
-        {triggers.map((trg) => (
-          <TriggerRow
-            key={`${trg.name}/${trg.timing}/${trg.manipulation}`}
-            trigger={trg}
-            ctx={ctx}
-          />
-        ))}
-      </TreeRow>
+      {cols.length > 0 ? (
+        <TreeRow
+          ctx={ctx}
+          nodeKey={`${key}/columns`}
+          label="Columns"
+          depth={3}
+          hasChildren
+          count={ctx.searchActive ? cols.length : allCols.length}
+        >
+          {cols.map((col) => (
+            <ColumnRow
+              key={col.name}
+              parent={table}
+              ns={ns}
+              parentName={table.name}
+              col={col}
+              ctx={ctx}
+            />
+          ))}
+        </TreeRow>
+      ) : null}
+      {indexes.length > 0 ? (
+        <TreeRow
+          ctx={ctx}
+          nodeKey={`${key}/indexes`}
+          label="Indexes"
+          depth={3}
+          hasChildren
+          count={ctx.searchActive ? indexes.length : allIndexes.length}
+        >
+          {indexes.map((idx) => (
+            <IndexRow key={idx.name} index={idx} ctx={ctx} />
+          ))}
+        </TreeRow>
+      ) : null}
+      {triggers.length > 0 ? (
+        <TreeRow
+          ctx={ctx}
+          nodeKey={`${key}/triggers`}
+          label="Triggers"
+          depth={3}
+          hasChildren
+          count={ctx.searchActive ? triggers.length : allTriggers.length}
+        >
+          {triggers.map((trg) => (
+            <TriggerRow
+              key={`${trg.name}/${trg.timing}/${trg.manipulation}`}
+              trigger={trg}
+              ctx={ctx}
+            />
+          ))}
+        </TreeRow>
+      ) : null}
     </TreeRow>
   );
 }
@@ -481,7 +489,7 @@ function ColumnRow({ parent, ns, parentName, col, ctx }: ColumnRowProps) {
   return (
     <LeafRow
       ctx={ctx}
-      label={col.name}
+      label={highlight(col.name, ctx.searchTerm)}
       depth={4}
       rightDetail={
         <>
@@ -509,7 +517,7 @@ function IndexRow({ index, ctx }: IndexRowProps) {
   return (
     <LeafRow
       ctx={ctx}
-      label={index.name}
+      label={highlight(index.name, ctx.searchTerm)}
       depth={4}
       rightDetail={
         <>
@@ -529,7 +537,7 @@ function TriggerRow({ trigger, ctx }: TriggerRowProps) {
   return (
     <LeafRow
       ctx={ctx}
-      label={trigger.name}
+      label={highlight(trigger.name, ctx.searchTerm)}
       depth={4}
       rightDetail={
         <>
@@ -609,7 +617,7 @@ function RoutineNode({ ns, routine, ctx }: RoutineNodeProps) {
   return (
     <LeafRow
       ctx={ctx}
-      label={routine.name}
+      label={highlight(routine.name, ctx.searchTerm)}
       depth={2}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -632,7 +640,7 @@ function EnumNode({ ns, enum_, ctx }: EnumNodeProps) {
   return (
     <LeafRow
       ctx={ctx}
-      label={enum_.name}
+      label={highlight(enum_.name, ctx.searchTerm)}
       depth={2}
       rightDetail={<Pill>{(enum_.values ?? []).join(', ')}</Pill>}
       onContextMenu={(e) => {
@@ -674,7 +682,7 @@ function SchemaRootRow({
       <div
         role={hasChildren ? 'button' : undefined}
         tabIndex={hasChildren ? 0 : undefined}
-        className="group flex min-w-0 cursor-default items-center gap-1 px-2 py-1 font-semibold text-slate-900 hover:bg-slate-100"
+        className="group flex h-[24px] min-w-0 cursor-default items-center gap-1 px-2 font-semibold text-slate-900 hover:bg-slate-100"
         onClick={hasChildren ? () => ctx.toggle(nodeKey) : undefined}
         onKeyDown={
           hasChildren
@@ -688,9 +696,7 @@ function SchemaRootRow({
         }
         onContextMenu={onContextMenu}
       >
-        <span className="min-w-0 truncate">
-          {highlight(label, ctx.searchTerm)}
-        </span>
+        <span className="min-w-0 truncate">{label}</span>
         {hasChildren ? (
           <ChevronDown
             className={`flex-none text-slate-400 opacity-0 transition-transform group-hover:opacity-100 ${
@@ -708,7 +714,7 @@ function SchemaRootRow({
 interface TreeRowProps {
   ctx: TreeContext;
   nodeKey: string;
-  label: string;
+  label: ReactNode;
   depth: number;
   icon?: ReactNode;
   count?: number;
@@ -746,9 +752,7 @@ function TreeRow({
       >
         <CaretSlot expanded={isExpanded} hasChildren={!!hasChildren} />
         {icon ? <span className="flex-none text-slate-500">{icon}</span> : null}
-        <span className="min-w-0 truncate text-slate-700">
-          {highlight(label, ctx.searchTerm)}
-        </span>
+        <span className="min-w-0 truncate text-slate-700">{label}</span>
         {typeof count === 'number' ? <Pill>{count}</Pill> : null}
         {rightDetail ? <RightDetail>{rightDetail}</RightDetail> : null}
       </RowShell>
@@ -759,7 +763,7 @@ function TreeRow({
 
 interface LeafRowProps {
   ctx: TreeContext;
-  label: string;
+  label: ReactNode;
   depth: number;
   rightDetail?: ReactNode;
   onContextMenu?: (e: MouseEvent<HTMLDivElement>) => void;
@@ -769,7 +773,7 @@ interface LeafRowProps {
 // It reserves the caret slot so it lines up vertically with sibling
 // expandable rows.
 function LeafRow({
-  ctx,
+  ctx: _ctx,
   label,
   depth,
   rightDetail,
@@ -778,9 +782,7 @@ function LeafRow({
   return (
     <RowShell depth={depth} onContextMenu={onContextMenu} clickable={false}>
       <CaretSlot expanded={false} hasChildren={false} />
-      <span className="min-w-0 truncate text-slate-700">
-        {highlight(label, ctx.searchTerm)}
-      </span>
+      <span className="min-w-0 truncate text-slate-700">{label}</span>
       {rightDetail ? <RightDetail>{rightDetail}</RightDetail> : null}
     </RowShell>
   );
@@ -794,6 +796,9 @@ interface RowShellProps {
   children: ReactNode;
 }
 
+// RowShell lays out a single tree row: N IndentGuide spans, then the row
+// content (caret + icon + label + pills). The indent guides carry the
+// vertical connector lines on their right edge, popsql-style.
 function RowShell({
   depth,
   clickable,
@@ -805,8 +810,7 @@ function RowShell({
     <div
       role={clickable ? 'button' : undefined}
       tabIndex={clickable ? 0 : undefined}
-      className="group/row flex min-w-0 cursor-default items-center gap-1.5 pr-2 hover:bg-slate-100"
-      style={{ paddingLeft: 8 + depth * INDENT_PX }}
+      className="group/row flex h-[24px] min-w-0 cursor-default items-center gap-1.5 pl-2 pr-2 hover:bg-slate-100"
       onClick={onClick}
       onKeyDown={
         clickable && onClick
@@ -820,9 +824,27 @@ function RowShell({
       }
       onContextMenu={onContextMenu}
     >
+      <IndentGuides depth={depth} />
       {children}
     </div>
   );
+}
+
+function IndentGuides({ depth }: { depth: number }) {
+  const guideCount = Math.max(0, depth - 1);
+  if (guideCount === 0) return null;
+  const guides = [];
+  for (let i = 0; i < guideCount; i++) {
+    guides.push(
+      <span
+        key={i}
+        aria-hidden
+        className="h-[24px] flex-none self-stretch border-r border-slate-200"
+        style={{ width: INDENT_PAD, marginRight: INDENT_GAP }}
+      />,
+    );
+  }
+  return <>{guides}</>;
 }
 
 // CaretSlot reserves a fixed-width column for the chevron so that the row's
@@ -868,7 +890,7 @@ function RightDetail({ children }: { children: ReactNode }) {
 
 function Pill({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex flex-none items-center whitespace-nowrap rounded bg-slate-200 px-1.5 py-px text-xs leading-tight text-slate-600">
+    <span className="inline-flex flex-none items-center whitespace-nowrap rounded bg-slate-200/60 px-1 py-px text-[11px] leading-tight text-slate-600">
       {children}
     </span>
   );
@@ -880,7 +902,7 @@ function HypertableBadge({
   info: { num_chunks: number; compression_enabled: boolean };
 }) {
   return (
-    <span className="inline-flex items-center whitespace-nowrap rounded bg-purple-100 px-1.5 py-px text-xs leading-tight text-purple-700">
+    <span className="inline-flex items-center whitespace-nowrap rounded bg-purple-100 px-1 py-px text-[11px] leading-tight text-purple-700">
       hypertable · {info.num_chunks}c{info.compression_enabled ? ' · zip' : ''}
     </span>
   );
