@@ -149,7 +149,13 @@ const INDENT_GAP = INDENT_STEP_PX - INDENT_PAD;
 
 interface TreeContext {
   expanded: Set<string>;
-  searchExpanded: Set<string>;
+  // Nodes the user has explicitly collapsed while a search is active. During
+  // search every rendered node is expanded by default (matching popsql), so we
+  // only need to track the exceptions. This set is transient: it lives in
+  // component state and is reset whenever the search term changes, so toggling
+  // a node while searching never mutates the persisted `expanded` state of the
+  // unfiltered tree.
+  collapsedDuringSearch: Set<string>;
   searchActive: boolean;
   searchMatches: Set<string> | null;
   searchTerm: string;
@@ -162,6 +168,16 @@ interface SchemaTreeProps {
   databaseId: string;
   schemas: NamespacedSchema[];
   searchTerm: string;
+}
+
+// Whether an expandable node should render its children. While a search is
+// active every node is expanded by default (so all matches are visible) unless
+// the user has explicitly collapsed it; otherwise we consult the persisted
+// expanded state.
+function nodeExpanded(ctx: TreeContext, nodeKey: string): boolean {
+  return ctx.searchActive
+    ? !ctx.collapsedDuringSearch.has(nodeKey)
+    : ctx.expanded.has(nodeKey);
 }
 
 function SchemaTree({ databaseId, schemas, searchTerm }: SchemaTreeProps) {
@@ -180,6 +196,38 @@ function SchemaTree({ databaseId, schemas, searchTerm }: SchemaTreeProps) {
     () => computeSearch(schemas, searchTerm),
     [schemas, searchTerm],
   );
+  const searchActive = searchTerm.length > 0;
+
+  // Transient per-search collapse overrides. Reset whenever the search term
+  // changes so a fresh search always starts fully expanded, and so collapses
+  // made during one search never carry over to the next (or to the unfiltered
+  // view).
+  const [collapsedDuringSearch, setCollapsedDuringSearch] = useState<
+    Set<string>
+  >(() => new Set());
+  // biome-ignore lint/correctness/useExhaustiveDependencies: searchTerm is the reset trigger, not read in the body
+  useEffect(() => {
+    setCollapsedDuringSearch(new Set());
+  }, [searchTerm]);
+
+  const toggleCollapsedDuringSearch = useCallback((key: string) => {
+    setCollapsedDuringSearch((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  // While searching, toggling adjusts the transient collapse set; otherwise it
+  // mutates the persisted expanded state.
+  const toggleNode = useCallback(
+    (key: string) => {
+      if (searchActive) toggleCollapsedDuringSearch(key);
+      else toggleForDb(key);
+    },
+    [searchActive, toggleCollapsedDuringSearch, toggleForDb],
+  );
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [definitionModal, setDefinitionModal] = useState<{
@@ -190,15 +238,22 @@ function SchemaTree({ databaseId, schemas, searchTerm }: SchemaTreeProps) {
   const ctx = useMemo<TreeContext>(
     () => ({
       expanded,
-      searchExpanded: search.expanded,
-      searchActive: searchTerm.length > 0,
+      collapsedDuringSearch,
+      searchActive,
       searchMatches: search.visible,
       searchTerm,
-      toggle: toggleForDb,
+      toggle: toggleNode,
       setContextMenu,
       showModal: (title, text) => setDefinitionModal({ title, text }),
     }),
-    [expanded, search, searchTerm, toggleForDb],
+    [
+      expanded,
+      collapsedDuringSearch,
+      searchActive,
+      search,
+      searchTerm,
+      toggleNode,
+    ],
   );
 
   return (
@@ -701,8 +756,7 @@ function SchemaRootRow({
   children,
   ctx,
 }: SchemaRootRowProps) {
-  const isExpanded =
-    ctx.expanded.has(nodeKey) || ctx.searchExpanded.has(nodeKey);
+  const isExpanded = nodeExpanded(ctx, nodeKey);
   return (
     <>
       <div
@@ -765,8 +819,7 @@ function TreeRow({
   onContextMenu,
   children,
 }: TreeRowProps) {
-  const isExpanded =
-    ctx.expanded.has(nodeKey) || ctx.searchExpanded.has(nodeKey);
+  const isExpanded = nodeExpanded(ctx, nodeKey);
   const onClick = hasChildren ? () => ctx.toggle(nodeKey) : undefined;
   return (
     <>
@@ -1004,13 +1057,11 @@ function highlight(text: string, term: string): ReactNode {
 
 interface SearchInfo {
   visible: Set<string>;
-  expanded: Set<string>;
 }
 
 function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
   const visible = new Set<string>();
-  const expanded = new Set<string>();
-  if (!term) return { visible, expanded };
+  if (!term) return { visible };
   const lower = term.toLowerCase();
   const match = (s: string) => s.toLowerCase().includes(lower);
 
@@ -1043,8 +1094,6 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
             if (match(sub.name)) {
               visible.add(`${iKey}/${subKind}/${sub.name}`);
               visible.add(`${iKey}/${subKind}`);
-              expanded.add(iKey);
-              expanded.add(`${iKey}/${subKind}`);
               childHit = true;
             }
           }
@@ -1059,8 +1108,6 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
       }
       if (groupHit) {
         visible.add(gKey);
-        expanded.add(sKey);
-        expanded.add(gKey);
       }
       return groupHit;
     };
@@ -1081,7 +1128,7 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
       visible.add(sKey);
     }
   }
-  return { visible, expanded };
+  return { visible };
 }
 
 // ---- Context menu ---------------------------------------------------------
