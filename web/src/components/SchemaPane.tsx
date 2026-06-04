@@ -1072,6 +1072,8 @@ function ContextMenu({ state, onClose }: ContextMenuProps) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
+    // Defer attaching the outside-click listener by one tick so the same
+    // mousedown that opened this menu doesn't immediately close it.
     const id = setTimeout(() => {
       window.addEventListener('mousedown', onDown);
       window.addEventListener('keydown', onKey);

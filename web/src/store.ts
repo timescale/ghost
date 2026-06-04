@@ -25,7 +25,6 @@ interface ServeStore {
   setSchemaPaneWidth: (width: number) => void;
   setSchemaPaneVisible: (visible: boolean) => void;
   toggleSchemaNode: (databaseId: string, key: string) => void;
-  setSchemaExpanded: (databaseId: string, keys: string[]) => void;
 }
 
 export const DEFAULT_EDITOR_HEIGHT = 240;
@@ -139,12 +138,6 @@ export const useServeStore = create<ServeStore>((set, get) => ({
       : [...prev, key];
     set({
       schemaTreeExpanded: { ...get().schemaTreeExpanded, [databaseId]: next },
-    });
-    schedulePersist(snapshotFor(get()));
-  },
-  setSchemaExpanded: (databaseId, keys) => {
-    set({
-      schemaTreeExpanded: { ...get().schemaTreeExpanded, [databaseId]: keys },
     });
     schedulePersist(snapshotFor(get()));
   },

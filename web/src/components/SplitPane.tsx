@@ -33,6 +33,23 @@ export function SplitPane({
     document.body.style.userSelect = 'none';
   }, []);
 
+  // Keyboard resize for accessibility: the divider exposes a separator role
+  // with aria-valuemin/max/now, so arrow keys must adjust the width. Shift
+  // takes larger steps.
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const step = e.shiftKey ? 32 : 8;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        onLeftWidthChange(leftWidth - step);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        onLeftWidthChange(leftWidth + step);
+      }
+    },
+    [leftWidth, onLeftWidthChange],
+  );
+
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
       if (!draggingRef.current || !containerRef.current) return;
@@ -50,6 +67,13 @@ export function SplitPane({
     return () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
+      // If the component unmounts mid-drag, restore the body styles that
+      // onMouseDown set so the page isn't left stuck in col-resize / no-select.
+      if (draggingRef.current) {
+        draggingRef.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
     };
   }, [onLeftWidthChange]);
 
@@ -76,6 +100,7 @@ export function SplitPane({
             aria-valuenow={leftWidth}
             tabIndex={0}
             onMouseDown={onMouseDown}
+            onKeyDown={onKeyDown}
             className="group h-full w-1 shrink-0 cursor-col-resize bg-slate-100 hover:bg-blue-400"
           />
         </>
