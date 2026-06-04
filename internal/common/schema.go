@@ -504,6 +504,12 @@ func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*Da
 	}
 	defer conn.Close(context.Background())
 
+	if args.Schema != "" {
+		if err := checkSchemaExists(ctx, conn, args.Schema); err != nil {
+			return nil, err
+		}
+	}
+
 	filter := schemaFilter{
 		includeInternal: args.IncludeInternal,
 		schema:          args.Schema,
@@ -541,6 +547,37 @@ func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*Da
 		Name:    database.Name,
 		Schemas: bld.build(),
 	}, nil
+}
+
+// checkSchemaExists verifies the requested namespace exists, returning a
+// friendly error listing the available schemas if it does not. This keeps an
+// empty result for a mistyped --schema from looking like an empty database.
+func checkSchemaExists(ctx context.Context, conn *pgx.Conn, schema string) error {
+	var exists bool
+	if err := conn.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1)`,
+		schema,
+	).Scan(&exists); err != nil {
+		return fmt.Errorf("failed to check schema existence: %w", err)
+	}
+	if exists {
+		return nil
+	}
+
+	rows, err := conn.Query(ctx,
+		`SELECT nspname FROM pg_namespace WHERE nspname !~ '^pg_' AND nspname <> 'information_schema' ORDER BY nspname`,
+	)
+	if err != nil {
+		return fmt.Errorf("schema %q not found", schema)
+	}
+	available, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return fmt.Errorf("schema %q not found", schema)
+	}
+	if len(available) == 0 {
+		return fmt.Errorf("schema %q not found", schema)
+	}
+	return fmt.Errorf("schema %q not found; available schemas: %s", schema, strings.Join(available, ", "))
 }
 
 // connectToDatabase establishes a connection to the given database.

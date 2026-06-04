@@ -1802,3 +1802,33 @@ TABLE: config
 		})
 	}
 }
+
+func TestFetchDatabaseSchema_RejectsInvalidSchemaName(t *testing.T) {
+	// Invalid schema names are rejected before any client/database access,
+	// so a nil client is fine here. This guards the schemaIdentRE filter
+	// that protects against SQL injection via interpolated schema names.
+	tests := []struct {
+		name   string
+		schema string
+	}{
+		{name: "single quote", schema: "public'; DROP TABLE users; --"},
+		{name: "space", schema: "my schema"},
+		{name: "leading digit", schema: "1schema"},
+		{name: "hyphen", schema: "my-schema"},
+		{name: "dot", schema: "public.users"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := FetchDatabaseSchema(t.Context(), FetchDatabaseSchemaArgs{
+				Schema: tc.schema,
+			})
+			if err == nil {
+				t.Fatalf("expected error for schema %q, got nil", tc.schema)
+			}
+			if got != nil {
+				t.Errorf("expected nil schema on error, got %+v", got)
+			}
+		})
+	}
+}
