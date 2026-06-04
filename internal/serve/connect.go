@@ -54,8 +54,10 @@ func fetchDatabase(ctx context.Context, client api.ClientWithResponsesInterface,
 const defaultRole = "tsdbadmin"
 
 // openDriverForService resolves a ghost-api database, retrieves the password
-// for the default role, and opens a Postgres driver against it.
-func openDriverForService(ctx context.Context, client api.ClientWithResponsesInterface, projectID, serviceID string) (dbdriver.Driver, error) {
+// for the default role, and opens a Postgres driver against it. When readOnly
+// is true, the connection is opened with the tsdb_admin.read_only_connection
+// GUC set, matching the behavior of `ghost sql` under the read_only config.
+func openDriverForService(ctx context.Context, client api.ClientWithResponsesInterface, projectID, serviceID string, readOnly bool) (dbdriver.Driver, error) {
 	database, err := fetchDatabase(ctx, client, projectID, serviceID)
 	if err != nil {
 		return nil, err
@@ -76,6 +78,7 @@ func openDriverForService(ctx context.Context, client api.ClientWithResponsesInt
 		Database: database,
 		Role:     defaultRole,
 		Password: password,
+		ReadOnly: readOnly,
 	})
 	if err != nil {
 		return nil, newConnectErr("building connection string: %v", err)

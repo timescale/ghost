@@ -44,7 +44,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	driver, err := openDriverForService(r.Context(), client, req.ProjectID, req.ServiceID)
+	driver, err := openDriverForService(r.Context(), client, req.ProjectID, req.ServiceID, s.cfg.App.GetConfig().ReadOnly)
 	if err != nil {
 		ce := new(connectErr)
 		if errors.As(err, &ce) {

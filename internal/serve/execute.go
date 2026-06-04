@@ -29,7 +29,7 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	driver, connErr := openDriverForService(r.Context(), client, req.ProjectID, req.ServiceID)
+	driver, connErr := openDriverForService(r.Context(), client, req.ProjectID, req.ServiceID, s.cfg.App.GetConfig().ReadOnly)
 	if connErr != nil {
 		ce := new(connectErr)
 		if errors.As(connErr, &ce) {
