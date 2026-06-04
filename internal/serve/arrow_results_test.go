@@ -16,7 +16,7 @@ func buildBatch(t *testing.T, n int, value string) (int64, func()) {
 	if err != nil {
 		t.Fatalf("NewRecordBuilder: %v", err)
 	}
-	for i := 0; i < n; i++ {
+	for range n {
 		if err := rb.AppendRow([]any{value}); err != nil {
 			t.Fatalf("AppendRow: %v", err)
 		}

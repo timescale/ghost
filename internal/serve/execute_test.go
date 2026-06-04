@@ -107,7 +107,7 @@ func runStreaming(t *testing.T, s *Server, req executeQueryRequest, driver dbdri
 		t.Fatal("runQuery did not return")
 	}
 
-	for _, line := range strings.Split(strings.TrimSpace(execW.Body.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(execW.Body.String()), "\n") {
 		if line == "" {
 			continue
 		}
