@@ -2,10 +2,14 @@ package mcp
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net/http"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/timescale/ghost/internal/api"
 	"github.com/timescale/ghost/internal/common"
 	"github.com/timescale/ghost/internal/util"
 )
@@ -17,10 +21,9 @@ func (PricingInput) Schema() *jsonschema.Schema {
 }
 
 // PricingOutput is the MCP tool's output type. It has the same underlying type
-// as common.PricingOutput so values convert directly, and is redeclared here so
-// the tool can attach a Schema() method (matching the pattern other MCP tools
-// use).
-type PricingOutput common.PricingOutput
+// as api.Pricing so values convert directly, and is redeclared here so the tool
+// can attach a Schema() method (matching the pattern other MCP tools use).
+type PricingOutput api.Pricing
 
 func (PricingOutput) Schema() *jsonschema.Schema {
 	schema := util.Must(jsonschema.For[PricingOutput](nil))
@@ -77,9 +80,16 @@ func (s *Server) handlePricing(ctx context.Context, req *mcp.CallToolRequest, in
 		return nil, PricingOutput{}, err
 	}
 
-	output, err := common.FetchPricing(ctx, client)
+	resp, err := client.GetPricingWithResponse(ctx)
 	if err != nil {
-		return nil, PricingOutput{}, err
+		return nil, PricingOutput{}, fmt.Errorf("failed to get pricing: %w", err)
 	}
-	return nil, PricingOutput(output), nil
+	if resp.StatusCode() != http.StatusOK {
+		return nil, PricingOutput{}, common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
+	}
+	if resp.JSON200 == nil {
+		return nil, PricingOutput{}, errors.New("empty response from API")
+	}
+
+	return nil, PricingOutput(*resp.JSON200), nil
 }

@@ -117,44 +117,44 @@ func TestPricingCmd(t *testing.T) {
   "dedicated": {
     "compute": [
       {
-        "size": "1x",
-        "milli_cpu": 500,
         "memory_gib": 2,
+        "milli_cpu": 500,
         "price_per_hour": 0.0137,
-        "price_per_month": 10
+        "price_per_month": 10,
+        "size": "1x"
       },
       {
-        "size": "2x",
-        "milli_cpu": 1000,
         "memory_gib": 4,
+        "milli_cpu": 1000,
         "price_per_hour": 0.0274,
-        "price_per_month": 20
+        "price_per_month": 20,
+        "size": "2x"
       },
       {
-        "size": "4x",
-        "milli_cpu": 2000,
         "memory_gib": 8,
+        "milli_cpu": 2000,
         "price_per_hour": 0.0548,
-        "price_per_month": 40
+        "price_per_month": 40,
+        "size": "4x"
       },
       {
-        "size": "8x",
-        "milli_cpu": 4000,
         "memory_gib": 16,
+        "milli_cpu": 4000,
         "price_per_hour": 0.1096,
-        "price_per_month": 80
+        "price_per_month": 80,
+        "size": "8x"
       }
     ],
     "storage": {
+      "included_gib_per_database": 10,
       "price_per_gib_hour": 0.0003424657534,
-      "price_per_gib_month": 0.25,
-      "included_gib_per_database": 10
+      "price_per_gib_month": 0.25
     }
   },
   "standard": {
     "compute": {
-      "price_per_hour": 0.075,
-      "included_compute_hours_per_month": 100
+      "included_compute_hours_per_month": 100,
+      "price_per_hour": 0.075
     }
   }
 }

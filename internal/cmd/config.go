@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/olekukonko/tablewriter"
-	"github.com/olekukonko/tablewriter/tw"
 	"github.com/spf13/cobra"
 
 	"github.com/timescale/ghost/internal/common"
@@ -63,29 +61,7 @@ func buildConfigCmd(app *common.App) *cobra.Command {
 }
 
 func outputConfigTable(w io.Writer, cfg *config.ConfigOutput) error {
-	table := tablewriter.NewTable(w,
-		tablewriter.WithHeaderAlignment(tw.AlignLeft),
-		tablewriter.WithPadding(tw.Padding{Left: "", Right: "  ", Overwrite: true}),
-		tablewriter.WithRendition(tw.Rendition{
-			Borders: tw.Border{
-				Left:   tw.Off,
-				Right:  tw.Off,
-				Top:    tw.Off,
-				Bottom: tw.Off,
-			},
-			Settings: tw.Settings{
-				Separators: tw.Separators{
-					ShowHeader:     tw.Off,
-					ShowFooter:     tw.Off,
-					BetweenRows:    tw.Off,
-					BetweenColumns: tw.Off,
-				},
-				Lines: tw.Lines{
-					ShowHeaderLine: tw.Off,
-				},
-			},
-		}),
-	)
+	table := common.NewTable(w)
 
 	if cfg.Analytics != nil {
 		table.Append("analytics", fmt.Sprintf("%t", *cfg.Analytics))

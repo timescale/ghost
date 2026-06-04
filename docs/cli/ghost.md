@@ -12,6 +12,19 @@ CLI for managing Postgres databases
 
 Ghost is a command-line interface for managing PostgreSQL databases.
 
+Databases share a monthly pool of compute-hours across the space. Usage is
+metered in 15-minute intervals with at least one query. Databases are
+auto-paused when the compute limit is reached. Run 'ghost overages enable' to
+allow paid usage above the included free allowance (requires a payment
+method; see 'ghost payment add').
+
+Dedicated databases are always-on instances separate from the shared compute
+pool. They are billed by uptime instead, making them well-suited for production
+workloads.
+
+Run 'ghost pricing' for current rates and 'ghost usage' to see your current
+monthly usage.
+
 ### Options
 
 ```
@@ -33,6 +46,7 @@ Ghost is a command-line interface for managing PostgreSQL databases.
 * [ghost feedback](ghost_feedback.md)	 - Submit feedback, a bug report, or a support request
 * [ghost fork](ghost_fork.md)	 - Fork a database
 * [ghost fork-dedicated](ghost_fork-dedicated.md)	 - Fork a database as dedicated
+* [ghost id](ghost_id.md)	 - Show the authenticated user or API key
 * [ghost init](ghost_init.md)	 - Interactively configure Ghost
 * [ghost invoice](ghost_invoice.md)	 - View invoices
 * [ghost list](ghost_list.md)	 - List all databases

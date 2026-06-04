@@ -7,8 +7,6 @@ import (
 	"net/http"
 
 	lipgloss "charm.land/lipgloss/v2"
-	"github.com/olekukonko/tablewriter"
-	"github.com/olekukonko/tablewriter/tw"
 	"github.com/spf13/cobra"
 
 	"github.com/timescale/ghost/internal/api"
@@ -101,30 +99,6 @@ func buildListCmd(app *common.App) *cobra.Command {
 }
 
 func outputDatabaseList(w io.Writer, databases []DatabaseListItem) error {
-	tableOpts := []tablewriter.Option{
-		tablewriter.WithHeaderAlignment(tw.AlignLeft),
-		tablewriter.WithPadding(tw.Padding{Left: "", Right: "  ", Overwrite: true}),
-		tablewriter.WithRendition(tw.Rendition{
-			Borders: tw.Border{
-				Left:   tw.Off,
-				Right:  tw.Off,
-				Top:    tw.Off,
-				Bottom: tw.Off,
-			},
-			Settings: tw.Settings{
-				Separators: tw.Separators{
-					ShowHeader:     tw.Off,
-					ShowFooter:     tw.Off,
-					BetweenRows:    tw.Off,
-					BetweenColumns: tw.Off,
-				},
-				Lines: tw.Lines{
-					ShowHeaderLine: tw.Off,
-				},
-			},
-		}),
-	}
-
 	var standard, dedicated []DatabaseListItem
 	for _, db := range databases {
 		if db.Type == api.DatabaseTypeDedicated {
@@ -134,7 +108,7 @@ func outputDatabaseList(w io.Writer, databases []DatabaseListItem) error {
 		}
 	}
 
-	standardTable := tablewriter.NewTable(w, tableOpts...)
+	standardTable := common.NewTable(w)
 	standardTable.Header("ID", "NAME", "STATUS", "STORAGE", "COMPUTE")
 	for _, db := range standard {
 		standardTable.Append(db.ID, db.Name, db.Status, common.FormatStorageSize(db.StorageMib), formatComputeHours(db.ComputeMinutes))
@@ -146,7 +120,7 @@ func outputDatabaseList(w io.Writer, databases []DatabaseListItem) error {
 	if len(dedicated) > 0 {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, lipgloss.NewStyle().Bold(true).Render("Dedicated Databases"))
-		dedicatedTable := tablewriter.NewTable(w, tableOpts...)
+		dedicatedTable := common.NewTable(w)
 		dedicatedTable.Header("ID", "NAME", "SIZE", "STATUS", "STORAGE")
 		for _, db := range dedicated {
 			sizeStr := "-"

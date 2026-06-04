@@ -192,6 +192,11 @@ title: List Databases
 			args:       []string{"mcp", "describe", "ghost_list"},
 			wantStdout: ghostListText,
 		},
+		{
+			name:       "show alias",
+			args:       []string{"mcp", "show", "ghost_list"},
+			wantStdout: ghostListText,
+		},
 	}
 
 	runCmdTests(t, tests)

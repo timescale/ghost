@@ -1,14 +1,15 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 
 	lipgloss "charm.land/lipgloss/v2"
-	"github.com/olekukonko/tablewriter"
-	"github.com/olekukonko/tablewriter/tw"
 	"github.com/spf13/cobra"
 
+	"github.com/timescale/ghost/internal/api"
 	"github.com/timescale/ghost/internal/common"
 	"github.com/timescale/ghost/internal/util"
 )
@@ -33,18 +34,25 @@ func buildPricingCmd(app *common.App) *cobra.Command {
 				return err
 			}
 
-			output, err := common.FetchPricing(cmd.Context(), client)
+			resp, err := client.GetPricingWithResponse(cmd.Context())
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to get pricing: %w", err)
 			}
+			if resp.StatusCode() != http.StatusOK {
+				return common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
+			}
+			if resp.JSON200 == nil {
+				return errors.New("empty response from API")
+			}
+			pricing := resp.JSON200
 
 			switch {
 			case jsonOutput:
-				return util.SerializeToJSON(cmd.OutOrStdout(), output)
+				return util.SerializeToJSON(cmd.OutOrStdout(), pricing)
 			case yamlOutput:
-				return util.SerializeToYAML(cmd.OutOrStdout(), output)
+				return util.SerializeToYAML(cmd.OutOrStdout(), pricing)
 			default:
-				return renderPricingText(cmd.OutOrStdout(), output)
+				return outputPricing(cmd.OutOrStdout(), pricing)
 			}
 		},
 	}
@@ -55,8 +63,8 @@ func buildPricingCmd(app *common.App) *cobra.Command {
 	return cmd
 }
 
-func renderPricingText(w io.Writer, p common.PricingOutput) error {
-	overage := p.Standard.Compute
+func outputPricing(w io.Writer, pricing *api.Pricing) error {
+	overage := pricing.Standard.Compute
 	fmt.Fprintf(w, `First %d compute-hours per month included; $%.4f/hour above that.
 
 Compute-hours are shared across all non-dedicated databases in the space and
@@ -67,45 +75,22 @@ overages enable' to allow paid usage above the included free allowance.
 
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, lipgloss.NewStyle().Bold(true).Render("Dedicated"))
-	storage := p.Dedicated.Storage
+
+	storage := pricing.Dedicated.Storage
 	fmt.Fprintf(w, `Always-on databases for production workloads. Separate from the shared compute
 pool and billed by uptime rather than query activity. Pausing stops compute
 charges, but storage charges continue. The first %d GiB of storage per database
 is included; $%.6f/GiB/hour ($%.2f/GiB/month) above that.
-`, storage.IncludedGiBPerDatabase, storage.PricePerGiBHour, storage.PricePerGiBMonth)
+`, storage.IncludedGibPerDatabase, storage.PricePerGibHour, storage.PricePerGibMonth)
 	fmt.Fprintln(w)
-	table := tablewriter.NewTable(w,
-		tablewriter.WithHeaderAlignment(tw.AlignLeft),
-		// Disable auto-formatting so "$/HOUR" isn't split into "$ / HOUR" on
-		// non-alphanumeric boundaries.
-		tablewriter.WithHeaderAutoFormat(tw.Off),
-		tablewriter.WithPadding(tw.Padding{Left: "", Right: "  ", Overwrite: true}),
-		tablewriter.WithRendition(tw.Rendition{
-			Borders: tw.Border{
-				Left:   tw.Off,
-				Right:  tw.Off,
-				Top:    tw.Off,
-				Bottom: tw.Off,
-			},
-			Settings: tw.Settings{
-				Separators: tw.Separators{
-					ShowHeader:     tw.Off,
-					ShowFooter:     tw.Off,
-					BetweenRows:    tw.Off,
-					BetweenColumns: tw.Off,
-				},
-				Lines: tw.Lines{
-					ShowHeaderLine: tw.Off,
-				},
-			},
-		}),
-	)
+
+	table := common.NewTable(w)
 	table.Header("SIZE", "VCPU", "MEMORY", "$/HOUR", "$/MONTH")
-	for _, c := range p.Dedicated.Compute {
+	for _, c := range pricing.Dedicated.Compute {
 		table.Append(
-			c.Size,
-			fmt.Sprintf("%.1f", float64(c.MilliCPU)/1000),
-			fmt.Sprintf("%d GiB", c.MemoryGiB),
+			string(c.Size),
+			fmt.Sprintf("%.1f", float64(c.MilliCpu)/1000),
+			fmt.Sprintf("%d GiB", c.MemoryGib),
 			fmt.Sprintf("$%.4f", c.PricePerHour),
 			fmt.Sprintf("$%.2f", c.PricePerMonth),
 		)

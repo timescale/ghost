@@ -222,6 +222,22 @@ func TestMCPUninstallCmd(t *testing.T) {
 			wantStdout: "- client: cursor\n  status: uninstalled\n",
 		},
 		{
+			name: "rm alias",
+			args: []string{"mcp", "rm", "cursor", "--no-backup", "--yaml"},
+			files: map[string]string{
+				".cursor/mcp.json": cursorConfiguredFile,
+			},
+			wantStdout: "- client: cursor\n  status: uninstalled\n",
+		},
+		{
+			name: "remove alias",
+			args: []string{"mcp", "remove", "cursor", "--no-backup", "--yaml"},
+			files: map[string]string{
+				".cursor/mcp.json": cursorConfiguredFile,
+			},
+			wantStdout: "- client: cursor\n  status: uninstalled\n",
+		},
+		{
 			name: "all target uninstalls configured clients",
 			args: []string{"mcp", "uninstall", "all", "--no-backup", "--json"},
 			files: map[string]string{

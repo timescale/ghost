@@ -144,6 +144,32 @@ func TestInvoiceViewCmd(t *testing.T) {
 			opts:       []runOption{experimental},
 			wantStdout: "PRODUCT  DATABASE ID  QTY  UNIT PRICE  TOTAL   \nstorage  svc-abc123   20   $0.25       $5.00   \ncompute  svc-abc123   40   $0.5        $20.00  \n",
 		},
+		{
+			name: "details alias",
+			args: []string{"invoice", "details", "inv_123"},
+			setup: func(m *mock.MockClientWithResponsesInterface) {
+				m.EXPECT().GetInvoiceWithResponse(validCtx, "test-project", "inv_123").
+					Return(&api.GetInvoiceResponse{
+						HTTPResponse: httpResponse(http.StatusOK),
+						JSON200:      &detail,
+					}, nil)
+			},
+			opts:       []runOption{experimental},
+			wantStdout: "PRODUCT  DATABASE ID  QTY  UNIT PRICE  TOTAL   \nstorage  svc-abc123   20   $0.25       $5.00   \ncompute  svc-abc123   40   $0.5        $20.00  \n",
+		},
+		{
+			name: "show alias",
+			args: []string{"invoice", "show", "inv_123"},
+			setup: func(m *mock.MockClientWithResponsesInterface) {
+				m.EXPECT().GetInvoiceWithResponse(validCtx, "test-project", "inv_123").
+					Return(&api.GetInvoiceResponse{
+						HTTPResponse: httpResponse(http.StatusOK),
+						JSON200:      &detail,
+					}, nil)
+			},
+			opts:       []runOption{experimental},
+			wantStdout: "PRODUCT  DATABASE ID  QTY  UNIT PRICE  TOTAL   \nstorage  svc-abc123   20   $0.25       $5.00   \ncompute  svc-abc123   40   $0.5        $20.00  \n",
+		},
 	}
 
 	runCmdTests(t, tests)

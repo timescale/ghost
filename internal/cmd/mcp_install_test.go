@@ -108,6 +108,13 @@ func TestMCPInstallCmd(t *testing.T) {
 			after:      assertCursorHasGhost,
 		},
 		{
+			name:       "add alias",
+			args:       []string{"mcp", "add", "cursor", "--no-backup", "--yaml"},
+			ghostPath:  "/opt/bin/ghost",
+			wantStdout: "- client: cursor\n  detail: {{HOME}}/.cursor/mcp.json\n  status: installed\n",
+			after:      assertCursorHasGhost,
+		},
+		{
 			name:    "json and yaml are mutually exclusive",
 			args:    []string{"mcp", "install", "cursor", "--json", "--yaml"},
 			wantErr: "if any flags in the group [json yaml] are set none of the others can be; [json yaml] were all set",

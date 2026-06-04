@@ -14,8 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/olekukonko/tablewriter"
-	"github.com/olekukonko/tablewriter/tw"
 	"github.com/spf13/cobra"
 	"github.com/tailscale/hujson"
 
@@ -429,27 +427,7 @@ func writeMCPInstallOutput(cmd *cobra.Command, rows []MCPClientStatusOutput, jso
 }
 
 func outputMCPClientResultTable(w io.Writer, rows []MCPClientStatusOutput) error {
-	table := tablewriter.NewTable(w,
-		tablewriter.WithHeaderAlignment(tw.AlignLeft),
-		tablewriter.WithPadding(tw.Padding{Left: "", Right: "  ", Overwrite: true}),
-		tablewriter.WithRendition(tw.Rendition{
-			Borders: tw.Border{
-				Left:   tw.Off,
-				Right:  tw.Off,
-				Top:    tw.Off,
-				Bottom: tw.Off,
-			},
-			Settings: tw.Settings{
-				Separators: tw.Separators{
-					ShowHeader:     tw.Off,
-					ShowFooter:     tw.Off,
-					BetweenRows:    tw.Off,
-					BetweenColumns: tw.Off,
-				},
-				Lines: tw.Lines{ShowHeaderLine: tw.Off},
-			},
-		}),
-	)
+	table := common.NewTable(w)
 	var hasDetail bool
 	for _, row := range rows {
 		if row.Detail != "" {

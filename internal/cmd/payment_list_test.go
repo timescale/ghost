@@ -93,22 +93,22 @@ func TestPaymentListCmd(t *testing.T) {
 			},
 			wantStdout: `[
   {
-    "id": "pm_123",
     "brand": "Visa",
-    "last4": "4242",
     "exp_month": 12,
     "exp_year": 2025,
-    "is_primary": true,
-    "pending_deletion": false
+    "id": "pm_123",
+    "last4": "4242",
+    "pending_deletion": false,
+    "primary": true
   },
   {
-    "id": "pm_456",
     "brand": "Mastercard",
-    "last4": "5555",
     "exp_month": 6,
     "exp_year": 2026,
-    "is_primary": false,
-    "pending_deletion": true
+    "id": "pm_456",
+    "last4": "5555",
+    "pending_deletion": true,
+    "primary": false
   }
 ]
 `,
@@ -127,16 +127,16 @@ func TestPaymentListCmd(t *testing.T) {
   exp_month: 12
   exp_year: 2025
   id: pm_123
-  is_primary: true
   last4: "4242"
   pending_deletion: false
+  primary: true
 - brand: Mastercard
   exp_month: 6
   exp_year: 2026
   id: pm_456
-  is_primary: false
   last4: "5555"
   pending_deletion: true
+  primary: false
 `,
 		},
 		{

@@ -55,13 +55,13 @@ const (
 
 // ApiKey An API key in a space.
 type ApiKey struct {
-	// CreatedAt Time the key was created.
+	// CreatedAt Time the API key was created.
 	CreatedAt time.Time `json:"created_at"`
 
-	// Name User-provided label for the key.
+	// Name User-provided label for the API key.
 	Name string `json:"name"`
 
-	// Prefix Stable prefix identifier for the key (starts with `gt_`). Used to identify the key for deletion.
+	// Prefix Stable prefix identifier for the API key (starts with `gt_`), identifying the key without exposing the secret.
 	Prefix string `json:"prefix"`
 }
 
@@ -81,6 +81,15 @@ type ApiKeyCredentials struct {
 
 // ApiKeyInfo Information about the API key used for authentication.
 type ApiKeyInfo struct {
+	// CreatedAt Time the API key was created.
+	CreatedAt time.Time `json:"created_at"`
+
+	// Name User-provided label for the API key.
+	Name string `json:"name"`
+
+	// Prefix Stable prefix identifier for the API key (starts with `gt_`), identifying the key without exposing the secret.
+	Prefix string `json:"prefix"`
+
 	// SpaceId Space the API key is scoped to.
 	SpaceId string `json:"space_id"`
 

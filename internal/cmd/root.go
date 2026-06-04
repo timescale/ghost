@@ -125,6 +125,7 @@ monthly usage.`,
 	cmd.AddCommand(buildForkDedicatedCmd(app))
 	cmd.AddCommand(buildListCmd(app))
 	cmd.AddCommand(buildUsageCmd(app))
+	cmd.AddCommand(buildIDCmd(app))
 	cmd.AddCommand(buildDeleteCmd(app))
 	cmd.AddCommand(buildPauseCmd(app))
 	cmd.AddCommand(buildResumeCmd(app))

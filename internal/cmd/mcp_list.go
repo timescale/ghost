@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/olekukonko/tablewriter"
-	"github.com/olekukonko/tablewriter/tw"
 	"github.com/spf13/cobra"
 
 	"github.com/timescale/ghost/internal/common"
@@ -24,6 +22,7 @@ func buildMCPListCmd(app *common.App) *cobra.Command {
 		Long: `List all MCP tools, prompts, and resources exposed via the Ghost MCP server.
 
 The output can be formatted as a table, JSON, or YAML.`,
+		Aliases: []string{"ls"},
 		Example: `  # List all capabilities in table format (default)
   ghost mcp list
 
@@ -76,29 +75,7 @@ The output can be formatted as a table, JSON, or YAML.`,
 // outputMCPList outputs capabilities in text/table format. Results are ordered
 // alphabetically by type, then name.
 func outputMCPList(output io.Writer, capabilities *mcp.Capabilities) error {
-	table := tablewriter.NewTable(output,
-		tablewriter.WithHeaderAlignment(tw.AlignLeft),
-		tablewriter.WithPadding(tw.Padding{Left: "", Right: "  ", Overwrite: true}),
-		tablewriter.WithRendition(tw.Rendition{
-			Borders: tw.Border{
-				Left:   tw.Off,
-				Right:  tw.Off,
-				Top:    tw.Off,
-				Bottom: tw.Off,
-			},
-			Settings: tw.Settings{
-				Separators: tw.Separators{
-					ShowHeader:     tw.Off,
-					ShowFooter:     tw.Off,
-					BetweenRows:    tw.Off,
-					BetweenColumns: tw.Off,
-				},
-				Lines: tw.Lines{
-					ShowHeaderLine: tw.Off,
-				},
-			},
-		}),
-	)
+	table := common.NewTable(output)
 
 	table.Header("TYPE", "NAME")
 

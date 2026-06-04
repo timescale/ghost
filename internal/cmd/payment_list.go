@@ -6,66 +6,12 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/olekukonko/tablewriter"
-	"github.com/olekukonko/tablewriter/tw"
 	"github.com/spf13/cobra"
 
+	"github.com/timescale/ghost/internal/api"
 	"github.com/timescale/ghost/internal/common"
 	"github.com/timescale/ghost/internal/util"
 )
-
-// PaymentMethodOutput represents the output format for a payment method
-type PaymentMethodOutput struct {
-	ID              string `json:"id"`
-	Brand           string `json:"brand"`
-	Last4           string `json:"last4"`
-	ExpMonth        int    `json:"exp_month"`
-	ExpYear         int    `json:"exp_year"`
-	Primary         bool   `json:"is_primary"`
-	PendingDeletion bool   `json:"pending_deletion"`
-}
-
-func outputPaymentMethods(w io.Writer, methods []PaymentMethodOutput) error {
-	table := tablewriter.NewTable(w,
-		tablewriter.WithHeaderAlignment(tw.AlignLeft),
-		tablewriter.WithPadding(tw.Padding{Left: "", Right: "  ", Overwrite: true}),
-		tablewriter.WithRendition(tw.Rendition{
-			Borders: tw.Border{
-				Left:   tw.Off,
-				Right:  tw.Off,
-				Top:    tw.Off,
-				Bottom: tw.Off,
-			},
-			Settings: tw.Settings{
-				Separators: tw.Separators{
-					ShowHeader:     tw.Off,
-					ShowFooter:     tw.Off,
-					BetweenRows:    tw.Off,
-					BetweenColumns: tw.Off,
-				},
-				Lines: tw.Lines{
-					ShowHeaderLine: tw.Off,
-				},
-			},
-		}),
-	)
-
-	table.Header("ID", "BRAND", "LAST4", "EXPIRES", "PRIMARY", "PENDING DELETION")
-	for _, pm := range methods {
-		expires := fmt.Sprintf("%02d/%d", pm.ExpMonth, pm.ExpYear)
-		primary := "no"
-		if pm.Primary {
-			primary = "yes"
-		}
-		pendingDeletion := "no"
-		if pm.PendingDeletion {
-			pendingDeletion = "yes"
-		}
-		table.Append(pm.ID, pm.Brand, pm.Last4, expires, primary, pendingDeletion)
-	}
-
-	return table.Render()
-}
 
 func buildPaymentListCmd(app *common.App) *cobra.Command {
 	var jsonOutput bool
@@ -105,26 +51,13 @@ func buildPaymentListCmd(app *common.App) *cobra.Command {
 				return nil
 			}
 
-			output := make([]PaymentMethodOutput, len(methods))
-			for i, pm := range methods {
-				output[i] = PaymentMethodOutput{
-					ID:              pm.Id,
-					Brand:           pm.Brand,
-					Last4:           pm.Last4,
-					ExpMonth:        pm.ExpMonth,
-					ExpYear:         pm.ExpYear,
-					Primary:         pm.Primary,
-					PendingDeletion: pm.PendingDeletion,
-				}
-			}
-
 			switch {
 			case jsonOutput:
-				return util.SerializeToJSON(cmd.OutOrStdout(), output)
+				return util.SerializeToJSON(cmd.OutOrStdout(), methods)
 			case yamlOutput:
-				return util.SerializeToYAML(cmd.OutOrStdout(), output)
+				return util.SerializeToYAML(cmd.OutOrStdout(), methods)
 			default:
-				return outputPaymentMethods(cmd.OutOrStdout(), output)
+				return outputPaymentMethods(cmd.OutOrStdout(), methods)
 			}
 		},
 	}
@@ -134,4 +67,24 @@ func buildPaymentListCmd(app *common.App) *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("json", "yaml")
 
 	return cmd
+}
+
+func outputPaymentMethods(w io.Writer, methods []api.PaymentMethod) error {
+	table := common.NewTable(w)
+
+	table.Header("ID", "BRAND", "LAST 4", "EXPIRES", "PRIMARY", "PENDING DELETION")
+	for _, pm := range methods {
+		expires := fmt.Sprintf("%02d/%d", pm.ExpMonth, pm.ExpYear)
+		primary := "no"
+		if pm.Primary {
+			primary = "yes"
+		}
+		pendingDeletion := "no"
+		if pm.PendingDeletion {
+			pendingDeletion = "yes"
+		}
+		table.Append(pm.Id, pm.Brand, pm.Last4, expires, primary, pendingDeletion)
+	}
+
+	return table.Render()
 }

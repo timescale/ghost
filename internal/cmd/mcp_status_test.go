@@ -172,6 +172,14 @@ func TestMCPStatusCmd(t *testing.T) {
 			wantStdout: "- client: cursor\n  status: configured\n",
 		},
 		{
+			name: "stat alias",
+			args: []string{"mcp", "stat", "cursor", "--yaml"},
+			files: map[string]string{
+				".cursor/mcp.json": cursorConfiguredOptBinFile,
+			},
+			wantStdout: "- client: cursor\n  status: configured\n",
+		},
+		{
 			name: "all clients mixed some configured exits zero",
 			args: []string{"mcp", "status"},
 			files: map[string]string{
