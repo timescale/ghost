@@ -226,3 +226,26 @@ export function NavQueriesPlus({ className = '', size = 16 }: IconProps) {
     </svg>
   );
 }
+
+// CheckIcon ported from popsql-lollipop's CheckmarkIcon. The source path lives
+// in a 10x7 box; we center+scale it into a 16x16 viewBox so it lines up with
+// the other icons (CopyIcon, EyeIcon, …).
+export function CheckIcon({ className = '', size = 16 }: IconProps) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        transform="translate(1 3.1) scale(1.4)"
+        d="M2.197 3.47a.75.75 0 00-1.06 1.06L3.22 6.614a.75.75 0 001.06 0L8.864 2.03A.75.75 0 007.804.97L3.75 5.023 2.197 3.47z"
+        fill="currentColor"
+        fillRule="nonzero"
+      />
+    </svg>
+  );
+}
