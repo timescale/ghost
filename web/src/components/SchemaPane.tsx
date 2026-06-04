@@ -706,7 +706,7 @@ function RoutineNode({ ns, routine, ctx }: RoutineNodeProps) {
         ctx.setContextMenu({
           x: e.clientX,
           y: e.clientY,
-          items: routineMenuItems(ns, routine.name),
+          items: routineMenuItems(ns, routine, ctx.showModal),
         });
       }}
     />
@@ -730,7 +730,7 @@ function EnumNode({ ns, enum_, ctx }: EnumNodeProps) {
         ctx.setContextMenu({
           x: e.clientX,
           y: e.clientY,
-          items: routineMenuItems(ns, enum_.name),
+          items: [copyQualifiedNameItem(ns, enum_.name)],
         });
       }}
     />
@@ -1404,20 +1404,39 @@ function indexMenuItems(
       },
     );
   }
-  items.push({
-    key: 'copy-name',
-    label: iconLabel(CopyIcon, 'Copy qualified name'),
-    onClick: () => copyText(qualifiedName(ns, index.name)),
-  });
+  items.push(copyQualifiedNameItem(ns, index.name));
   return items;
 }
 
-function routineMenuItems(ns: string, name: string): MenuItem[] {
-  return [
-    {
-      key: 'copy-name',
-      label: iconLabel(CopyIcon, 'Copy qualified name'),
-      onClick: () => copyText(qualifiedName(ns, name)),
-    },
-  ];
+function copyQualifiedNameItem(ns: string, name: string): MenuItem {
+  return {
+    key: 'copy-name',
+    label: iconLabel(CopyIcon, 'Copy qualified name'),
+    onClick: () => copyText(qualifiedName(ns, name)),
+  };
+}
+
+function routineMenuItems(
+  ns: string,
+  routine: Routine,
+  showModal: (title: string, text: string) => void,
+): MenuItem[] {
+  const items: MenuItem[] = [];
+  const { definition } = routine;
+  if (definition) {
+    items.push(
+      {
+        key: 'view-def',
+        label: iconLabel(EyeIcon, 'View definition'),
+        onClick: () => showModal(routine.name, definition),
+      },
+      {
+        key: 'copy-def',
+        label: iconLabel(CopyIcon, 'Copy definition'),
+        onClick: () => copyText(definition),
+      },
+    );
+  }
+  items.push(copyQualifiedNameItem(ns, routine.name));
+  return items;
 }
