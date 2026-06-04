@@ -25,7 +25,6 @@ import {
 import { useServeStore } from '../store';
 
 import {
-  CheckIcon,
   ChevronDown,
   CopyIcon,
   EyeIcon,
@@ -35,6 +34,7 @@ import {
   NavTable,
   RefreshIcon,
 } from './SchemaIcons';
+import { SqlCodeView } from './SqlCodeView';
 
 interface SchemaPaneProps {
   databaseId: string;
@@ -1216,23 +1216,6 @@ interface DefinitionModalProps {
 function DefinitionModal({ title, text, onClose }: DefinitionModalProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const downTarget = useRef<EventTarget | null>(null);
-  const [copied, setCopied] = useState(false);
-  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Clear any pending reset timer on unmount.
-  useEffect(
-    () => () => {
-      if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
-    },
-    [],
-  );
-
-  const onCopy = () => {
-    copyText(text);
-    setCopied(true);
-    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
-    copyResetTimer.current = setTimeout(() => setCopied(false), 1500);
-  };
 
   // Close on Escape.
   useEffect(() => {
@@ -1263,7 +1246,7 @@ function DefinitionModal({ title, text, onClose }: DefinitionModalProps) {
         if (e.key === 'Escape') onClose();
       }}
     >
-      <div className="flex max-h-[80vh] min-w-[360px] max-w-[min(600px,90vw)] flex-col rounded-lg border border-slate-200 bg-white shadow-xl">
+      <div className="flex max-h-[80vh] w-[min(960px,92vw)] flex-col rounded-lg border border-slate-200 bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
           <span className="text-sm font-semibold text-slate-900">{title}</span>
           <button
@@ -1275,36 +1258,8 @@ function DefinitionModal({ title, text, onClose }: DefinitionModalProps) {
             ✕
           </button>
         </div>
-        <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all px-4 py-3 text-[13px] leading-relaxed text-slate-800">
-          {text}
-        </pre>
-        <div className="flex justify-end border-t border-slate-200 px-4 py-2">
-          <button
-            type="button"
-            onClick={onCopy}
-            aria-label={copied ? 'Copied' : 'Copy to clipboard'}
-            title={copied ? 'Copied' : 'Copy to clipboard'}
-            className={`rounded border p-1.5 transition-colors ${
-              copied
-                ? 'border-green-300 bg-green-50 text-green-600'
-                : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-800'
-            }`}
-          >
-            <span className="relative block size-4">
-              <CopyIcon
-                size={16}
-                className={`absolute inset-0 transition-all duration-200 ${
-                  copied ? 'scale-50 opacity-0' : 'scale-100 opacity-100'
-                }`}
-              />
-              <CheckIcon
-                size={16}
-                className={`absolute inset-0 transition-all duration-200 ${
-                  copied ? 'scale-100 opacity-100' : 'scale-50 opacity-0'
-                }`}
-              />
-            </span>
-          </button>
+        <div className="min-h-0 flex-1 overflow-auto p-2">
+          <SqlCodeView query={text} />
         </div>
       </div>
     </div>
