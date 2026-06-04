@@ -26,6 +26,10 @@ import { useServeStore } from '../store';
 
 import {
   ChevronDown,
+  CopyIcon,
+  EyeIcon,
+  type IconProps,
+  NavQueriesPlus,
   NavSuperscript,
   NavTable,
   RefreshIcon,
@@ -151,6 +155,7 @@ interface TreeContext {
   searchTerm: string;
   toggle: (key: string) => void;
   setContextMenu: (m: ContextMenuState | null) => void;
+  showModal: (title: string, text: string) => void;
 }
 
 interface SchemaTreeProps {
@@ -177,6 +182,10 @@ function SchemaTree({ databaseId, schemas, searchTerm }: SchemaTreeProps) {
   );
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [definitionModal, setDefinitionModal] = useState<{
+    title: string;
+    text: string;
+  } | null>(null);
 
   const ctx = useMemo<TreeContext>(
     () => ({
@@ -187,6 +196,7 @@ function SchemaTree({ databaseId, schemas, searchTerm }: SchemaTreeProps) {
       searchTerm,
       toggle: toggleForDb,
       setContextMenu,
+      showModal: (title, text) => setDefinitionModal({ title, text }),
     }),
     [expanded, search, searchTerm, toggleForDb],
   );
@@ -200,6 +210,13 @@ function SchemaTree({ databaseId, schemas, searchTerm }: SchemaTreeProps) {
       )}
       {contextMenu ? (
         <ContextMenu state={contextMenu} onClose={() => setContextMenu(null)} />
+      ) : null}
+      {definitionModal ? (
+        <DefinitionModal
+          title={definitionModal.title}
+          text={definitionModal.text}
+          onClose={() => setDefinitionModal(null)}
+        />
       ) : null}
     </div>
   );
@@ -451,7 +468,7 @@ function TableNode({ ns, table, ctx }: TableNodeProps) {
           count={ctx.searchActive ? indexes.length : allIndexes.length}
         >
           {indexes.map((idx) => (
-            <IndexRow key={idx.name} index={idx} ctx={ctx} />
+            <IndexRow key={idx.name} ns={ns} index={idx} ctx={ctx} />
           ))}
         </TreeRow>
       ) : null}
@@ -510,10 +527,11 @@ function ColumnRow({ parent, ns, parentName, col, ctx }: ColumnRowProps) {
 }
 
 interface IndexRowProps extends NodeProps {
+  ns: string;
   index: IndexSchema;
 }
 
-function IndexRow({ index, ctx }: IndexRowProps) {
+function IndexRow({ ns, index, ctx }: IndexRowProps) {
   return (
     <LeafRow
       ctx={ctx}
@@ -525,6 +543,14 @@ function IndexRow({ index, ctx }: IndexRowProps) {
           <Pill>{index.columns}</Pill>
         </>
       }
+      onContextMenu={(e) => {
+        e.preventDefault();
+        ctx.setContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          items: indexMenuItems(ns, index, ctx.showModal),
+        });
+      }}
     />
   );
 }
@@ -600,7 +626,7 @@ function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
           count={indexes.length}
         >
           {indexes.map((idx) => (
-            <IndexRow key={idx.name} index={idx} ctx={ctx} />
+            <IndexRow key={idx.name} ns={ns} index={idx} ctx={ctx} />
           ))}
         </TreeRow>
       ) : null}
@@ -946,6 +972,20 @@ function columnConstraintLabel(
   return null;
 }
 
+// iconLabel wraps a text label with a leading icon, matching popsql's
+// context-menu icon+label layout.
+function iconLabel(
+  Icon: (props: IconProps) => JSX.Element,
+  text: string,
+): ReactNode {
+  return (
+    <>
+      <Icon className="flex-none text-slate-500" size={14} />
+      <span>{text}</span>
+    </>
+  );
+}
+
 function highlight(text: string, term: string): ReactNode {
   if (!term) return text;
   const idx = text.toLowerCase().indexOf(term.toLowerCase());
@@ -1053,7 +1093,8 @@ interface ContextMenuState {
 }
 
 interface MenuItem {
-  label: string;
+  key: string;
+  label: ReactNode;
   onClick: () => void;
 }
 
@@ -1094,14 +1135,14 @@ function ContextMenu({ state, onClose }: ContextMenuProps) {
     >
       {state.items.map((item) => (
         <button
-          key={item.label}
+          key={item.key}
           type="button"
           role="menuitem"
           onClick={() => {
             item.onClick();
             onClose();
           }}
-          className="block w-full px-3 py-1 text-left hover:bg-blue-50"
+          className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-blue-50"
         >
           {item.label}
         </button>
@@ -1116,15 +1157,90 @@ function copyText(text: string) {
   void navigator.clipboard.writeText(text);
 }
 
+// ---- Definition modal -----------------------------------------------------
+
+interface DefinitionModalProps {
+  title: string;
+  text: string;
+  onClose: () => void;
+}
+
+function DefinitionModal({ title, text, onClose }: DefinitionModalProps) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const downTarget = useRef<EventTarget | null>(null);
+
+  // Close on Escape.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // Only close on click-outside when the mousedown also originated on the
+  // backdrop, so dragging to select text inside the modal doesn't dismiss it.
+  const onClickOutside = (e: MouseEvent<HTMLDivElement>) => {
+    if (e.target === ref.current && downTarget.current === ref.current) {
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      ref={ref}
+      onClick={onClickOutside}
+      onMouseDown={(e) => {
+        downTarget.current = e.target;
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
+    >
+      <div className="flex max-h-[80vh] min-w-[360px] max-w-[min(600px,90vw)] flex-col rounded-lg border border-slate-200 bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
+          <span className="text-sm font-semibold text-slate-900">{title}</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+        <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all px-4 py-3 text-[13px] leading-relaxed text-slate-800">
+          {text}
+        </pre>
+        <div className="flex justify-end border-t border-slate-200 px-4 py-2">
+          <button
+            type="button"
+            onClick={() => copyText(text)}
+            className="rounded border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            Copy to clipboard
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function schemaMenuItems(name: string): MenuItem[] {
   const append = useServeStore.getState().appendEditorSql;
   return [
     {
-      label: `New query: SET search_path TO ${quoteIdent(name)}`,
+      key: 'new-query',
+      label: iconLabel(
+        NavQueriesPlus,
+        `New query: SET search_path TO ${quoteIdent(name)}`,
+      ),
       onClick: () => append(`SET search_path TO ${quoteIdent(name)};`),
     },
     {
-      label: 'Copy schema name',
+      key: 'copy-name',
+      label: iconLabel(CopyIcon, 'Copy schema name'),
       onClick: () => copyText(quoteIdent(name)),
     },
   ];
@@ -1140,15 +1256,18 @@ function tableMenuItems(
   const sql = selectAllSql(ns, table.name, cols);
   return [
     {
-      label: `New query from ${kind}`,
+      key: 'new-query',
+      label: iconLabel(NavQueriesPlus, `New query from ${kind}`),
       onClick: () => append(sql),
     },
     {
-      label: 'Copy SELECT statement',
+      key: 'copy-select',
+      label: iconLabel(CopyIcon, 'Copy SELECT statement'),
       onClick: () => copyText(sql),
     },
     {
-      label: `Copy ${kind} name`,
+      key: 'copy-name',
+      label: iconLabel(CopyIcon, `Copy ${kind} name`),
       onClick: () => copyText(qualifiedName(ns, table.name)),
     },
   ];
@@ -1159,28 +1278,61 @@ function columnMenuItems(ns: string, table: string, col: string): MenuItem[] {
   const sql = `SELECT ${quoteIdent(col)} FROM ${qualifiedName(ns, table)} LIMIT 100;`;
   return [
     {
-      label: 'New query with column',
+      key: 'new-query',
+      label: iconLabel(NavQueriesPlus, 'New query with column'),
       onClick: () => append(sql),
     },
     {
-      label: 'Copy SELECT statement',
+      key: 'copy-select',
+      label: iconLabel(CopyIcon, 'Copy SELECT statement'),
       onClick: () => copyText(sql),
     },
     {
-      label: 'Copy column name',
+      key: 'copy-name',
+      label: iconLabel(CopyIcon, 'Copy column name'),
       onClick: () => copyText(quoteIdent(col)),
     },
     {
-      label: 'Copy qualified column name',
+      key: 'copy-qualified',
+      label: iconLabel(CopyIcon, 'Copy qualified column name'),
       onClick: () => copyText(`${qualifiedName(ns, table)}.${quoteIdent(col)}`),
     },
   ];
 }
 
+function indexMenuItems(
+  ns: string,
+  index: IndexSchema,
+  showModal: (title: string, text: string) => void,
+): MenuItem[] {
+  const items: MenuItem[] = [];
+  if (index.definition) {
+    items.push(
+      {
+        key: 'view-def',
+        label: iconLabel(EyeIcon, 'View definition'),
+        onClick: () => showModal(index.name, index.definition),
+      },
+      {
+        key: 'copy-def',
+        label: iconLabel(CopyIcon, 'Copy definition'),
+        onClick: () => copyText(index.definition),
+      },
+    );
+  }
+  items.push({
+    key: 'copy-name',
+    label: iconLabel(CopyIcon, 'Copy qualified name'),
+    onClick: () => copyText(qualifiedName(ns, index.name)),
+  });
+  return items;
+}
+
 function routineMenuItems(ns: string, name: string): MenuItem[] {
   return [
     {
-      label: 'Copy qualified name',
+      key: 'copy-name',
+      label: iconLabel(CopyIcon, 'Copy qualified name'),
       onClick: () => copyText(qualifiedName(ns, name)),
     },
   ];

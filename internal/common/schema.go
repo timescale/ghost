@@ -90,6 +90,7 @@ const (
 type IndexSchema struct {
 	Name        string `json:"name"`
 	Columns     string `json:"columns"`
+	Definition  string `json:"definition,omitempty"`
 	IsUnique    bool   `json:"is_unique,omitempty"`
 	WhereClause string `json:"where_clause,omitempty"`
 }
@@ -253,6 +254,7 @@ type indexRow struct {
 	IndexName   string  `db:"index_name"`
 	IsUnique    bool    `db:"is_unique"`
 	ColumnsDef  string  `db:"columns_def"`
+	Definition  string  `db:"definition"`
 	WhereClause *string `db:"where_clause"`
 }
 
@@ -377,6 +379,7 @@ SELECT
         )
         FROM generate_series(1, ix.indnkeyatts) AS k(n)
     ) AS columns_def,
+    pg_get_indexdef(ix.indexrelid) AS definition,
     pg_get_expr(ix.indpred, ix.indrelid) AS where_clause
 FROM pg_index ix
 JOIN pg_class t ON t.oid = ix.indrelid
@@ -824,6 +827,7 @@ func fetchIndexes(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schema
 		idx := IndexSchema{
 			Name:        row.IndexName,
 			Columns:     row.ColumnsDef,
+			Definition:  row.Definition,
 			IsUnique:    row.IsUnique,
 			WhereClause: util.DerefStr(row.WhereClause),
 		}

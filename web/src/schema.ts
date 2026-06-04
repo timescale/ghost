@@ -59,6 +59,7 @@ export interface TableConstraint {
 export interface IndexSchema {
   name: string;
   columns: string;
+  definition: string;
   is_unique?: boolean;
   where_clause?: string;
 }
