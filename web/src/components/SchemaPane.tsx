@@ -890,7 +890,7 @@ function RightDetail({ children }: { children: ReactNode }) {
 
 function Pill({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex flex-none items-center whitespace-nowrap rounded bg-slate-200/60 px-1 py-px text-[11px] leading-tight text-slate-600">
+    <span className="inline-flex flex-none items-center whitespace-nowrap rounded bg-[rgba(0,0,0,0.1)] px-1 py-px text-[11px] leading-tight text-slate-600">
       {children}
     </span>
   );
