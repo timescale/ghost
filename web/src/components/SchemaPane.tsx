@@ -136,12 +136,12 @@ function SchemaTreeBody({
 // ---- Tree implementation ---------------------------------------------------
 
 // Indent layout matches popsql: each indent column is a fixed-width span
-// carrying the vertical guide line on its right edge. Total per indent =
-// INDENT_PAD + INDENT_GAP, and the guide line sits at INDENT_PAD from the
-// indent's left edge.
-const INDENT_PAD = 14;
-const INDENT_GAP = 6;
+// carrying the vertical guide line on its right edge. The guide line sits at
+// half the caret slot width, which centers it under the ancestor chevron.
 const CARET_PX = 12;
+const INDENT_STEP_PX = 20;
+const INDENT_PAD = CARET_PX / 2;
+const INDENT_GAP = INDENT_STEP_PX - INDENT_PAD;
 
 interface TreeContext {
   expanded: Set<string>;
