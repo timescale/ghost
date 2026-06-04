@@ -770,8 +770,8 @@ interface LeafRowProps {
 }
 
 // LeafRow is for terminal nodes (column, index, trigger, routine, enum).
-// It reserves the caret slot so it lines up vertically with sibling
-// expandable rows.
+// popsql does not reserve an empty caret slot for leaves; the leaf label
+// starts where a sibling expandable row's caret would start.
 function LeafRow({
   ctx: _ctx,
   label,
@@ -781,7 +781,6 @@ function LeafRow({
 }: LeafRowProps) {
   return (
     <RowShell depth={depth} onContextMenu={onContextMenu} clickable={false}>
-      <CaretSlot expanded={false} hasChildren={false} />
       <span className="min-w-0 truncate text-slate-700">{label}</span>
       {rightDetail ? <RightDetail>{rightDetail}</RightDetail> : null}
     </RowShell>
