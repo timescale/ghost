@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   type MouseEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -10,6 +11,7 @@ import {
 
 import {
   type DatabaseSchema,
+  type IndexSchema,
   type NamespacedSchema,
   qualifiedName,
   quoteIdent,
@@ -17,9 +19,17 @@ import {
   selectAllSql,
   type TableColumn,
   type TableSchema,
+  type TriggerSchema,
   type ViewSchema,
 } from '../schema';
 import { useServeStore } from '../store';
+
+import {
+  ChevronDown,
+  NavSuperscript,
+  NavTable,
+  RefreshIcon,
+} from './SchemaIcons';
 
 interface SchemaPaneProps {
   databaseId: string;
@@ -34,10 +44,6 @@ async function fetchSchema(databaseId: string): Promise<DatabaseSchema> {
   return res.json() as Promise<DatabaseSchema>;
 }
 
-// SchemaPane renders the schema tree for a single database. Data is fetched
-// on demand via /api/schema (cached by TanStack Query); the user can refresh
-// manually with the Refresh button. The tree's expansion state is persisted
-// per-database in the Zustand store.
 export function SchemaPane({ databaseId }: SchemaPaneProps) {
   const query = useQuery({
     queryKey: ['schema', databaseId],
@@ -53,21 +59,20 @@ export function SchemaPane({ databaseId }: SchemaPaneProps) {
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Debounce the search input so we don't re-filter on every keystroke.
   useEffect(() => {
     const id = setTimeout(() => setSearchTerm(searchInput.trim()), 150);
     return () => clearTimeout(id);
   }, [searchInput]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-w-0 flex-col">
       <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1.5">
         <input
           type="search"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search schema…"
-          className="flex-auto rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:border-slate-500 focus:outline-none"
+          className="min-w-0 flex-auto rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:border-slate-500 focus:outline-none"
           aria-label="Search schema"
         />
         <button
@@ -130,8 +135,10 @@ function SchemaTreeBody({
 
 // ---- Tree implementation ---------------------------------------------------
 
+const INDENT_PX = 20;
+const CARET_PX = 14;
+
 interface TreeContext {
-  databaseId: string;
   expanded: Set<string>;
   searchExpanded: Set<string>;
   searchActive: boolean;
@@ -152,11 +159,13 @@ function SchemaTree({ databaseId, schemas, searchTerm }: SchemaTreeProps) {
     (s) => s.schemaTreeExpanded[databaseId] ?? EMPTY_LIST,
   );
   const toggle = useServeStore((s) => s.toggleSchemaNode);
+  const toggleForDb = useCallback(
+    (key: string) => toggle(databaseId, key),
+    [toggle, databaseId],
+  );
 
   const expanded = useMemo(() => new Set(expandedList), [expandedList]);
 
-  // Pre-compute search match info: which node keys contain or are ancestors
-  // of a match, so we can both show matches and auto-expand to reveal them.
   const search = useMemo(
     () => computeSearch(schemas, searchTerm),
     [schemas, searchTerm],
@@ -166,20 +175,19 @@ function SchemaTree({ databaseId, schemas, searchTerm }: SchemaTreeProps) {
 
   const ctx = useMemo<TreeContext>(
     () => ({
-      databaseId,
       expanded,
       searchExpanded: search.expanded,
       searchActive: searchTerm.length > 0,
       searchMatches: search.visible,
       searchTerm,
-      toggle: (key) => toggle(databaseId, key),
+      toggle: toggleForDb,
       setContextMenu,
     }),
-    [databaseId, expanded, search, searchTerm, toggle],
+    [expanded, search, searchTerm, toggleForDb],
   );
 
   return (
-    <div className="pb-2 text-sm">
+    <div className="select-none py-2 text-sm">
       {schemas.map((ns) =>
         ctx.searchActive && !ctx.searchMatches?.has(schemaKey(ns)) ? null : (
           <SchemaNode key={ns.name} ns={ns} ctx={ctx} />
@@ -206,43 +214,27 @@ interface SchemaNodeProps extends NodeProps {
 
 function SchemaNode({ ns, ctx }: SchemaNodeProps) {
   const key = schemaKey(ns);
-  const tables = ns.tables ?? [];
-  const views = ns.views ?? [];
-  const matViews = ns.materialized_views ?? [];
-  const funcs = ns.functions ?? [];
-  const procs = ns.procedures ?? [];
-  const enums = ns.enums ?? [];
-
-  const groups: GroupSpec[] = [
-    { kind: 'tables', label: 'Tables', items: tables },
-    { kind: 'views', label: 'Views', items: views },
-    { kind: 'matViews', label: 'Materialized Views', items: matViews },
-    { kind: 'functions', label: 'Functions', items: funcs },
-    { kind: 'procedures', label: 'Procedures', items: procs },
-    { kind: 'enums', label: 'Enums', items: enums },
-  ];
+  const groups = schemaGroups(ns);
 
   return (
-    <TreeRow
+    <SchemaRootRow
       ctx={ctx}
       nodeKey={key}
       label={ns.name}
-      icon="🗂"
-      hasChildren={groups.some((g) => (g.items ?? []).length > 0)}
-      onContextMenu={(e) =>
+      hasChildren
+      onContextMenu={(e) => {
+        e.preventDefault();
         ctx.setContextMenu({
           x: e.clientX,
           y: e.clientY,
           items: schemaMenuItems(ns.name),
-        })
-      }
+        });
+      }}
     >
-      {groups.map((g) =>
-        (g.items ?? []).length === 0 ? null : (
-          <GroupNode key={g.kind} ns={ns.name} group={g} ctx={ctx} />
-        ),
-      )}
-    </TreeRow>
+      {groups.map((g) => (
+        <GroupNode key={g.kind} ns={ns.name} group={g} ctx={ctx} />
+      ))}
+    </SchemaRootRow>
   );
 }
 
@@ -257,12 +249,36 @@ type GroupKind =
 interface GroupSpec {
   kind: GroupKind;
   label: string;
-  items:
-    | TableSchema[]
-    | ViewSchema[]
-    | Routine[]
-    | NamespacedSchema['enums']
-    | undefined;
+  items: Array<TableSchema | ViewSchema | Routine | { name: string }>;
+}
+
+function schemaGroups(ns: NamespacedSchema): GroupSpec[] {
+  return [
+    { kind: 'tables', label: 'Tables', items: ns.tables ?? [] },
+    { kind: 'views', label: 'Views', items: ns.views ?? [] },
+    {
+      kind: 'matViews',
+      label: 'Materialized Views',
+      items: ns.materialized_views ?? [],
+    },
+    { kind: 'functions', label: 'Functions', items: ns.functions ?? [] },
+    { kind: 'procedures', label: 'Procedures', items: ns.procedures ?? [] },
+    { kind: 'enums', label: 'Enums', items: ns.enums ?? [] },
+  ];
+}
+
+function groupIcon(kind: GroupKind): ReactNode {
+  switch (kind) {
+    case 'tables':
+    case 'views':
+    case 'matViews':
+      return <NavTable />;
+    case 'functions':
+    case 'procedures':
+      return <NavSuperscript />;
+    case 'enums':
+      return null;
+  }
 }
 
 interface GroupNodeProps extends NodeProps {
@@ -270,12 +286,40 @@ interface GroupNodeProps extends NodeProps {
   group: GroupSpec;
 }
 
-function renderItem(
+function GroupNode({ ns, group, ctx }: GroupNodeProps) {
+  const key = `schema:${ns}/${group.kind}`;
+  const items = group.items;
+  const visibleItems = ctx.searchActive
+    ? items.filter((item) =>
+        ctx.searchMatches?.has(childKey(ns, group.kind, item.name)),
+      )
+    : items;
+  // While a search is active, hide groups that contain no matching items —
+  // the user is asking us to narrow the view. Otherwise always render the
+  // group (even with a zero count), matching popsql.
+  if (ctx.searchActive && visibleItems.length === 0) return null;
+
+  return (
+    <TreeRow
+      ctx={ctx}
+      nodeKey={key}
+      label={group.label}
+      depth={1}
+      icon={groupIcon(group.kind)}
+      hasChildren={visibleItems.length > 0}
+      count={ctx.searchActive ? visibleItems.length : items.length}
+    >
+      {visibleItems.map((item) => renderGroupItem(ns, group.kind, item, ctx))}
+    </TreeRow>
+  );
+}
+
+function renderGroupItem(
   ns: string,
   kind: GroupKind,
-  item: { name: string },
+  item: TableSchema | ViewSchema | Routine | { name: string },
   ctx: TreeContext,
-): React.ReactNode {
+): ReactNode {
   const itemKey = childKey(ns, kind, item.name);
   switch (kind) {
     case 'tables':
@@ -308,14 +352,6 @@ function renderItem(
         />
       );
     case 'functions':
-      return (
-        <RoutineNode
-          key={itemKey}
-          ns={ns}
-          routine={item as Routine}
-          ctx={ctx}
-        />
-      );
     case 'procedures':
       return (
         <RoutineNode
@@ -330,35 +366,11 @@ function renderItem(
         <EnumNode
           key={itemKey}
           ns={ns}
-          enum_={item as NonNullable<NamespacedSchema['enums']>[number]}
+          enum_={item as { name: string; values?: string[] }}
           ctx={ctx}
         />
       );
   }
-}
-
-function GroupNode({ ns, group, ctx }: GroupNodeProps) {
-  const key = `${schemaKey({ name: ns })}/${group.kind}`;
-  const items = group.items ?? [];
-  const visibleItems = ctx.searchActive
-    ? items.filter((item) => {
-        const itemKey = childKey(ns, group.kind, item.name);
-        return ctx.searchMatches?.has(itemKey);
-      })
-    : items;
-  if (visibleItems.length === 0) return null;
-
-  return (
-    <TreeRow
-      ctx={ctx}
-      nodeKey={key}
-      label={`${group.label} (${visibleItems.length})`}
-      icon=""
-      hasChildren
-    >
-      {visibleItems.map((item) => renderItem(ns, group.kind, item, ctx))}
-    </TreeRow>
-  );
 }
 
 interface TableNodeProps extends NodeProps {
@@ -368,112 +380,164 @@ interface TableNodeProps extends NodeProps {
 
 function TableNode({ ns, table, ctx }: TableNodeProps) {
   const key = childKey(ns, 'tables', table.name);
-  const indexes = table.indexes ?? [];
-  const triggers = table.triggers ?? [];
-
+  const allCols = table.columns ?? [];
+  const allIndexes = table.indexes ?? [];
+  const allTriggers = table.triggers ?? [];
+  // When a search is active, only render the children that themselves match.
+  // popsql does the same: searching for "plan" inside a multi-column table
+  // collapses Columns down to just the matching ones.
+  const cols = ctx.searchActive
+    ? allCols.filter((c) => ctx.searchMatches?.has(`${key}/columns/${c.name}`))
+    : allCols;
+  const indexes = ctx.searchActive
+    ? allIndexes.filter((i) =>
+        ctx.searchMatches?.has(`${key}/indexes/${i.name}`),
+      )
+    : allIndexes;
+  const triggers = ctx.searchActive
+    ? allTriggers.filter((t) =>
+        ctx.searchMatches?.has(`${key}/triggers/${t.name}`),
+      )
+    : allTriggers;
   return (
     <TreeRow
       ctx={ctx}
       nodeKey={key}
       label={table.name}
-      icon="📋"
-      badge={
-        table.hypertable
-          ? `hyper · ${table.hypertable.num_chunks}c${
-              table.hypertable.compression_enabled ? ' · zip' : ''
-            }`
-          : undefined
-      }
+      depth={2}
       hasChildren
-      onContextMenu={(e) =>
+      rightDetail={
+        table.hypertable ? <HypertableBadge info={table.hypertable} /> : null
+      }
+      onContextMenu={(e) => {
+        e.preventDefault();
         ctx.setContextMenu({
           x: e.clientX,
           y: e.clientY,
           items: tableMenuItems(ns, table, 'table'),
-        })
-      }
+        });
+      }}
     >
-      <ColumnGroup ns={ns} parent={table} parentKind="tables" ctx={ctx} />
-      {indexes.length > 0 ? (
-        <SubGroup
-          ctx={ctx}
-          parentKey={key}
-          subKey="indexes"
-          label={`Indexes (${indexes.length})`}
-        >
-          {indexes.map((idx) => (
-            <LeafRow
-              key={idx.name}
-              ctx={ctx}
-              nodeKey={`${key}/indexes/${idx.name}`}
-              icon="🔑"
-              label={idx.name}
-              detail={idx.columns}
-            />
-          ))}
-        </SubGroup>
-      ) : null}
-      {triggers.length > 0 ? (
-        <SubGroup
-          ctx={ctx}
-          parentKey={key}
-          subKey="triggers"
-          label={`Triggers (${triggers.length})`}
-        >
-          {triggers.map((trg) => (
-            <LeafRow
-              key={`${trg.name}/${trg.manipulation}`}
-              ctx={ctx}
-              nodeKey={`${key}/triggers/${trg.name}/${trg.manipulation}`}
-              icon="⚡"
-              label={trg.name}
-              detail={`${trg.timing} ${trg.manipulation}`}
-            />
-          ))}
-        </SubGroup>
-      ) : null}
+      <TreeRow
+        ctx={ctx}
+        nodeKey={`${key}/columns`}
+        label="Columns"
+        depth={3}
+        hasChildren={cols.length > 0}
+        count={ctx.searchActive ? cols.length : allCols.length}
+      >
+        {cols.map((col) => (
+          <ColumnRow
+            key={col.name}
+            parent={table}
+            ns={ns}
+            parentName={table.name}
+            col={col}
+            ctx={ctx}
+          />
+        ))}
+      </TreeRow>
+      <TreeRow
+        ctx={ctx}
+        nodeKey={`${key}/indexes`}
+        label="Indexes"
+        depth={3}
+        hasChildren={indexes.length > 0}
+        count={ctx.searchActive ? indexes.length : allIndexes.length}
+      >
+        {indexes.map((idx) => (
+          <IndexRow key={idx.name} index={idx} ctx={ctx} />
+        ))}
+      </TreeRow>
+      <TreeRow
+        ctx={ctx}
+        nodeKey={`${key}/triggers`}
+        label="Triggers"
+        depth={3}
+        hasChildren={triggers.length > 0}
+        count={ctx.searchActive ? triggers.length : allTriggers.length}
+      >
+        {triggers.map((trg) => (
+          <TriggerRow
+            key={`${trg.name}/${trg.timing}/${trg.manipulation}`}
+            trigger={trg}
+            ctx={ctx}
+          />
+        ))}
+      </TreeRow>
     </TreeRow>
   );
 }
 
-interface ColumnGroupProps extends NodeProps {
-  ns: string;
+interface ColumnRowProps extends NodeProps {
   parent: TableSchema | ViewSchema;
-  parentKind: 'tables' | 'views' | 'matViews';
+  ns: string;
+  parentName: string;
+  col: TableColumn | { name: string; type: string };
 }
 
-// ColumnGroup is rendered for tables only — views and matviews flatten
-// their columns directly under the view node (popsql-style). Indexes are
-// only present on materialized views via the parent.
-function ColumnGroup({ ns, parent, parentKind, ctx }: ColumnGroupProps) {
-  const cols = (parent.columns ?? []) as TableColumn[];
-  if (cols.length === 0) return null;
-  const parentKey = childKey(ns, parentKind, parent.name);
+function ColumnRow({ parent, ns, parentName, col, ctx }: ColumnRowProps) {
+  const constraint = columnConstraintLabel(parent, col);
   return (
-    <SubGroup
+    <LeafRow
       ctx={ctx}
-      parentKey={parentKey}
-      subKey="columns"
-      label={`Columns (${cols.length})`}
-    >
-      {cols.map((col) => (
-        <LeafRow
-          key={col.name}
-          ctx={ctx}
-          nodeKey={`${parentKey}/columns/${col.name}`}
-          icon={columnIcon(parent, col.name)}
-          label={col.name}
-          detail={formatColumnType(col)}
-          onContextMenu={(e) =>
-            ctx.setContextMenu({
-              x: e.clientX,
-              y: e.clientY,
-              items: columnMenuItems(ns, parent.name, col.name),
-            })
-          }
-        />
-      ))}
-    </SubGroup>
+      label={col.name}
+      depth={4}
+      rightDetail={
+        <>
+          {constraint ? <Pill>{constraint}</Pill> : null}
+          <Pill>{col.type}</Pill>
+        </>
+      }
+      onContextMenu={(e) => {
+        e.preventDefault();
+        ctx.setContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          items: columnMenuItems(ns, parentName, col.name),
+        });
+      }}
+    />
+  );
+}
+
+interface IndexRowProps extends NodeProps {
+  index: IndexSchema;
+}
+
+function IndexRow({ index, ctx }: IndexRowProps) {
+  return (
+    <LeafRow
+      ctx={ctx}
+      label={index.name}
+      depth={4}
+      rightDetail={
+        <>
+          {index.is_unique ? <Pill>unique</Pill> : null}
+          <Pill>{index.columns}</Pill>
+        </>
+      }
+    />
+  );
+}
+
+interface TriggerRowProps extends NodeProps {
+  trigger: TriggerSchema;
+}
+
+function TriggerRow({ trigger, ctx }: TriggerRowProps) {
+  return (
+    <LeafRow
+      ctx={ctx}
+      label={trigger.name}
+      depth={4}
+      rightDetail={
+        <>
+          <Pill>{trigger.timing.toLowerCase()}</Pill>
+          <Pill>{trigger.manipulation.toLowerCase()}</Pill>
+        </>
+      }
+    />
   );
 }
 
@@ -488,15 +552,15 @@ function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
   const key = childKey(ns, groupKind, view.name);
   const cols = view.columns ?? [];
   const indexes = view.indexes ?? [];
-
   return (
     <TreeRow
       ctx={ctx}
       nodeKey={key}
       label={view.name}
-      icon={kind === 'view' ? '👁' : '💾'}
+      depth={2}
       hasChildren
-      onContextMenu={(e) =>
+      onContextMenu={(e) => {
+        e.preventDefault();
         ctx.setContextMenu({
           x: e.clientX,
           y: e.clientY,
@@ -505,44 +569,32 @@ function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
             view as unknown as TableSchema,
             kind === 'view' ? 'view' : 'materialized view',
           ),
-        })
-      }
+        });
+      }}
     >
       {cols.map((col) => (
-        <LeafRow
+        <ColumnRow
           key={col.name}
+          parent={view}
+          ns={ns}
+          parentName={view.name}
+          col={col}
           ctx={ctx}
-          nodeKey={`${key}/columns/${col.name}`}
-          icon="·"
-          label={col.name}
-          detail={col.type.toUpperCase()}
-          onContextMenu={(e) =>
-            ctx.setContextMenu({
-              x: e.clientX,
-              y: e.clientY,
-              items: columnMenuItems(ns, view.name, col.name),
-            })
-          }
         />
       ))}
       {indexes.length > 0 ? (
-        <SubGroup
+        <TreeRow
           ctx={ctx}
-          parentKey={key}
-          subKey="indexes"
-          label={`Indexes (${indexes.length})`}
+          nodeKey={`${key}/indexes`}
+          label="Indexes"
+          depth={3}
+          hasChildren
+          count={indexes.length}
         >
           {indexes.map((idx) => (
-            <LeafRow
-              key={idx.name}
-              ctx={ctx}
-              nodeKey={`${key}/indexes/${idx.name}`}
-              icon="🔑"
-              label={idx.name}
-              detail={idx.columns}
-            />
+            <IndexRow key={idx.name} index={idx} ctx={ctx} />
           ))}
-        </SubGroup>
+        </TreeRow>
       ) : null}
     </TreeRow>
   );
@@ -554,103 +606,75 @@ interface RoutineNodeProps extends NodeProps {
 }
 
 function RoutineNode({ ns, routine, ctx }: RoutineNodeProps) {
-  const key = childKey(
-    ns,
-    routine.type === 'FUNCTION' ? 'functions' : 'procedures',
-    routine.name,
-  );
   return (
     <LeafRow
       ctx={ctx}
-      nodeKey={key}
-      icon={routine.type === 'FUNCTION' ? 'ƒ' : '⚙'}
       label={routine.name}
-      onContextMenu={(e) =>
+      depth={2}
+      onContextMenu={(e) => {
+        e.preventDefault();
         ctx.setContextMenu({
           x: e.clientX,
           y: e.clientY,
           items: routineMenuItems(ns, routine.name),
-        })
-      }
+        });
+      }}
     />
   );
 }
 
 interface EnumNodeProps extends NodeProps {
   ns: string;
-  enum_: NonNullable<NamespacedSchema['enums']>[number];
+  enum_: { name: string; values?: string[] };
 }
 
 function EnumNode({ ns, enum_, ctx }: EnumNodeProps) {
-  const key = childKey(ns, 'enums', enum_.name);
   return (
     <LeafRow
       ctx={ctx}
-      nodeKey={key}
-      icon="≡"
       label={enum_.name}
-      detail={(enum_.values ?? []).join(', ')}
-      onContextMenu={(e) =>
+      depth={2}
+      rightDetail={<Pill>{(enum_.values ?? []).join(', ')}</Pill>}
+      onContextMenu={(e) => {
+        e.preventDefault();
         ctx.setContextMenu({
           x: e.clientX,
           y: e.clientY,
           items: routineMenuItems(ns, enum_.name),
-        })
-      }
+        });
+      }}
     />
   );
 }
 
 // ---- Row primitives --------------------------------------------------------
 
-interface SubGroupProps extends NodeProps {
-  parentKey: string;
-  subKey: string;
-  label: string;
-  children: React.ReactNode;
-}
-
-function SubGroup({ parentKey, subKey, label, ctx, children }: SubGroupProps) {
-  const key = `${parentKey}/${subKey}`;
-  return (
-    <TreeRow ctx={ctx} nodeKey={key} label={label} icon="" hasChildren>
-      {children}
-    </TreeRow>
-  );
-}
-
-interface TreeRowProps {
-  ctx: TreeContext;
+interface SchemaRootRowProps extends NodeProps {
   nodeKey: string;
   label: string;
-  icon: string;
-  badge?: string;
-  hasChildren?: boolean;
+  hasChildren: boolean;
   onContextMenu?: (e: MouseEvent<HTMLDivElement>) => void;
-  children?: React.ReactNode;
+  children?: ReactNode;
 }
 
-function TreeRow({
-  ctx,
+// Schema row: bold, no left caret, with a hover-revealed right caret. Matches
+// popsql's root-level treatment.
+function SchemaRootRow({
   nodeKey,
   label,
-  icon,
-  badge,
   hasChildren,
   onContextMenu,
   children,
-}: TreeRowProps) {
+  ctx,
+}: SchemaRootRowProps) {
   const isExpanded =
     ctx.expanded.has(nodeKey) || ctx.searchExpanded.has(nodeKey);
-  const depth = nodeKey.split('/').length - 1;
-
   return (
     <>
       <div
         role={hasChildren ? 'button' : undefined}
         tabIndex={hasChildren ? 0 : undefined}
-        className="group flex cursor-default items-center gap-1 px-1 py-0.5 hover:bg-blue-50"
-        style={{ paddingLeft: 4 + depth * 12 }}
+        className="group flex min-w-0 cursor-default items-center gap-1 px-2 py-1 font-semibold text-slate-900 hover:bg-slate-100"
         onClick={hasChildren ? () => ctx.toggle(nodeKey) : undefined}
         onKeyDown={
           hasChildren
@@ -664,27 +688,16 @@ function TreeRow({
         }
         onContextMenu={onContextMenu}
       >
-        <span className="w-3 text-xs text-slate-400">
-          {hasChildren ? (isExpanded ? '▾' : '▸') : ''}
-        </span>
-        {icon ? (
-          <span className="w-4 text-center text-xs">{icon}</span>
-        ) : (
-          <span className="w-4" />
-        )}
-        <span
-          className={
-            ctx.searchActive && ctx.searchMatches?.has(nodeKey)
-              ? 'text-slate-900'
-              : 'text-slate-700'
-          }
-        >
+        <span className="min-w-0 truncate">
           {highlight(label, ctx.searchTerm)}
         </span>
-        {badge ? (
-          <span className="ml-1 rounded bg-purple-100 px-1 py-0 text-xs text-purple-700">
-            {badge}
-          </span>
+        {hasChildren ? (
+          <ChevronDown
+            className={`flex-none text-slate-400 opacity-0 transition-transform group-hover:opacity-100 ${
+              isExpanded ? '' : '-rotate-90'
+            }`}
+            size={CARET_PX}
+          />
         ) : null}
       </div>
       {isExpanded ? children : null}
@@ -692,39 +705,184 @@ function TreeRow({
   );
 }
 
-interface LeafRowProps {
+interface TreeRowProps {
   ctx: TreeContext;
   nodeKey: string;
-  icon: string;
   label: string;
-  detail?: string;
+  depth: number;
+  icon?: ReactNode;
+  count?: number;
+  rightDetail?: ReactNode;
+  hasChildren?: boolean;
+  onContextMenu?: (e: MouseEvent<HTMLDivElement>) => void;
+  children?: ReactNode;
+}
+
+// TreeRow renders any non-leaf, non-root node: a group header (Tables,
+// Columns, Indexes…) or an expandable item (a table). It always reserves a
+// caret slot on the left so siblings stay aligned regardless of icon width.
+function TreeRow({
+  ctx,
+  nodeKey,
+  label,
+  depth,
+  icon,
+  count,
+  rightDetail,
+  hasChildren,
+  onContextMenu,
+  children,
+}: TreeRowProps) {
+  const isExpanded =
+    ctx.expanded.has(nodeKey) || ctx.searchExpanded.has(nodeKey);
+  const onClick = hasChildren ? () => ctx.toggle(nodeKey) : undefined;
+  return (
+    <>
+      <RowShell
+        depth={depth}
+        onClick={onClick}
+        onContextMenu={onContextMenu}
+        clickable={!!hasChildren}
+      >
+        <CaretSlot expanded={isExpanded} hasChildren={!!hasChildren} />
+        {icon ? <span className="flex-none text-slate-500">{icon}</span> : null}
+        <span className="min-w-0 truncate text-slate-700">
+          {highlight(label, ctx.searchTerm)}
+        </span>
+        {typeof count === 'number' ? <Pill>{count}</Pill> : null}
+        {rightDetail ? <RightDetail>{rightDetail}</RightDetail> : null}
+      </RowShell>
+      {isExpanded ? children : null}
+    </>
+  );
+}
+
+interface LeafRowProps {
+  ctx: TreeContext;
+  label: string;
+  depth: number;
+  rightDetail?: ReactNode;
   onContextMenu?: (e: MouseEvent<HTMLDivElement>) => void;
 }
 
+// LeafRow is for terminal nodes (column, index, trigger, routine, enum).
+// It reserves the caret slot so it lines up vertically with sibling
+// expandable rows.
 function LeafRow({
   ctx,
-  nodeKey,
-  icon,
   label,
-  detail,
+  depth,
+  rightDetail,
   onContextMenu,
 }: LeafRowProps) {
-  const depth = nodeKey.split('/').length - 1;
   return (
-    <div
-      className="group flex cursor-default items-center gap-1 px-1 py-0.5 hover:bg-blue-50"
-      style={{ paddingLeft: 4 + depth * 12 }}
-      onContextMenu={onContextMenu}
-    >
-      <span className="w-3" />
-      <span className="w-4 text-center text-xs text-slate-500">{icon}</span>
-      <span className="truncate text-slate-700">
+    <RowShell depth={depth} onContextMenu={onContextMenu} clickable={false}>
+      <CaretSlot expanded={false} hasChildren={false} />
+      <span className="min-w-0 truncate text-slate-700">
         {highlight(label, ctx.searchTerm)}
       </span>
-      {detail ? (
-        <span className="ml-2 truncate text-xs text-slate-400">{detail}</span>
-      ) : null}
+      {rightDetail ? <RightDetail>{rightDetail}</RightDetail> : null}
+    </RowShell>
+  );
+}
+
+interface RowShellProps {
+  depth: number;
+  clickable: boolean;
+  onClick?: () => void;
+  onContextMenu?: (e: MouseEvent<HTMLDivElement>) => void;
+  children: ReactNode;
+}
+
+function RowShell({
+  depth,
+  clickable,
+  onClick,
+  onContextMenu,
+  children,
+}: RowShellProps) {
+  return (
+    <div
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      className="group/row flex min-w-0 cursor-default items-center gap-1.5 pr-2 hover:bg-slate-100"
+      style={{ paddingLeft: 8 + depth * INDENT_PX }}
+      onClick={onClick}
+      onKeyDown={
+        clickable && onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+      onContextMenu={onContextMenu}
+    >
+      {children}
     </div>
+  );
+}
+
+// CaretSlot reserves a fixed-width column for the chevron so that the row's
+// icon/name column starts at the same x-position regardless of whether the
+// row has children. The chevron itself rotates -90deg when collapsed.
+function CaretSlot({
+  expanded,
+  hasChildren,
+}: {
+  expanded: boolean;
+  hasChildren: boolean;
+}) {
+  return (
+    <span
+      className="flex flex-none items-center justify-center text-slate-400"
+      style={{ width: CARET_PX }}
+    >
+      {hasChildren ? (
+        <ChevronDown
+          className={`transition-transform ${expanded ? '' : '-rotate-90'}`}
+          size={CARET_PX}
+        />
+      ) : null}
+    </span>
+  );
+}
+
+// RightDetail wraps trailing pills/badges. It uses `ml-auto` to push itself
+// to the right edge of the row when there is free space, and a very high
+// `flex-shrink` so that, when horizontal space is tight, the detail column
+// shrinks (its trailing content clipping off-screen) far before the row's
+// name truncates.
+function RightDetail({ children }: { children: ReactNode }) {
+  return (
+    <span
+      className="ml-auto flex min-w-0 items-center justify-end gap-1 overflow-hidden pl-2"
+      style={{ flexShrink: 9999 }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function Pill({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex flex-none items-center whitespace-nowrap rounded bg-slate-200 px-1.5 py-px text-xs leading-tight text-slate-600">
+      {children}
+    </span>
+  );
+}
+
+function HypertableBadge({
+  info,
+}: {
+  info: { num_chunks: number; compression_enabled: boolean };
+}) {
+  return (
+    <span className="inline-flex items-center whitespace-nowrap rounded bg-purple-100 px-1.5 py-px text-xs leading-tight text-purple-700">
+      hypertable · {info.num_chunks}c{info.compression_enabled ? ' · zip' : ''}
+    </span>
   );
 }
 
@@ -738,23 +896,36 @@ function childKey(ns: string, group: GroupKind, name: string): string {
   return `${schemaKey({ name: ns })}/${group}/${name}`;
 }
 
-function columnIcon(parent: TableSchema | ViewSchema, name: string): string {
+// columnConstraintLabel picks the single most informative constraint label
+// for a column, in priority order: primary key > unique > not null.
+// Mirrors popsql's `constraintForColumn`.
+function columnConstraintLabel(
+  parent: TableSchema | ViewSchema,
+  col: TableColumn | { name: string },
+): string | null {
   const t = parent as TableSchema;
-  const isPk = (t.constraints ?? []).some(
-    (c) => c.type === 'PRIMARY KEY' && (c.columns ?? []).includes(name),
-  );
-  if (isPk) return '🔑';
-  return '·';
+  const constraints = t.constraints ?? [];
+  if (
+    constraints.some(
+      (c) => c.type === 'PRIMARY KEY' && (c.columns ?? []).includes(col.name),
+    )
+  ) {
+    return 'primary key';
+  }
+  if (
+    constraints.some(
+      (c) => c.type === 'UNIQUE' && (c.columns ?? []).includes(col.name),
+    )
+  ) {
+    return 'unique';
+  }
+  if ((col as TableColumn).not_null) {
+    return 'not null';
+  }
+  return null;
 }
 
-function formatColumnType(col: TableColumn): string {
-  let s = col.type.toUpperCase();
-  if (col.not_null) s += ' NOT NULL';
-  if (col.default) s += ` DEFAULT ${col.default}`;
-  return s;
-}
-
-function highlight(text: string, term: string): React.ReactNode {
+function highlight(text: string, term: string): ReactNode {
   if (!term) return text;
   const idx = text.toLowerCase().indexOf(term.toLowerCase());
   if (idx < 0) return text;
@@ -764,7 +935,7 @@ function highlight(text: string, term: string): React.ReactNode {
   return (
     <>
       {before}
-      <mark className="bg-yellow-200">{match}</mark>
+      <mark className="rounded bg-yellow-200 px-0.5">{match}</mark>
       {after}
     </>
   );
@@ -775,10 +946,6 @@ interface SearchInfo {
   expanded: Set<string>;
 }
 
-// computeSearch walks the schema tree and collects, for the current search
-// term, (a) every node key that should remain visible (matches itself OR has
-// a descendant that matches OR is an ancestor of a match), and (b) every
-// non-leaf key that should be auto-expanded so matches are revealed.
 function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
   const visible = new Set<string>();
   const expanded = new Set<string>();
@@ -788,12 +955,18 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
 
   for (const ns of schemas) {
     const sKey = schemaKey(ns);
-    const nsHit = match(ns.name);
-    void nsHit;
+    let anyHit = match(ns.name);
 
     const considerGroup = (
       kind: GroupKind,
-      items: { name: string; columns?: { name: string }[] }[] | undefined,
+      items:
+        | {
+            name: string;
+            columns?: { name: string }[];
+            indexes?: { name: string }[];
+            triggers?: { name: string }[];
+          }[]
+        | undefined,
     ): boolean => {
       const list = items ?? [];
       if (list.length === 0) return false;
@@ -803,17 +976,21 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
         const iKey = childKey(ns.name, kind, item.name);
         const itemHit = match(item.name);
         let childHit = false;
-        if ('columns' in item && item.columns) {
-          for (const col of item.columns) {
-            if (match(col.name)) {
-              visible.add(`${iKey}/columns/${col.name}`);
-              visible.add(`${iKey}/columns`);
+        const considerSub = (subKind: string, subs?: { name: string }[]) => {
+          if (!subs) return;
+          for (const sub of subs) {
+            if (match(sub.name)) {
+              visible.add(`${iKey}/${subKind}/${sub.name}`);
+              visible.add(`${iKey}/${subKind}`);
               expanded.add(iKey);
-              expanded.add(`${iKey}/columns`);
+              expanded.add(`${iKey}/${subKind}`);
               childHit = true;
             }
           }
-        }
+        };
+        considerSub('columns', item.columns);
+        considerSub('indexes', item.indexes);
+        considerSub('triggers', item.triggers);
         if (itemHit || childHit) {
           visible.add(iKey);
           groupHit = true;
@@ -827,7 +1004,6 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
       return groupHit;
     };
 
-    let anyHit = nsHit;
     for (const [kind, items] of [
       ['tables', ns.tables],
       ['views', ns.views],
@@ -869,14 +1045,12 @@ function ContextMenu({ state, onClose }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const onDown = (e: MouseEvent | globalThis.MouseEvent) => {
+    const onDown = (e: globalThis.MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
-    // Defer attach so the right-click event that opened the menu doesn't
-    // immediately close it.
     const id = setTimeout(() => {
       window.addEventListener('mousedown', onDown);
       window.addEventListener('keydown', onKey);
@@ -892,7 +1066,7 @@ function ContextMenu({ state, onClose }: ContextMenuProps) {
     <div
       ref={ref}
       role="menu"
-      className="fixed z-50 min-w-[180px] rounded border border-slate-200 bg-white py-1 text-sm shadow-lg"
+      className="fixed z-50 min-w-[200px] rounded border border-slate-200 bg-white py-1 text-sm shadow-lg"
       style={{ top: state.y, left: state.x }}
     >
       {state.items.map((item) => (
@@ -915,7 +1089,7 @@ function ContextMenu({ state, onClose }: ContextMenuProps) {
 
 // ---- Menu actions ---------------------------------------------------------
 
-function copyToClipboard(text: string) {
+function copyText(text: string) {
   void navigator.clipboard.writeText(text);
 }
 
@@ -928,7 +1102,7 @@ function schemaMenuItems(name: string): MenuItem[] {
     },
     {
       label: 'Copy schema name',
-      onClick: () => copyToClipboard(quoteIdent(name)),
+      onClick: () => copyText(quoteIdent(name)),
     },
   ];
 }
@@ -940,19 +1114,19 @@ function tableMenuItems(
 ): MenuItem[] {
   const append = useServeStore.getState().appendEditorSql;
   const cols = table.columns ?? [];
-  const selectSql = selectAllSql(ns, table.name, cols);
+  const sql = selectAllSql(ns, table.name, cols);
   return [
     {
       label: `New query from ${kind}`,
-      onClick: () => append(selectSql),
+      onClick: () => append(sql),
     },
     {
       label: 'Copy SELECT statement',
-      onClick: () => copyToClipboard(selectSql),
+      onClick: () => copyText(sql),
     },
     {
       label: `Copy ${kind} name`,
-      onClick: () => copyToClipboard(qualifiedName(ns, table.name)),
+      onClick: () => copyText(qualifiedName(ns, table.name)),
     },
   ];
 }
@@ -967,16 +1141,15 @@ function columnMenuItems(ns: string, table: string, col: string): MenuItem[] {
     },
     {
       label: 'Copy SELECT statement',
-      onClick: () => copyToClipboard(sql),
+      onClick: () => copyText(sql),
     },
     {
       label: 'Copy column name',
-      onClick: () => copyToClipboard(quoteIdent(col)),
+      onClick: () => copyText(quoteIdent(col)),
     },
     {
       label: 'Copy qualified column name',
-      onClick: () =>
-        copyToClipboard(`${qualifiedName(ns, table)}.${quoteIdent(col)}`),
+      onClick: () => copyText(`${qualifiedName(ns, table)}.${quoteIdent(col)}`),
     },
   ];
 }
@@ -985,29 +1158,7 @@ function routineMenuItems(ns: string, name: string): MenuItem[] {
   return [
     {
       label: 'Copy qualified name',
-      onClick: () => copyToClipboard(qualifiedName(ns, name)),
+      onClick: () => copyText(qualifiedName(ns, name)),
     },
   ];
-}
-
-// ---- Icons -----------------------------------------------------------------
-
-function RefreshIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg
-      className={`h-4 w-4 ${className}`}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M3 12a9 9 0 0 1 15.5-6.4L21 8" />
-      <path d="M21 3v5h-5" />
-      <path d="M21 12a9 9 0 0 1-15.5 6.4L3 16" />
-      <path d="M3 21v-5h5" />
-    </svg>
-  );
 }

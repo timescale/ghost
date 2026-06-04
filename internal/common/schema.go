@@ -383,10 +383,6 @@ JOIN pg_class t ON t.oid = ix.indrelid
 JOIN pg_class i ON i.oid = ix.indexrelid
 JOIN pg_namespace n ON n.oid = t.relnamespace
 WHERE t.relkind IN ('r', 'm')
-  AND NOT EXISTS (
-      SELECT 1 FROM pg_constraint con
-      WHERE con.conindid = ix.indexrelid
-  )
   %s
   %s
   %s
