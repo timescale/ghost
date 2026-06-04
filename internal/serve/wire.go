@@ -1,14 +1,12 @@
 package serve
 
 import (
-	"strings"
-
 	"github.com/timescale/ghost/internal/serve/dbdriver"
 )
 
-// Wire-format types matching what @popsql/query-client's TimescaleQueryClient
-// sends to and expects back from the savannah gateway. Source:
-// popsql/packages/popsql-query-client/src/{TimescaleQueryClient,client}.ts.
+// Wire-format types matching what the query widget's client sends to and
+// expects back from the hosted query service. These mirror the widget's
+// TimescaleQueryClient request/response shapes.
 
 // executeQueryRequest matches TimescaleExecuteQueryRequest. The widget
 // emits both a top-level `query` field (legacy / unused in practice) and a
@@ -22,20 +20,6 @@ type executeQueryRequest struct {
 	RunID      string   `json:"runId"`
 	Persist    bool     `json:"persist,omitempty"`
 	Timeout    *int64   `json:"timeout,omitempty"`
-}
-
-// SQL returns the effective query text to execute. Prefers the statements
-// array (widget's canonical field) and falls back to the raw query.
-func (r executeQueryRequest) SQL() string {
-	if len(r.Statements) > 0 {
-		var joined strings.Builder
-		joined.WriteString(r.Statements[0])
-		for _, s := range r.Statements[1:] {
-			joined.WriteString("; " + s)
-		}
-		return joined.String()
-	}
-	return r.Query
 }
 
 // executeSessionQueryRequest matches TimescaleExecuteSessionQueryRequest.
@@ -81,9 +65,8 @@ type createSessionResponse struct {
 // columnsResult is the first NDJSON line written by executeQuery. The widget
 // uses 'columns' as the discriminator.
 type columnsResult struct {
-	RunID    string             `json:"runId"`
-	Columns  dbdriver.Columns   `json:"columns"`
-	Metadata *dbdriver.Metadata `json:"meta,omitempty"`
+	RunID   string           `json:"runId"`
+	Columns dbdriver.Columns `json:"columns"`
 }
 
 // successResult is the final NDJSON line on a successful run.

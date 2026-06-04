@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -24,11 +25,17 @@ type Config struct {
 	// call App.Load on each request so OAuth tokens are refreshed and the user
 	// can log in/out in another terminal without restarting the server.
 	App *common.App
+	// Logger receives diagnostics from the long-running server (e.g. errors
+	// closing a database connection). Like `ghost mcp`, serve is a long-lived
+	// backend process, so structured logging to stderr is appropriate. If nil,
+	// logging is discarded.
+	Logger *slog.Logger
 }
 
 // Server wraps the HTTP server and exposes the resolved listen address.
 type Server struct {
 	cfg      Config
+	logger   *slog.Logger
 	srv      *http.Server
 	ln       net.Listener
 	addr     string
@@ -54,9 +61,15 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("listen on %s: %w", addr, err)
 	}
 
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+
 	configDir := cfg.App.GetConfig().ConfigDir
 	s := &Server{
 		cfg:      cfg,
+		logger:   logger,
 		ln:       ln,
 		addr:     ln.Addr().String(),
 		runs:     newRunStore(),

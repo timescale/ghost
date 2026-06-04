@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"unicode"
 
 	"github.com/timescale/ghost/internal/serve/dbtypes"
 )
@@ -20,7 +19,6 @@ type Rows interface {
 	Close() error
 
 	Columns() (Columns, error)
-	Metadata(ctx context.Context) (*Metadata, error)
 	RowsAffected(ctx context.Context) (*int64, error)
 }
 
@@ -62,7 +60,6 @@ type scanTypeFn func(columnType *sql.ColumnType) reflect.Type
 
 type baseRows struct {
 	*sql.Rows
-	columnCase ColumnCase
 	scanTypeFn scanTypeFn
 }
 
@@ -93,7 +90,7 @@ func (r *baseRows) Columns() (Columns, error) {
 func (r *baseRows) buildColumn(deduper deduper, ct *sql.ColumnType) Column {
 	scanType := r.scanTypeFn(ct)
 	column := Column{
-		Name:     deduper.dedupe(ct, r.columnCase),
+		Name:     deduper.dedupe(ct),
 		Type:     ct.DatabaseTypeName(),
 		Object:   scanType == dbtypes.JSONPtrType,
 		Numeric:  scanType == dbtypes.NumericPtrType,
@@ -109,7 +106,6 @@ func (r *baseRows) buildColumn(deduper deduper, ct *sql.ColumnType) Column {
 	return column
 }
 
-func (r *baseRows) Metadata(ctx context.Context) (*Metadata, error)  { return nil, nil }
 func (r *baseRows) RowsAffected(ctx context.Context) (*int64, error) { return nil, nil }
 
 type deduper map[string]int
@@ -124,36 +120,16 @@ func newDeduper(columnTypes []*sql.ColumnType) deduper {
 
 func (d deduper) columnKey(name string) string { return strings.ToLower(name) }
 
-func (d deduper) columnName(ct *sql.ColumnType, columnCase ColumnCase) string {
+func (d deduper) columnName(ct *sql.ColumnType) string {
 	name := ct.Name()
 	if name == "" {
 		name = "column"
 	}
-	switch columnCase {
-	case ColumnCaseDefault:
-		return name
-	case ColumnCaseLower:
-		if d.mixedCase(name) {
-			return name
-		}
-		return strings.ToLower(name)
-	case ColumnCaseUpper:
-		if d.mixedCase(name) {
-			return name
-		}
-		return strings.ToUpper(name)
-	default:
-		panic(fmt.Errorf("invalid column case: %s", columnCase))
-	}
+	return name
 }
 
-func (d deduper) mixedCase(name string) bool {
-	return strings.ContainsFunc(name, unicode.IsLower) &&
-		strings.ContainsFunc(name, unicode.IsUpper)
-}
-
-func (d deduper) dedupe(ct *sql.ColumnType, columnCase ColumnCase) string {
-	name := d.columnName(ct, columnCase)
+func (d deduper) dedupe(ct *sql.ColumnType) string {
+	name := d.columnName(ct)
 	key := d.columnKey(name)
 
 	count := d[key]

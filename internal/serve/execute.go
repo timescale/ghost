@@ -17,7 +17,7 @@ import (
 func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 	var req executeQueryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 	client, projectID, err := s.loadClient(r.Context())
@@ -39,7 +39,11 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	defer driver.Close()
+	defer func() {
+		if err := driver.Close(); err != nil {
+			s.logger.Warn("error closing database connection", "err", err)
+		}
+	}()
 
 	s.runQuery(w, r, req, driver)
 }
@@ -50,7 +54,7 @@ func (s *Server) handleExecuteQuery(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleExecuteSessionQuery(w http.ResponseWriter, r *http.Request) {
 	var req executeSessionQueryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 	_, projectID, err := s.loadClient(r.Context())
@@ -73,22 +77,19 @@ func (s *Server) handleExecuteSessionQuery(w http.ResponseWriter, r *http.Reques
 	s.runQuery(w, r, req.executeQueryRequest, session.driver)
 }
 
-// bufferedResultSet is one result set materialized in memory: its column
-// descriptors plus every scanned row in order.
-type bufferedResultSet struct {
-	columns      dbdriver.Columns
-	rows         [][]any
-	rowsAffected *int64
-}
-
 // runQuery is the shared body of handleExecuteQuery / handleExecuteSessionQuery.
 //
-// Multi-statement behavior: the widget's worker splits the editor text into a
-// statements array which we join with `; ` and run via pgx's simple text
-// protocol. PG returns one result set per statement. We buffer all of them
-// and surface the last result set that has columns; if none have columns
-// (e.g. only DDL/DML), we surface the last result set so its rowsAffected
-// still shows.
+// The query executes in a dedicated goroutine (streamQuery) that streams rows
+// over run.rows. This handler writes the columns NDJSON line as soon as the
+// columns are known, which prompts the widget to POST /api/arrowResults; that
+// handler drains run.rows into an Arrow IPC stream with backpressure. Rows are
+// never collected in full — they flow from the database straight to the wire.
+//
+// Multi-statement behavior mirrors the upstream query service: the widget's worker splits
+// the editor text into a statements array; we run every statement except the
+// last against the same connection (so TEMP tables and other session state
+// persist), discarding their results, then stream the final statement's result
+// set. This is the result the widget displays.
 func (s *Server) runQuery(w http.ResponseWriter, r *http.Request, req executeQueryRequest, driver dbdriver.Driver) {
 	driverCtx, driverCleanup := driver.Context(r.Context())
 	defer driverCleanup()
@@ -96,54 +97,59 @@ func (s *Server) runQuery(w http.ResponseWriter, r *http.Request, req executeQue
 	queryCtx, cancelQuery := context.WithCancel(driverCtx)
 	defer cancelQuery()
 
-	run := &Run{
-		id:          req.RunID,
-		projectID:   req.ProjectID,
-		serviceID:   req.ServiceID,
-		startedAt:   time.Now(),
-		cancelQuery: cancelQuery,
-		ready:       make(chan struct{}),
-		done:        make(chan struct{}),
-	}
-	s.runs.add(run)
-	defer s.runs.delete(req.RunID)
-
 	statements := req.Statements
 	if len(statements) == 0 && req.Query != "" {
 		statements = []string{req.Query}
 	}
 
-	results, bufErr := bufferStatements(queryCtx, driver, statements)
-	if bufErr != nil {
-		writeErrorTerminator(w, req.RunID, driver.NormalizeError(queryCtx, bufErr))
+	run := &Run{
+		id:                 req.RunID,
+		projectID:          req.ProjectID,
+		serviceID:          req.ServiceID,
+		startedAt:          time.Now(),
+		rows:               make(chan []any, rowChanBuffer),
+		executedStatements: int64(len(statements)),
+		cancelQuery:        cancelQuery,
+		ready:              make(chan struct{}),
+		done:               make(chan struct{}),
+	}
+	s.runs.add(run)
+	defer s.runs.delete(req.RunID)
+
+	go s.streamQuery(queryCtx, run, driver, statements)
+
+	// Wait for the query goroutine to produce columns (or fail before it got
+	// that far), or for the client to disconnect.
+	select {
+	case <-run.ready:
+	case <-r.Context().Done():
+		cancelQuery()
 		return
 	}
-	chosen := pickResultSetToSurface(results)
-	if chosen == nil {
-		// Should not happen: bufferStatements always emits at least one entry
-		// on success. Defensively surface an empty result.
-		chosen = &bufferedResultSet{}
-	}
-
-	run.columns = chosen.columns
-	run.bufferedRows = chosen.rows
-	run.rowCount = int64(len(chosen.rows))
-	run.rowsAffected = chosen.rowsAffected
-	run.executedStatements = int64(len(results))
-	close(run.ready)
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Cache-Control", "no-store")
-
 	enc := json.NewEncoder(w)
-	if err := enc.Encode(columnsResult{RunID: req.RunID, Columns: chosen.columns}); err != nil {
+
+	// If the query failed before producing a result set, the widget never sees
+	// a columns line and so never fetches arrow results. Emit the error
+	// terminator directly.
+	if run.err != nil && len(run.columns) == 0 {
+		_ = enc.Encode(errorResult{RunID: req.RunID, Success: false, Error: run.err})
+		flushWriter(w)
+		run.closeDone()
+		return
+	}
+
+	if err := enc.Encode(columnsResult{RunID: req.RunID, Columns: run.columns}); err != nil {
 		// Client disconnected before columns reached the wire.
 		cancelQuery()
 		return
 	}
 	flushWriter(w)
 
-	// Wait for arrowResults to finish, or for the client to disconnect.
+	// Wait for arrowResults to finish streaming, or for the client to
+	// disconnect. arrowResults closes done once it has drained run.rows.
 	select {
 	case <-run.done:
 	case <-r.Context().Done():
@@ -170,73 +176,112 @@ func (s *Server) runQuery(w http.ResponseWriter, r *http.Request, req executeQue
 	flushWriter(w)
 }
 
-// bufferStatements runs each statement in order against the same driver
-// connection (so TEMP tables and other session state from earlier
-// statements are visible to later ones) and buffers the rows from each
-// result set into memory.
+// streamQuery runs the run's statements against the driver connection and
+// streams the final statement's rows over run.rows. It mirrors the upstream
+// query session: run prior statements fire-and-forget, then stream the last.
 //
-// Iterating per-statement (rather than relying on sql.Rows.NextResultSet)
-// is necessary because pgx's stdlib wrapper only surfaces the first
-// result set of a multi-statement Query call. The widget already does the
-// SQL-aware statement split for us, so we leverage that here.
-func bufferStatements(ctx context.Context, driver dbdriver.Driver, statements []string) ([]bufferedResultSet, error) {
-	out := make([]bufferedResultSet, 0, len(statements))
-	for _, stmt := range statements {
-		rs, err := bufferOneStatement(ctx, driver, stmt)
-		if err != nil {
-			return out, err
+// Iterating per-statement (rather than relying on sql.Rows.NextResultSet) is
+// necessary because pgx's stdlib wrapper only surfaces the first result set of
+// a multi-statement Query call. The widget already does the SQL-aware
+// statement split for us, so we leverage that here.
+//
+// On any error it records a NormalizedError on the run; columns/rows produced
+// so far are still streamed, and executeQuery emits the error terminator once
+// arrowResults finishes. run.rows is always closed on return so arrowResults
+// unblocks.
+func (s *Server) streamQuery(ctx context.Context, run *Run, driver dbdriver.Driver, statements []string) {
+	var rowCount int64
+	readyOnce := func() {
+		select {
+		case <-run.ready:
+		default:
+			close(run.ready)
 		}
-		out = append(out, rs)
 	}
-	return out, nil
-}
+	defer readyOnce()
+	defer close(run.rows)
 
-func bufferOneStatement(ctx context.Context, driver dbdriver.Driver, stmt string) (bufferedResultSet, error) {
-	rows, err := driver.Query(ctx, dbdriver.QueryArgs{Query: stmt})
+	fail := func(err error) {
+		run.rowCount = rowCount
+		run.setError(driver.NormalizeError(ctx, err))
+	}
+
+	// Bail early if the context was already canceled, to avoid racing the
+	// server-side cancel against the start of query execution.
+	if err := ctx.Err(); err != nil {
+		fail(err)
+		return
+	}
+
+	// Run every statement except the last fire-and-forget.
+	for i := 0; i+1 < len(statements); i++ {
+		if err := runStatement(ctx, driver, statements[i]); err != nil {
+			fail(err)
+			return
+		}
+	}
+
+	final := ""
+	if len(statements) > 0 {
+		final = statements[len(statements)-1]
+	}
+
+	rows, err := driver.Query(ctx, final)
 	if err != nil {
-		return bufferedResultSet{}, err
+		fail(err)
+		return
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			s.logger.Debug("error closing rows", "err", err)
+		}
+	}()
 
-	cols, err := rows.Columns()
+	columns, err := rows.Columns()
 	if err != nil {
-		return bufferedResultSet{}, err
+		fail(err)
+		return
 	}
+	run.columns = columns
+	readyOnce()
 
-	buf := bufferedResultSet{columns: cols}
-	targets := cols.ScanTargets()
+	targets := columns.ScanTargets()
 	for rows.Next() {
-		if err := ctx.Err(); err != nil {
-			return buf, err
-		}
 		if err := rows.Scan(targets...); err != nil {
-			return buf, err
+			fail(err)
+			return
 		}
-		buf.rows = append(buf.rows, targets.Values())
+		select {
+		case run.rows <- targets.Values():
+			rowCount++
+		case <-ctx.Done():
+			fail(ctx.Err())
+			return
+		}
 	}
 	if err := rows.Err(); err != nil {
-		return buf, err
+		fail(err)
+		return
 	}
+	if err := rows.Close(); err != nil {
+		fail(err)
+		return
+	}
+
+	run.rowCount = rowCount
 	if ra, _ := rows.RowsAffected(ctx); ra != nil {
-		buf.rowsAffected = ra
+		run.rowsAffected = ra
 	}
-	return buf, nil
 }
 
-// pickResultSetToSurface picks the result set we display to the widget,
-// matching the rule the user asked for: prefer the last result set that
-// returned columns; fall back to the last result set if none have columns;
-// nil if the slice is empty.
-func pickResultSetToSurface(results []bufferedResultSet) *bufferedResultSet {
-	if len(results) == 0 {
-		return nil
+// runStatement runs a single statement to completion and discards its result
+// set. Used for every statement except the last in a multi-statement run.
+func runStatement(ctx context.Context, driver dbdriver.Driver, stmt string) error {
+	rows, err := driver.Query(ctx, stmt)
+	if err != nil {
+		return err
 	}
-	for i := len(results) - 1; i >= 0; i-- {
-		if len(results[i].columns) > 0 {
-			return &results[i]
-		}
-	}
-	return &results[len(results)-1]
+	return rows.Close()
 }
 
 // checkProject rejects requests for a different project than the one the CLI

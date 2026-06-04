@@ -2,47 +2,69 @@ package serve
 
 import (
 	"context"
+	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/timescale/ghost/internal/serve/dbdriver"
 )
 
+// rowChanBuffer is the capacity of Run.rows. A small buffer smooths out
+// per-row scheduling jitter between the producer (the query goroutine) and
+// the consumer (the arrowResults handler) without letting memory usage grow
+// unbounded: once the buffer fills, the producer blocks on its next send,
+// which throttles how fast we read from the database. This backpressure is
+// what keeps memory flat for arbitrarily large result sets.
+const rowChanBuffer = 100
+
 // Run coordinates a single in-flight query between the executeQuery and
-// arrowResults handlers. executeQuery runs the query to completion (all
-// result sets buffered), populates the chosen result set's columns + rows,
-// signals ready, writes the columns NDJSON line, then blocks on done.
-// arrowResults waits for ready, walks bufferedRows into an Arrow IPC stream,
-// then closes done so executeQuery can emit the success/error terminator.
+// arrowResults handlers. The query runs in a dedicated goroutine that streams
+// scanned rows over the rows channel (see streamQuery). executeQuery waits for
+// ready (columns known), writes the columns NDJSON line, then blocks on done.
+// arrowResults waits for ready, ranges over rows building an Arrow IPC stream
+// with backpressure, then closes done so executeQuery can emit the
+// success/error terminator. Rows are never buffered in full — they flow from
+// the database straight to the wire.
 type Run struct {
 	id        string
 	projectID string
 	serviceID string
 	startedAt time.Time
 
-	// Populated by executeQuery before closing ready. These describe the
-	// single result set we surface to the widget (per the user-facing rule:
-	// last result set with columns, or the last result set if none had
-	// columns).
-	columns      dbdriver.Columns
-	bufferedRows [][]any
+	// columns is set by the query goroutine before it closes ready.
+	columns dbdriver.Columns
+
+	// rows streams scanned rows from the query goroutine to arrowResults. It
+	// is closed by the query goroutine once the result set is exhausted (or on
+	// error/cancellation). Backpressure on this channel bounds memory use.
+	rows chan []any
+
+	// rowCount and rowsAffected are set by the query goroutine before it
+	// closes rows; they are safe to read after done is closed.
 	rowCount     int64
 	rowsAffected *int64
 
-	// Number of result sets the database returned for this run — used by the
+	// Number of statements the database executed for this run — used by the
 	// UI to show "Executed N statements" when N > 1.
 	executedStatements int64
 
+	// arrowStarted guards against more than one arrowResults handler draining
+	// the rows channel. Only the first caller wins; concurrent/duplicate
+	// fetches are rejected (mirrors the upstream single-reader pipe design).
+	arrowStarted atomic.Bool
+
 	// cancelQuery aborts the in-flight query via pg_cancel_backend (wired
 	// through driver.Context's cancelContext). Used by /api/cancelRun and
-	// by client-disconnect detection in executeQuery.
+	// by client-disconnect detection in executeQuery / arrowResults.
 	cancelQuery context.CancelFunc
 
 	ready chan struct{}
 	done  chan struct{}
 
-	err     *dbdriver.NormalizedError
-	errOnce sync.Once
+	err      *dbdriver.NormalizedError
+	errOnce  sync.Once
+	doneOnce sync.Once
 }
 
 func (r *Run) setError(e *dbdriver.NormalizedError) {
@@ -50,11 +72,7 @@ func (r *Run) setError(e *dbdriver.NormalizedError) {
 }
 
 func (r *Run) closeDone() {
-	select {
-	case <-r.done:
-	default:
-		close(r.done)
-	}
+	r.doneOnce.Do(func() { close(r.done) })
 }
 
 // runStore holds all in-flight runs keyed by their widget-generated run id.
@@ -95,6 +113,7 @@ type Session struct {
 	startedAt time.Time
 
 	driver dbdriver.Driver
+	logger *slog.Logger
 
 	closed    chan struct{}
 	closeErr  *dbdriver.NormalizedError
@@ -106,7 +125,9 @@ func (s *Session) close(reason *dbdriver.NormalizedError) {
 		s.closeErr = reason
 		close(s.closed)
 		if s.driver != nil {
-			_ = s.driver.Close()
+			if err := s.driver.Close(); err != nil && s.logger != nil {
+				s.logger.Warn("error closing session database connection", "err", err)
+			}
 		}
 	})
 }

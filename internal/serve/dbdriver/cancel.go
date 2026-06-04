@@ -15,9 +15,12 @@ type canceler func(ctx context.Context) error
 // into the returned context as a fallback. The returned CancelFunc must be
 // called when the query is finished to release the watcher goroutine.
 //
-// The reason for the not-a-child context is so that pgx does not abort the
-// query mid-flight on its own — we want a graceful cancel through Postgres,
-// so we can still surface a useful error to the client.
+// The query context is deliberately not a child of parent because pgx reacts
+// to context cancellation by closing the underlying database connection, which
+// tears down the session (TEMP tables, SET state, in-progress transactions).
+// By intercepting the cancellation ourselves and issuing a normal
+// pg_cancel_backend() over a side channel instead, we cancel just the running
+// query while keeping the connection alive for subsequent queries.
 func cancelContext(parent context.Context, fn canceler) (context.Context, context.CancelFunc) {
 	newCtx, cancel := context.WithCancelCause(context.Background())
 

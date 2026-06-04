@@ -17,7 +17,7 @@ import (
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	var req createSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 
@@ -64,6 +64,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		serviceID: req.ServiceID,
 		startedAt: time.Now(),
 		driver:    driver,
+		logger:    s.logger,
 		closed:    make(chan struct{}),
 	}
 	s.sessions.add(sess)
@@ -76,7 +77,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCloseSession(w http.ResponseWriter, r *http.Request) {
 	var req sessionRefRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 	sess := s.sessions.get(req.SessionID)
@@ -97,7 +98,7 @@ func (s *Server) handleCloseSession(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
 	var req sessionRefRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 

@@ -14,7 +14,7 @@ import (
 func (s *Server) handleCancelRun(w http.ResponseWriter, r *http.Request) {
 	var req cancelQueryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 	run := s.runs.get(req.RunID)

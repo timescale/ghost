@@ -85,10 +85,16 @@ func (t *Timestamp) Scan(src any) error {
 	return nil
 }
 
-// getTimeZoneOffsetLayout returns the timezone-offset portion of the
-// timestamp layout. If the offset has a non-zero minutes portion, both hours
-// and minutes are included (matching Postgres default behavior); otherwise
-// just the hours portion is included.
+// getTimeZoneOffsetLayout returns the hour(:minute) portion of Go's numeric
+// timezone-offset layout token. If the offset has a non-zero minutes portion,
+// both hours and minutes are included (matching Postgres default behavior);
+// otherwise just the hours portion is included.
+//
+// The callers prepend "-" to form the full token (e.g. "-07" or "-07:00").
+// That leading "-" is NOT a literal dash: in Go's reference-time layout it is
+// the sign placeholder, which time.Format substitutes with the actual sign of
+// the offset. So "-07" renders as "+02" or "-05" as appropriate -- the values
+// are correct, not double-signed.
 func getTimeZoneOffsetLayout(t time.Time) string {
 	_, offset := t.Zone()
 	minutes := (offset % 3600) / 60

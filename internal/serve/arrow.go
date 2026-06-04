@@ -14,9 +14,10 @@ import (
 	"github.com/timescale/ghost/internal/serve/dbtypes"
 )
 
-// Ported from github.com/timescale/popsql-query/internal/writer/arrow.go.
-// Schema metadata + the synthetic __popsql_row_num__ column are preserved
-// because the widget's table renderer depends on both.
+// Arrow IPC encoding for query result sets. The schema metadata and the
+// synthetic __popsql_row_num__ column are required by the widget's table
+// renderer, which expects the same Arrow wire contract as the hosted query
+// service.
 
 const columnsMetadataKey = "__popsql_columns__"
 
@@ -86,8 +87,9 @@ func (rb *RecordBuilder) AppendRow(row []any) error {
 	return nil
 }
 
+// RecordRowCount returns the number of rows accumulated in the in-progress
+// record batch (reset to 0 by NewRecordBatch).
 func (rb *RecordBuilder) RecordRowCount() int64 { return rb.recordRowCount }
-func (rb *RecordBuilder) TotalRowCount() int64  { return rb.totalRowCount }
 
 // NewRecordBatch finalizes the in-progress record and resets the row counter.
 func (rb *RecordBuilder) NewRecordBatch() arrow.RecordBatch {
@@ -309,8 +311,9 @@ func unknownBuilderFn(builder array.Builder, value any) error {
 }
 
 // shouldMarshalJSON returns true for compound types (arrays, slices, maps,
-// structs) that aren't sql.Scanner-compliant. Most non-Postgres drivers don't
-// hit this in our use case, but it's preserved for parity with popsql-query.
+// structs) that aren't sql.Scanner-compliant. Postgres rarely hits this path,
+// but it's kept as a safe fallback for any driver value that can't be scanned
+// directly into one of the primitive arrow builders.
 func shouldMarshalJSON(t reflect.Type) bool {
 	switch t.Kind() {
 	case reflect.Pointer:

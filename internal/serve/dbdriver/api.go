@@ -1,11 +1,10 @@
 // Package dbdriver wraps database/sql + pgx to give us OID-aware column
 // scan-type inference, server-side query cancellation, and a Postgres error
-// normalizer suitable for projecting into the wire format the
-// popsql-query-widget expects.
+// normalizer suitable for projecting into the wire format the query widget
+// expects.
 //
-// This is a trimmed-down port of github.com/timescale/popsql-query's
-// internal/driver package — Postgres only, no SSH tunneling, no multi-driver
-// adapter registry, and no logging side-effects.
+// It is Postgres-only: no SSH tunneling, no multi-driver adapter registry, and
+// no logging side-effects (callers log Close errors etc.).
 package dbdriver
 
 import (
@@ -13,19 +12,8 @@ import (
 	"reflect"
 )
 
-// ColumnCase controls how column names are presented to the widget. Today we
-// always emit them as-is.
-type ColumnCase string
-
-const (
-	ColumnCaseDefault ColumnCase = ""
-	ColumnCaseLower   ColumnCase = "lower"
-	ColumnCaseUpper   ColumnCase = "upper"
-)
-
 // Column carries column metadata to the widget. JSON shape matches the
-// "Column" type defined by @popsql/types and consumed by
-// popsql-query-widget's TimescaleQueryClient.
+// "Column" type the query widget's client consumes.
 type Column struct {
 	Name      string       `json:"name"`
 	Type      string       `json:"type,omitempty"`
@@ -37,14 +25,8 @@ type Column struct {
 	ScanType  reflect.Type `json:"-"`
 }
 
-// Metadata is reserved for future use; popsql-query's Metadata is only
-// populated by BigQuery's bytes-processed counter.
-type Metadata struct {
-	BytesProcessed int64 `json:"bytesProcessed"`
-}
-
 // NormalizedError is the canonical error shape consumed by the widget. The
-// JSON shape mirrors @popsql/types' ApiFailedResult error.
+// JSON shape mirrors the widget client's ApiFailedResult error.
 type NormalizedError struct {
 	Code     string `json:"code,omitempty"`
 	Column   int32  `json:"column,omitempty"`
@@ -64,9 +46,9 @@ type NormalizedError struct {
 
 func (e *NormalizedError) Error() string { return e.Message }
 
-// ErrMultiStatement is returned when the user attempts to run multiple
-// statements in a single query. Multi-statement support requires either an
-// extended-protocol round trip per statement or pgx's "simple protocol" mode,
-// which interpolates parameters client-side. For now we follow popsql-query's
-// posture and reject the case.
+// ErrMultiStatement is returned when multiple statements are sent in a single
+// prepared (extended-protocol) call, which Postgres rejects. Multi-statement
+// editor text is handled by running the widget-supplied statements one at a
+// time (see streamQuery), so this only fires if a single statement itself
+// contains multiple commands.
 var ErrMultiStatement = errors.New("cannot run multiple statements in a single query")

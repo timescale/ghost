@@ -32,14 +32,12 @@ func OpenPostgresDSN(ctx context.Context, dsn string) (Driver, error) {
 }
 
 func openPostgresConfig(ctx context.Context, pgxCfg *pgx.ConnConfig) (d Driver, err error) {
-	// SimpleProtocol lets users send arbitrary text (multi-statement SQL,
-	// comments, trailing semicolons) the same way `ghost sql` does. The
-	// alternative extended-protocol modes need a single, parseable
-	// statement per call, which is a poor fit for an interactive editor.
-	pgxCfg.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
-	if pgxCfg.RuntimeParams == nil {
-		pgxCfg.RuntimeParams = map[string]string{}
-	}
+	// Use pgx's default exec mode (extended protocol with a prepared-statement
+	// cache). The widget splits multi-statement editor text into individual
+	// statements for us, which we run one at a time, so we don't need the
+	// simple protocol's multi-command support — and the extended protocol
+	// avoids the simple protocol's downsides (client-side parameter
+	// interpolation, no prepared-statement caching, weaker type handling).
 	pgxCfg.RuntimeParams["application_name"] = ApplicationName
 
 	tracer := &postgresQueryTracer{}
@@ -101,8 +99,8 @@ func (d *postgresDriver) Context(ctx context.Context) (context.Context, context.
 	})
 }
 
-func (d *postgresDriver) Query(ctx context.Context, args QueryArgs) (Rows, error) {
-	baseRows, err := d.query(ctx, args, d.scanType)
+func (d *postgresDriver) Query(ctx context.Context, query string) (Rows, error) {
+	baseRows, err := d.query(ctx, query, d.scanType)
 	if err != nil {
 		return nil, err
 	}

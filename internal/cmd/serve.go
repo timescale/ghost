@@ -35,9 +35,10 @@ of this command — press Ctrl+C to stop it.`,
 			}
 
 			srv, err := serve.New(serve.Config{
-				Host: host,
-				Port: port,
-				App:  app,
+				Host:   host,
+				Port:   port,
+				App:    app,
+				Logger: newLogger(cmd),
 			})
 			if err != nil {
 				return err

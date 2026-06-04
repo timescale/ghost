@@ -27,19 +27,13 @@ type Driver interface {
 
 	// Query issues a SQL statement and returns Rows. The context returned by
 	// Context must be the one passed in.
-	Query(ctx context.Context, args QueryArgs) (Rows, error)
+	Query(ctx context.Context, query string) (Rows, error)
 
 	// NormalizeError adapts a database/sql or driver-specific error to the
 	// wire NormalizedError shape expected by the widget.
 	NormalizeError(ctx context.Context, err error) *NormalizedError
 
 	Close() error
-}
-
-// QueryArgs is the input to Driver.Query.
-type QueryArgs struct {
-	Query      string
-	ColumnCase ColumnCase
 }
 
 // baseDriver is the standard implementation, shared by every concrete driver.
@@ -63,18 +57,17 @@ func (b *baseDriver) Context(ctx context.Context) (context.Context, context.Canc
 	return ctx, func() {}
 }
 
-func (b *baseDriver) Query(ctx context.Context, args QueryArgs) (Rows, error) {
-	return b.query(ctx, args, b.scanType)
+func (b *baseDriver) Query(ctx context.Context, query string) (Rows, error) {
+	return b.query(ctx, query, b.scanType)
 }
 
-func (b *baseDriver) query(ctx context.Context, args QueryArgs, scanTypeFn scanTypeFn) (*baseRows, error) {
-	rows, err := b.conn.QueryContext(ctx, args.Query)
+func (b *baseDriver) query(ctx context.Context, query string, scanTypeFn scanTypeFn) (*baseRows, error) {
+	rows, err := b.conn.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	return &baseRows{
 		Rows:       rows,
-		columnCase: args.ColumnCase,
 		scanTypeFn: scanTypeFn,
 	}, nil
 }

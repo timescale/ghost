@@ -2,9 +2,9 @@
 // precision and special values (NaN, +/-Infinity, untyped JSON, hex-encoded
 // bytea, plain DATE/TIMESTAMP strings) when reading rows out of database/sql.
 //
-// Ported from github.com/timescale/popsql-query/internal/types so the Apache
-// Arrow encoding in this package matches the wire contract the
-// popsql-query-widget expects from the savannah gateway.
+// These types match the wire contract the query widget expects, so the Apache
+// Arrow encoding preserves database-side precision and special values when
+// rows are streamed to the browser.
 package dbtypes
 
 import (
