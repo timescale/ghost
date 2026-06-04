@@ -30,7 +30,15 @@ func (s *Server) handleArrowResults(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	<-run.ready
+	// Wait for runQuery to finish buffering. Guard on the request context so a
+	// stray/duplicate arrowResults POST for a run that errored before ready was
+	// closed (e.g. the bufErr path in runQuery) doesn't block this handler
+	// indefinitely.
+	select {
+	case <-run.ready:
+	case <-r.Context().Done():
+		return
+	}
 
 	rb, err := NewRecordBuilder(run.columns)
 	if err != nil {
