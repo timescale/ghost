@@ -1,0 +1,11 @@
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- popsql-lollipop NavTable (native 14x14), scaled to fill the 16x16 box. -->
+  <g transform="scale(1.142857)">
+    <path
+      fill-rule="evenodd"
+      clip-rule="evenodd"
+      d="M12 0H2a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V2a2 2 0 00-2-2zm.5 4.25V2a.5.5 0 00-.5-.5H2a.5.5 0 00-.5.5v2.25h11zm-11 1.5v2.5h4.75v-2.5H1.5zm0 4V12a.5.5 0 00.5.5h4.25V9.75H1.5zm6.25 2.75H12a.5.5 0 00.5-.5V9.75H7.75v2.75zm4.75-4.25v-2.5H7.75v2.5h4.75z"
+      fill="currentColor"
+    />
+  </g>
+</svg>

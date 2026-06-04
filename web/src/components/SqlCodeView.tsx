@@ -9,7 +9,7 @@ import {
 import type React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { CheckIcon, CopyIcon } from './SchemaIcons';
+import { Icon } from './Icon';
 
 interface Props {
   query: string;
@@ -99,13 +99,15 @@ function CopyButton({ text }: { text: string }) {
       }`}
     >
       <span className="relative block size-4">
-        <CopyIcon
+        <Icon
+          name="copy"
           size={16}
           className={`absolute inset-0 transition-all duration-200 ${
             copied ? 'scale-50 opacity-0' : 'scale-100 opacity-100'
           }`}
         />
-        <CheckIcon
+        <Icon
+          name="check"
           size={16}
           className={`absolute inset-0 transition-all duration-200 ${
             copied ? 'scale-100 opacity-100' : 'scale-50 opacity-0'

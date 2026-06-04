@@ -1,12 +1,16 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
+import svgr from 'vite-plugin-svgr';
 
 const ghostServePort = process.env.GHOST_SERVE_DEV_PORT ?? '5174';
 
 export default defineConfig({
   plugins: [
     react(),
+    // Import .svg files as React components (via `?react`) so the single
+    // <Icon> component can render them inline with currentColor + sizing.
+    svgr(),
     // The widget bundle assumes Node globals (Buffer, process, etc.) exist;
     // match the shim list web-cloud uses with this widget.
     nodePolyfills({ include: ['buffer', 'crypto', 'process', 'stream'] }),

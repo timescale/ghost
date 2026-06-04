@@ -24,16 +24,7 @@ import {
 } from '../schema';
 import { useServeStore } from '../store';
 
-import {
-  ChevronDown,
-  CopyIcon,
-  EyeIcon,
-  type IconProps,
-  NavQueriesPlus,
-  NavSuperscript,
-  NavTable,
-  RefreshIcon,
-} from './SchemaIcons';
+import { Icon, type IconName } from './Icon';
 import { SqlCodeView } from './SqlCodeView';
 
 interface SchemaPaneProps {
@@ -88,7 +79,11 @@ export function SchemaPane({ databaseId }: SchemaPaneProps) {
           aria-label="Refresh schema"
           title="Refresh schema"
         >
-          <RefreshIcon className={query.isFetching ? 'animate-spin' : ''} />
+          <Icon
+            name="refresh"
+            size={14}
+            className={query.isFetching ? 'animate-spin' : ''}
+          />
         </button>
       </div>
       <div className="flex-auto overflow-auto">
@@ -350,10 +345,10 @@ function groupIcon(kind: GroupKind): ReactNode {
     case 'tables':
     case 'views':
     case 'matViews':
-      return <NavTable />;
+      return <Icon name="table" size={14} />;
     case 'functions':
     case 'procedures':
-      return <NavSuperscript />;
+      return <Icon name="function" size={14} />;
     case 'enums':
       return null;
   }
@@ -779,7 +774,8 @@ function SchemaRootRow({
       >
         <span className="min-w-0 truncate">{label}</span>
         {hasChildren ? (
-          <ChevronDown
+          <Icon
+            name="chevron-down"
             className={`flex-none text-slate-400 opacity-0 transition-transform group-hover:opacity-100 ${
               isExpanded ? '' : '-rotate-90'
             }`}
@@ -942,7 +938,8 @@ function CaretSlot({
       style={{ width: CARET_PX }}
     >
       {hasChildren ? (
-        <ChevronDown
+        <Icon
+          name="chevron-down"
           className={`transition-transform ${expanded ? '' : '-rotate-90'}`}
           size={CARET_PX}
         />
@@ -1028,13 +1025,10 @@ function columnConstraintLabel(
 
 // iconLabel wraps a text label with a leading icon, matching popsql's
 // context-menu icon+label layout.
-function iconLabel(
-  Icon: (props: IconProps) => JSX.Element,
-  text: string,
-): ReactNode {
+function iconLabel(name: IconName, text: string): ReactNode {
   return (
     <>
-      <Icon className="flex-none text-slate-500" size={14} />
+      <Icon name={name} className="flex-none text-slate-500" size={14} />
       <span>{text}</span>
     </>
   );
@@ -1272,14 +1266,14 @@ function schemaMenuItems(name: string): MenuItem[] {
     {
       key: 'new-query',
       label: iconLabel(
-        NavQueriesPlus,
+        'new-query',
         `New query: SET search_path TO ${quoteIdent(name)}`,
       ),
       onClick: () => append(`SET search_path TO ${quoteIdent(name)};`),
     },
     {
       key: 'copy-name',
-      label: iconLabel(CopyIcon, 'Copy schema name'),
+      label: iconLabel('copy', 'Copy schema name'),
       onClick: () => copyText(quoteIdent(name)),
     },
   ];
@@ -1296,17 +1290,17 @@ function tableMenuItems(
   return [
     {
       key: 'new-query',
-      label: iconLabel(NavQueriesPlus, `New query from ${kind}`),
+      label: iconLabel('new-query', `New query from ${kind}`),
       onClick: () => append(sql),
     },
     {
       key: 'copy-select',
-      label: iconLabel(CopyIcon, 'Copy SELECT statement'),
+      label: iconLabel('copy', 'Copy SELECT statement'),
       onClick: () => copyText(sql),
     },
     {
       key: 'copy-name',
-      label: iconLabel(CopyIcon, `Copy ${kind} name`),
+      label: iconLabel('copy', `Copy ${kind} name`),
       onClick: () => copyText(qualifiedName(ns, table.name)),
     },
   ];
@@ -1318,22 +1312,22 @@ function columnMenuItems(ns: string, table: string, col: string): MenuItem[] {
   return [
     {
       key: 'new-query',
-      label: iconLabel(NavQueriesPlus, 'New query with column'),
+      label: iconLabel('new-query', 'New query with column'),
       onClick: () => append(sql),
     },
     {
       key: 'copy-select',
-      label: iconLabel(CopyIcon, 'Copy SELECT statement'),
+      label: iconLabel('copy', 'Copy SELECT statement'),
       onClick: () => copyText(sql),
     },
     {
       key: 'copy-name',
-      label: iconLabel(CopyIcon, 'Copy column name'),
+      label: iconLabel('copy', 'Copy column name'),
       onClick: () => copyText(quoteIdent(col)),
     },
     {
       key: 'copy-qualified',
-      label: iconLabel(CopyIcon, 'Copy qualified column name'),
+      label: iconLabel('copy', 'Copy qualified column name'),
       onClick: () => copyText(`${qualifiedName(ns, table)}.${quoteIdent(col)}`),
     },
   ];
@@ -1349,12 +1343,12 @@ function indexMenuItems(
     items.push(
       {
         key: 'view-def',
-        label: iconLabel(EyeIcon, 'View definition'),
+        label: iconLabel('eye', 'View definition'),
         onClick: () => showModal(index.name, index.definition),
       },
       {
         key: 'copy-def',
-        label: iconLabel(CopyIcon, 'Copy definition'),
+        label: iconLabel('copy', 'Copy definition'),
         onClick: () => copyText(index.definition),
       },
     );
@@ -1366,7 +1360,7 @@ function indexMenuItems(
 function copyQualifiedNameItem(ns: string, name: string): MenuItem {
   return {
     key: 'copy-name',
-    label: iconLabel(CopyIcon, 'Copy qualified name'),
+    label: iconLabel('copy', 'Copy qualified name'),
     onClick: () => copyText(qualifiedName(ns, name)),
   };
 }
@@ -1382,12 +1376,12 @@ function routineMenuItems(
     items.push(
       {
         key: 'view-def',
-        label: iconLabel(EyeIcon, 'View definition'),
+        label: iconLabel('eye', 'View definition'),
         onClick: () => showModal(routine.name, definition),
       },
       {
         key: 'copy-def',
-        label: iconLabel(CopyIcon, 'Copy definition'),
+        label: iconLabel('copy', 'Copy definition'),
         onClick: () => copyText(definition),
       },
     );
