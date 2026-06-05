@@ -379,7 +379,7 @@ function TableNode({ ns, table, ctx }: TableNodeProps) {
     <TreeRow
       ctx={ctx}
       nodeKey={key}
-      label={table.name}
+      label={highlight(table.name, ctx.searchTerm)}
       depth={2}
       hasChildren
       rightDetail={
@@ -592,7 +592,7 @@ function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
     <TreeRow
       ctx={ctx}
       nodeKey={key}
-      label={view.name}
+      label={highlight(view.name, ctx.searchTerm)}
       depth={2}
       hasChildren
       onContextMenu={(e) => {
