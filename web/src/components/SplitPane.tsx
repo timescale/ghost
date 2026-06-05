@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface SplitPaneProps {
   leftWidth: number;
@@ -24,13 +24,15 @@ export function SplitPane({
   right,
 }: SplitPaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [dragging, setDragging] = useState(false);
   const draggingRef = useRef(false);
+  const onLeftWidthChangeRef = useRef(onLeftWidthChange);
+  onLeftWidthChangeRef.current = onLeftWidthChange;
 
   const onMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     draggingRef.current = true;
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
+    setDragging(true);
   }, []);
 
   // Keyboard resize for accessibility: the divider exposes a separator role
@@ -41,44 +43,36 @@ export function SplitPane({
       const step = e.shiftKey ? 32 : 8;
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        onLeftWidthChange(leftWidth - step);
+        onLeftWidthChangeRef.current(leftWidth - step);
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        onLeftWidthChange(leftWidth + step);
+        onLeftWidthChangeRef.current(leftWidth + step);
       }
     },
-    [leftWidth, onLeftWidthChange],
+    [leftWidth],
   );
 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
       if (!draggingRef.current || !containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      onLeftWidthChange(e.clientX - rect.left);
+      onLeftWidthChangeRef.current(e.clientX - rect.left);
     };
     const onMouseUp = () => {
       if (!draggingRef.current) return;
       draggingRef.current = false;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      setDragging(false);
     };
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     return () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
-      // If the component unmounts mid-drag, restore the body styles that
-      // onMouseDown set so the page isn't left stuck in col-resize / no-select.
-      if (draggingRef.current) {
-        draggingRef.current = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-      }
     };
-  }, [onLeftWidthChange]);
+  }, []);
 
   return (
-    <div ref={containerRef} className="flex h-full w-full flex-auto">
+    <div ref={containerRef} className="flex relative h-full w-full flex-auto">
       {showLeft ? (
         <>
           <div
@@ -87,7 +81,7 @@ export function SplitPane({
               minWidth: minLeftWidth,
               maxWidth: maxLeftWidth,
             }}
-            className="flex h-full shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white"
+            className="flex h-full flex-0 flex-col overflow-hidden border-r border-slate-200 bg-white"
           >
             {left}
           </div>
@@ -101,13 +95,14 @@ export function SplitPane({
             tabIndex={0}
             onMouseDown={onMouseDown}
             onKeyDown={onKeyDown}
-            className="group h-full w-1 shrink-0 cursor-col-resize bg-slate-100 hover:bg-blue-400"
+            className={`group h-full w-1 shrink-0 cursor-col-resize bg-slate-100 hover:bg-blue-400 ${dragging ? 'bg-blue-400' : ''}`}
           />
         </>
       ) : null}
       <div className="flex h-full flex-auto flex-col overflow-hidden">
         {right}
       </div>
+      {dragging && <div className="absolute inset-0 cursor-col-resize" />}
     </div>
   );
 }

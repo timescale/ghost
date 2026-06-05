@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { debounce } from './util/debounce';
 
 export interface PersistedState {
   selectedDatabaseId?: string;
@@ -43,20 +44,13 @@ function setUrlDbId(id: string | null) {
   window.history.replaceState(null, '', url.toString());
 }
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-const SAVE_DEBOUNCE_MS = 400;
-
-function schedulePersist(snapshot: PersistedState) {
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    void fetch('/api/state', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(snapshot),
-    });
-  }, SAVE_DEBOUNCE_MS);
-}
+const persist = debounce((snapshot: PersistedState) => {
+  fetch('/api/state', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(snapshot),
+  }).catch(console.error);
+}, 400);
 
 function snapshotFor(store: ServeStore): PersistedState {
   return {
@@ -101,21 +95,21 @@ export const useServeStore = create<ServeStore>((set, get) => ({
   setSelectedDatabaseId: (id) => {
     set({ selectedDatabaseId: id });
     setUrlDbId(id);
-    schedulePersist(snapshotFor(get()));
+    persist(snapshotFor(get()));
   },
   setEditorSql: (sql) => {
     set({ editorSql: sql });
-    schedulePersist(snapshotFor(get()));
+    persist(snapshotFor(get()));
   },
   appendEditorSql: (sql) => {
     const current = get().editorSql;
     const next = current.trim() ? `${current.trimEnd()}\n\n${sql}` : sql;
     set({ editorSql: next });
-    schedulePersist(snapshotFor(get()));
+    persist(snapshotFor(get()));
   },
   setEditorHeight: (height) => {
     set({ editorHeight: height });
-    schedulePersist(snapshotFor(get()));
+    persist(snapshotFor(get()));
   },
   setSchemaPaneWidth: (width) => {
     set({
@@ -125,11 +119,11 @@ export const useServeStore = create<ServeStore>((set, get) => ({
         MAX_SCHEMA_PANE_WIDTH,
       ),
     });
-    schedulePersist(snapshotFor(get()));
+    persist(snapshotFor(get()));
   },
   setSchemaPaneVisible: (visible) => {
     set({ schemaPaneVisible: visible });
-    schedulePersist(snapshotFor(get()));
+    persist(snapshotFor(get()));
   },
   toggleSchemaNode: (databaseId, key) => {
     const prev = get().schemaTreeExpanded[databaseId] ?? [];
@@ -139,6 +133,6 @@ export const useServeStore = create<ServeStore>((set, get) => ({
     set({
       schemaTreeExpanded: { ...get().schemaTreeExpanded, [databaseId]: next },
     });
-    schedulePersist(snapshotFor(get()));
+    persist(snapshotFor(get()));
   },
 }));

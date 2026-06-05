@@ -1,10 +1,9 @@
 import type { FC, SVGProps } from 'react';
 
 // Each icon is a separate .svg file under ../assets/icons, normalized to a
-// 16x16 viewBox and using `currentColor` so it inherits color from CSS. This
-// mirrors popsql-lollipop's BetaIcon approach (one component, name prop, files
-// on disk that are easy to view and diff). vite-plugin-svgr turns each `?react`
-// import into a React component, and import.meta.glob loads them all by name.
+// 16x16 viewBox and using `currentColor` so it inherits color from CSS.
+// vite-plugin-svgr turns each `?react` import into a React component, and
+// import.meta.glob loads them all by name.
 const iconModules = import.meta.glob<FC<SVGProps<SVGSVGElement>>>(
   '../assets/icons/*.svg',
   { eager: true, query: '?react', import: 'default' },
