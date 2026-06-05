@@ -470,16 +470,27 @@ interface ColumnRowProps extends NodeProps {
   ns: string;
   parentName: string;
   col: TableColumn | { name: string; type: string };
+  // Columns nested under a "Columns" group sit at depth 4 (the default).
+  // Regular-view columns render directly under the view, so they sit one
+  // level shallower.
+  depth?: number;
 }
 
-function ColumnRow({ parent, ns, parentName, col, ctx }: ColumnRowProps) {
+function ColumnRow({
+  parent,
+  ns,
+  parentName,
+  col,
+  ctx,
+  depth = 4,
+}: ColumnRowProps) {
   const constraint = columnConstraintLabel(parent, col);
   const foreignKey = columnForeignKey(parent, col);
   return (
     <LeafRow
       ctx={ctx}
       label={highlight(col.name, ctx.searchTerm)}
-      depth={4}
+      depth={depth}
       rightDetail={
         <>
           {constraint ? <Pill>{constraint}</Pill> : null}
@@ -657,6 +668,7 @@ function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
             parentName={view.name}
             col={col}
             ctx={ctx}
+            depth={3}
           />
         ))
       )}
