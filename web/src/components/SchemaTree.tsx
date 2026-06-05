@@ -13,6 +13,7 @@ import {
   qualifiedName,
   quoteIdent,
   type Routine,
+  routineSignature,
   selectAllSql,
   type TableColumn,
   type TableSchema,
@@ -289,7 +290,7 @@ function renderGroupItem(
   item: TableSchema | ViewSchema | Routine | { name: string },
   ctx: TreeContext,
 ): ReactNode {
-  const itemKey = childKey(ns, kind, item.name);
+  const itemKey = childKey(ns, kind, itemLabel(kind, item));
   switch (kind) {
     case 'tables':
       return (
@@ -593,7 +594,7 @@ function RoutineNode({ ns, routine, ctx }: RoutineNodeProps) {
   return (
     <LeafRow
       ctx={ctx}
-      label={highlight(routine.name, ctx.searchTerm)}
+      label={highlight(routineSignature(routine), ctx.searchTerm)}
       depth={2}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -893,6 +894,20 @@ function childKey(ns: string, group: GroupKind, name: string): string {
   return `${schemaKey({ name: ns })}/${group}/${name}`;
 }
 
+// itemLabel returns the display/key label for a group item. Routines use
+// their signature (name + identity arguments) so overloaded routines that
+// share a name remain distinct in both the rendered tree and the keys/state
+// derived from them.
+function itemLabel(
+  kind: GroupKind,
+  item: TableSchema | ViewSchema | Routine | { name: string },
+): string {
+  if (kind === 'functions' || kind === 'procedures') {
+    return routineSignature(item as Routine);
+  }
+  return item.name;
+}
+
 // columnConstraintLabel picks the single most informative constraint label
 // for a column, in priority order: primary key > unique > not null.
 // Mirrors popsql's `constraintForColumn`.
@@ -979,8 +994,9 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
       const gKey = `${sKey}/${kind}`;
       let groupHit = false;
       for (const item of list) {
-        const iKey = childKey(ns.name, kind, item.name);
-        const itemHit = match(item.name);
+        const label = itemLabel(kind, item as never);
+        const iKey = childKey(ns.name, kind, label);
+        const itemHit = match(label);
         let childHit = false;
         const considerSub = (subKind: string, subs?: { name: string }[]) => {
           if (!subs) return;
@@ -1177,7 +1193,7 @@ function routineMenuItems(
       {
         key: 'view-def',
         label: iconLabel('eye', 'View definition'),
-        onClick: () => showModal(routine.name, definition),
+        onClick: () => showModal(routineSignature(routine), definition),
       },
       {
         key: 'copy-def',

@@ -89,8 +89,18 @@ export interface TriggerSchema {
 
 export interface Routine {
   name: string;
+  // Identity argument list (e.g. "integer, text") that distinguishes
+  // overloaded routines sharing a name. Absent for zero-argument routines.
+  arguments?: string;
   type: 'FUNCTION' | 'PROCEDURE';
   definition?: string;
+}
+
+// routineSignature renders a routine's display label including its argument
+// list, so overloaded routines that share a name are distinguishable and
+// produce stable, unique React keys (e.g. "add(integer, integer)").
+export function routineSignature(routine: Routine): string {
+  return `${routine.name}(${routine.arguments ?? ''})`;
 }
 
 export interface HypertableInfo {

@@ -31,11 +31,11 @@ func FormatSchema(schema *DatabaseSchema) string {
 			formatEnumContents(&buf, enum)
 		}
 		for _, fn := range ns.Functions {
-			fmt.Fprintf(&buf, "\nFUNCTION: %s\n", fn.Name)
+			fmt.Fprintf(&buf, "\nFUNCTION: %s\n", routineSignature(fn))
 			formatRoutineContents(&buf, fn)
 		}
 		for _, proc := range ns.Procedures {
-			fmt.Fprintf(&buf, "\nPROCEDURE: %s\n", proc.Name)
+			fmt.Fprintf(&buf, "\nPROCEDURE: %s\n", routineSignature(proc))
 			formatRoutineContents(&buf, proc)
 		}
 	}
@@ -251,6 +251,13 @@ func formatEnumContents(buf *strings.Builder, enum EnumSchema) {
 		values[i] = fmt.Sprintf("'%s'", v)
 	}
 	fmt.Fprintf(buf, "  %s\n", strings.Join(values, ", "))
+}
+
+// routineSignature renders a routine's display name including its identity
+// argument list, so overloaded routines that share a name are
+// distinguishable (e.g. "add(integer, integer)").
+func routineSignature(r Routine) string {
+	return fmt.Sprintf("%s(%s)", r.Name, r.Arguments)
 }
 
 func formatRoutineContents(buf *strings.Builder, r Routine) {

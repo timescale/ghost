@@ -3,7 +3,6 @@ package common
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -132,7 +131,11 @@ const (
 
 // Routine describes a function or procedure.
 type Routine struct {
-	Name       string      `json:"name"`
+	Name string `json:"name"`
+	// Arguments is the identity argument list (e.g. "integer, text"),
+	// which distinguishes overloaded routines that share a name. Empty for
+	// a routine that takes no arguments.
+	Arguments  string      `json:"arguments,omitempty"`
 	Type       RoutineType `json:"type"`
 	Definition string      `json:"definition,omitempty"`
 }
@@ -155,11 +158,6 @@ type FetchDatabaseSchemaArgs struct {
 	IncludeInternal bool
 }
 
-// schemaIdentRE matches valid Postgres unquoted identifiers. Used to reject
-// schema names containing odd characters before they're interpolated into
-// query strings.
-var schemaIdentRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
 // schemaFilter holds the SQL fragments needed to scope a query to the
 // user-visible schemas / objects.
 type schemaFilter struct {
@@ -167,20 +165,32 @@ type schemaFilter struct {
 	schema          string
 }
 
-// onSchema returns " AND <col> = '<schema>' AND <col> NOT LIKE 'pg_%' ..."
-// type clauses. The caller is responsible for placing this in a WHERE
-// context. The schema name has already been validated against
-// schemaIdentRE.
+// queryArgs returns the positional query arguments referenced by the SQL
+// fragments this filter emits. When a single schema is requested, the
+// schema name is bound as `$1` (see onSchema) rather than interpolated, so
+// arbitrary schema names are safe. Every buildXxxQuery uses onSchema at
+// most once, so this is either empty or a single-element slice.
+func (f schemaFilter) queryArgs() []any {
+	if f.schema != "" {
+		return []any{f.schema}
+	}
+	return nil
+}
+
+// onSchema returns " AND <col> = $1 AND <col> NOT LIKE 'pg_%' ..." type
+// clauses. The caller is responsible for placing this in a WHERE context
+// and passing queryArgs() to the query so `$1` is bound to the schema
+// name.
 func (f schemaFilter) onSchema(col string) string {
 	if f.includeInternal {
 		if f.schema != "" {
-			return fmt.Sprintf(" AND %s = '%s'", col, f.schema)
+			return fmt.Sprintf(" AND %s = $1", col)
 		}
 		return ""
 	}
 	var b strings.Builder
 	if f.schema != "" {
-		fmt.Fprintf(&b, " AND %s = '%s'", col, f.schema)
+		fmt.Fprintf(&b, " AND %s = $1", col)
 	}
 	// Standard exclusions: catalog schemas, TimescaleDB internals,
 	// information_schema. Matches what popsql uses for the same purpose.
@@ -276,6 +286,7 @@ type triggerRow struct {
 type routineRow struct {
 	SchemaName  string  `db:"schema_name"`
 	RoutineName string  `db:"routine_name"`
+	RoutineArgs string  `db:"routine_args"`
 	RoutineType string  `db:"routine_type"`
 	Definition  *string `db:"routine_definition"`
 }
@@ -337,7 +348,14 @@ SELECT
         FROM unnest(con.conkey) WITH ORDINALITY AS x(key, n)
         JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = x.key
     ) AS columns,
-    confrel.relname AS ref_table,
+    -- Schema-qualify the referenced table only when it lives in a
+    -- different schema than the constraint's table, so cross-schema
+    -- foreign keys are unambiguous while same-schema ones stay terse.
+    CASE
+        WHEN confrel.oid IS NULL THEN NULL
+        WHEN confreln.nspname = n.nspname THEN confrel.relname
+        ELSE confreln.nspname || '.' || confrel.relname
+    END AS ref_table,
     (
         SELECT array_agg(a.attname ORDER BY x.n)
         FROM unnest(con.confkey) WITH ORDINALITY AS x(key, n)
@@ -348,6 +366,7 @@ FROM pg_constraint con
 JOIN pg_class c ON c.oid = con.conrelid
 JOIN pg_namespace n ON n.oid = c.relnamespace
 LEFT JOIN pg_class confrel ON confrel.oid = con.confrelid
+LEFT JOIN pg_namespace confreln ON confreln.oid = confrel.relnamespace
 WHERE con.contype IN ('p', 'u', 'f', 'c', 'x')
   %s
   %s
@@ -386,6 +405,13 @@ JOIN pg_class t ON t.oid = ix.indrelid
 JOIN pg_class i ON i.oid = ix.indexrelid
 JOIN pg_namespace n ON n.oid = t.relnamespace
 WHERE t.relkind IN ('r', 'm')
+  -- Exclude indexes that back a constraint (PRIMARY KEY / UNIQUE /
+  -- EXCLUDE). Those are surfaced via the constraints query, so listing
+  -- them here as well would duplicate them.
+  AND NOT EXISTS (
+      SELECT 1 FROM pg_constraint con
+      WHERE con.conindid = ix.indexrelid
+  )
   %s
   %s
   %s
@@ -446,6 +472,7 @@ func buildRoutinesQuery(f schemaFilter) string {
 SELECT
     n.nspname AS schema_name,
     p.proname AS routine_name,
+    pg_get_function_identity_arguments(p.oid) AS routine_args,
     CASE p.prokind
         WHEN 'f' THEN 'FUNCTION'
         WHEN 'p' THEN 'PROCEDURE'
@@ -457,7 +484,7 @@ WHERE p.prokind IN ('f', 'p')
   %s
   %s
   %s
-ORDER BY n.nspname, p.proname`,
+ORDER BY n.nspname, p.proname, routine_args`,
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_proc'::regclass", "p.oid"),
 		f.onOwner("p.proowner"),
@@ -488,10 +515,6 @@ ORDER BY h.hypertable_schema, h.hypertable_name`,
 // extension-owned objects. Pass Schema to limit results to a single
 // namespace.
 func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*DatabaseSchema, error) {
-	if args.Schema != "" && !schemaIdentRE.MatchString(args.Schema) {
-		return nil, fmt.Errorf("invalid schema name: %q", args.Schema)
-	}
-
 	database, err := fetchDatabase(ctx, args.Client, args.ProjectID, args.DatabaseRef)
 	if err != nil {
 		return nil, err
@@ -654,7 +677,7 @@ func (b *schemaBuilder) build() []NamespacedSchema {
 }
 
 func fetchRelationsAndColumns(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBuilder) error {
-	rows, err := conn.Query(ctx, buildRelationsAndColumnsQuery(f))
+	rows, err := conn.Query(ctx, buildRelationsAndColumnsQuery(f), f.queryArgs()...)
 	if err != nil {
 		return err
 	}
@@ -762,7 +785,7 @@ func sortedKeys[V any](m map[string]V) []string {
 }
 
 func fetchConstraints(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBuilder) error {
-	rows, err := conn.Query(ctx, buildConstraintsQuery(f))
+	rows, err := conn.Query(ctx, buildConstraintsQuery(f), f.queryArgs()...)
 	if err != nil {
 		return err
 	}
@@ -814,7 +837,7 @@ func fetchConstraints(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *sc
 }
 
 func fetchIndexes(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBuilder) error {
-	rows, err := conn.Query(ctx, buildIndexesQuery(f))
+	rows, err := conn.Query(ctx, buildIndexesQuery(f), f.queryArgs()...)
 	if err != nil {
 		return err
 	}
@@ -842,7 +865,7 @@ func fetchIndexes(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schema
 }
 
 func fetchTriggers(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBuilder) error {
-	rows, err := conn.Query(ctx, buildTriggersQuery(f))
+	rows, err := conn.Query(ctx, buildTriggersQuery(f), f.queryArgs()...)
 	if err != nil {
 		return err
 	}
@@ -867,7 +890,7 @@ func fetchTriggers(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schem
 }
 
 func fetchEnums(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBuilder) error {
-	rows, err := conn.Query(ctx, buildEnumsQuery(f))
+	rows, err := conn.Query(ctx, buildEnumsQuery(f), f.queryArgs()...)
 	if err != nil {
 		return err
 	}
@@ -890,7 +913,7 @@ func fetchEnums(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBu
 }
 
 func fetchRoutines(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBuilder) error {
-	rows, err := conn.Query(ctx, buildRoutinesQuery(f))
+	rows, err := conn.Query(ctx, buildRoutinesQuery(f), f.queryArgs()...)
 	if err != nil {
 		return err
 	}
@@ -903,6 +926,7 @@ func fetchRoutines(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schem
 		ns := b.namespace(row.SchemaName)
 		r := Routine{
 			Name:       row.RoutineName,
+			Arguments:  row.RoutineArgs,
 			Type:       RoutineType(row.RoutineType),
 			Definition: strings.TrimSpace(util.DerefStr(row.Definition)),
 		}
@@ -928,7 +952,7 @@ func fetchHypertables(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *sc
 		return nil
 	}
 
-	rows, err := conn.Query(ctx, buildHypertablesQuery(f))
+	rows, err := conn.Query(ctx, buildHypertablesQuery(f), f.queryArgs()...)
 	if err != nil {
 		return err
 	}
