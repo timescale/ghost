@@ -448,24 +448,33 @@ ORDER BY n.nspname, t.typname`,
 }
 
 func buildTriggersQuery(f schemaFilter) string {
-	// information_schema.triggers is the simplest source; one row per
-	// (trigger, event_manipulation), which the popsql tree also flattens
-	// into separate entries. Internal triggers (constraint triggers,
-	// timescaledb chunk triggers, etc.) are filtered out via the standard
-	// schema exclusion below.
+	// information_schema.triggers gives us the user-friendly, SQL-standard
+	// columns (timing, one row per event_manipulation, and a formatted
+	// action_statement), which the popsql tree also flattens into separate
+	// entries. We join it to pg_trigger/pg_class/pg_namespace so we can apply
+	// the same OID-based filters used for every other object kind: excluding
+	// extension-owned triggers (onExtensionObject), triggers on tables owned
+	// by platform roles (onOwner), and internally generated triggers
+	// (tgisinternal). The join is on the trigger's identity (schema, table,
+	// name), so it preserves information_schema's per-manipulation rows.
 	return fmt.Sprintf(`
 SELECT
-    trigger_schema AS schema_name,
-    event_object_table AS table_name,
-    trigger_name AS trigger_name,
-    action_timing AS timing,
-    event_manipulation AS manipulation,
-    action_statement AS action_statement
-FROM information_schema.triggers
-WHERE TRUE
-  %s
+    ist.trigger_schema AS schema_name,
+    ist.event_object_table AS table_name,
+    ist.trigger_name AS trigger_name,
+    ist.action_timing AS timing,
+    ist.event_manipulation AS manipulation,
+    ist.action_statement AS action_statement
+FROM information_schema.triggers ist
+JOIN pg_catalog.pg_namespace n ON n.nspname = ist.event_object_schema
+JOIN pg_catalog.pg_class c ON c.relname = ist.event_object_table AND c.relnamespace = n.oid
+JOIN pg_catalog.pg_trigger tg ON tg.tgrelid = c.oid AND tg.tgname = ist.trigger_name
+WHERE NOT tg.tgisinternal
+  %s%s%s
 ORDER BY schema_name, table_name, trigger_name, manipulation`,
-		f.onSchema("trigger_schema"),
+		f.onSchema("ist.trigger_schema"),
+		f.onExtensionObject("'pg_trigger'::regclass", "tg.oid"),
+		f.onOwner("c.relowner"),
 	)
 }
 

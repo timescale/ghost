@@ -264,7 +264,9 @@ function GroupNode({ ns, group, ctx }: GroupNodeProps) {
   const items = group.items;
   const visibleItems = ctx.searchActive
     ? items.filter((item) =>
-        ctx.searchMatches?.has(childKey(ns, group.kind, item.name)),
+        ctx.searchMatches?.has(
+          childKey(ns, group.kind, itemLabel(group.kind, item)),
+        ),
       )
     : items;
   if (visibleItems.length === 0) return null;
