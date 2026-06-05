@@ -9,8 +9,6 @@ type Date string
 
 func (d *Date) Scan(src any) error {
 	switch val := src.(type) {
-	case nil:
-		*d = ""
 	case string:
 		*d = Date(val)
 	case time.Time:
@@ -25,8 +23,6 @@ type ClockTime string
 
 func (c *ClockTime) Scan(src any) error {
 	switch val := src.(type) {
-	case nil:
-		*c = ""
 	case string:
 		*c = ClockTime(val)
 	case time.Time:
@@ -41,8 +37,6 @@ type ClockTimeTZ string
 
 func (c *ClockTimeTZ) Scan(src any) error {
 	switch val := src.(type) {
-	case nil:
-		*c = ""
 	case string:
 		*c = ClockTimeTZ(val)
 	case time.Time:
@@ -57,8 +51,6 @@ type DateTime string
 
 func (d *DateTime) Scan(src any) error {
 	switch val := src.(type) {
-	case nil:
-		*d = ""
 	case string:
 		*d = DateTime(val)
 	case time.Time:
@@ -73,8 +65,6 @@ type Timestamp string
 
 func (t *Timestamp) Scan(src any) error {
 	switch val := src.(type) {
-	case nil:
-		*t = ""
 	case string:
 		*t = Timestamp(val)
 	case time.Time:
