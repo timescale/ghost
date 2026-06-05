@@ -498,7 +498,9 @@ JOIN pg_catalog.pg_namespace n ON n.nspname = ist.event_object_schema
 JOIN pg_catalog.pg_class c ON c.relname = ist.event_object_table AND c.relnamespace = n.oid
 JOIN pg_catalog.pg_trigger tg ON tg.tgrelid = c.oid AND tg.tgname = ist.trigger_name
 WHERE NOT tg.tgisinternal
-  %s%s%s
+  %s
+  %s
+  %s
 ORDER BY schema_name, table_name, trigger_name, manipulation`,
 		f.onSchema("ist.trigger_schema"),
 		f.onExtensionObject("'pg_trigger'::regclass", "tg.oid"),
@@ -665,11 +667,11 @@ func checkSchemaExists(ctx context.Context, conn *pgx.Conn, schema string) error
 		`SELECT nspname FROM pg_namespace WHERE nspname !~ '^pg_' AND nspname <> 'information_schema' ORDER BY nspname`,
 	)
 	if err != nil {
-		return fmt.Errorf("schema %q not found", schema)
+		return fmt.Errorf("schema %q not found (failed to list available schemas: %w)", schema, err)
 	}
 	available, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
-		return fmt.Errorf("schema %q not found", schema)
+		return fmt.Errorf("schema %q not found (failed to list available schemas: %w)", schema, err)
 	}
 	if len(available) == 0 {
 		return fmt.Errorf("schema %q not found", schema)

@@ -41,15 +41,17 @@ export function SplitPane({
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       const step = e.shiftKey ? 32 : 8;
+      const clamp = (width: number) =>
+        Math.min(maxLeftWidth, Math.max(minLeftWidth, width));
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        onLeftWidthChangeRef.current(leftWidth - step);
+        onLeftWidthChangeRef.current(clamp(leftWidth - step));
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        onLeftWidthChangeRef.current(leftWidth + step);
+        onLeftWidthChangeRef.current(clamp(leftWidth + step));
       }
     },
-    [leftWidth],
+    [leftWidth, minLeftWidth, maxLeftWidth],
   );
 
   useEffect(() => {

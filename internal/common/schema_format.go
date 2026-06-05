@@ -207,7 +207,7 @@ func formatTableColumn(col TableColumnSchema, width int, isPK, isUnique, hasFK b
 	if isUnique {
 		parts = append(parts, "UNIQUE")
 	}
-	if hasFK {
+	if hasFK && len(fk.RefColumns) > 0 {
 		parts = append(parts, fmt.Sprintf("REFERENCES %s(%s)", fk.RefTable, fk.RefColumns[0]))
 	}
 	if showDefault && col.Default != "" {
