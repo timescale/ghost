@@ -584,10 +584,21 @@ interface ViewNodeProps extends NodeProps {
 }
 
 function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
-  const groupKind = kind === 'view' ? 'views' : 'matViews';
+  const isMatView = kind !== 'view';
+  const groupKind = isMatView ? 'matViews' : 'views';
   const key = childKey(ns, groupKind, view.name);
-  const cols = view.columns ?? [];
-  const indexes = view.indexes ?? [];
+  const allCols = view.columns ?? [];
+  const allIndexes = view.indexes ?? [];
+  // When a search is active, only render the children that themselves match
+  // (same behavior as TableNode).
+  const cols = ctx.searchActive
+    ? allCols.filter((c) => ctx.searchMatches?.has(`${key}/columns/${c.name}`))
+    : allCols;
+  const indexes = ctx.searchActive
+    ? allIndexes.filter((i) =>
+        ctx.searchMatches?.has(`${key}/indexes/${i.name}`),
+      )
+    : allIndexes;
   return (
     <TreeRow
       ctx={ctx}
@@ -609,16 +620,46 @@ function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
         });
       }}
     >
-      {cols.map((col) => (
-        <ColumnRow
-          key={col.name}
-          parent={view}
-          ns={ns}
-          parentName={view.name}
-          col={col}
-          ctx={ctx}
-        />
-      ))}
+      {/*
+        Regular views can only have columns, so we render them directly
+        under the view (no "Columns" group). Materialized views behave more
+        like tables — they also carry indexes — so we group their columns
+        to keep the two sibling lists from floating at the same level.
+      */}
+      {isMatView ? (
+        cols.length > 0 ? (
+          <TreeRow
+            ctx={ctx}
+            nodeKey={`${key}/columns`}
+            label="Columns"
+            depth={3}
+            hasChildren
+            count={ctx.searchActive ? cols.length : allCols.length}
+          >
+            {cols.map((col) => (
+              <ColumnRow
+                key={col.name}
+                parent={view}
+                ns={ns}
+                parentName={view.name}
+                col={col}
+                ctx={ctx}
+              />
+            ))}
+          </TreeRow>
+        ) : null
+      ) : (
+        cols.map((col) => (
+          <ColumnRow
+            key={col.name}
+            parent={view}
+            ns={ns}
+            parentName={view.name}
+            col={col}
+            ctx={ctx}
+          />
+        ))
+      )}
       {indexes.length > 0 ? (
         <TreeRow
           ctx={ctx}
@@ -626,7 +667,7 @@ function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
           label="Indexes"
           depth={3}
           hasChildren
-          count={indexes.length}
+          count={ctx.searchActive ? indexes.length : allIndexes.length}
         >
           {indexes.map((idx) => (
             <IndexRow key={idx.name} ns={ns} index={idx} ctx={ctx} />
