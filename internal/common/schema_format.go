@@ -243,6 +243,12 @@ func formatViewContents(buf *strings.Builder, view ViewSchema) {
 			fmt.Fprintf(buf, "  %s\n", formatIndex(idx))
 		}
 	}
+	if view.Definition != "" {
+		buf.WriteString("\n  AS\n")
+		for line := range strings.SplitSeq(view.Definition, "\n") {
+			fmt.Fprintf(buf, "    %s\n", line)
+		}
+	}
 }
 
 func formatEnumContents(buf *strings.Builder, enum EnumSchema) {

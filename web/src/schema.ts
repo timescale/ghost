@@ -40,6 +40,8 @@ export interface TableColumn {
 export interface ViewSchema {
   name: string;
   columns?: ViewColumn[];
+  // The view's defining SELECT (from pg_get_viewdef). Absent for tables.
+  definition?: string;
   indexes?: IndexSchema[];
 }
 

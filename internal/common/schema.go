@@ -47,6 +47,8 @@ type TableSchema struct {
 type ViewSchema struct {
 	Name    string             `json:"name"`
 	Columns []ViewColumnSchema `json:"columns,omitempty"`
+	// Definition is the view's defining SELECT (from pg_get_viewdef).
+	Definition string `json:"definition,omitempty"`
 	// Indexes are only populated for materialized views.
 	Indexes []IndexSchema `json:"indexes,omitempty"`
 }
@@ -235,16 +237,17 @@ func (f schemaFilter) onOwner(ownerCol string) string {
 // Row types for scanning query results
 
 type relationColumnRow struct {
-	SchemaName   string  `db:"schema_name"`
-	RelationName string  `db:"relation_name"`
-	RelationType string  `db:"relation_type"`
-	ColumnName   string  `db:"column_name"`
-	DataType     string  `db:"data_type"`
-	NotNull      bool    `db:"not_null"`
-	DefaultValue *string `db:"default_value"`
-	ColumnOrder  int16   `db:"column_order"`
-	SequenceName *string `db:"sequence_name"`
-	IdentityType string  `db:"identity_type"`
+	SchemaName     string  `db:"schema_name"`
+	RelationName   string  `db:"relation_name"`
+	RelationType   string  `db:"relation_type"`
+	ColumnName     string  `db:"column_name"`
+	DataType       string  `db:"data_type"`
+	NotNull        bool    `db:"not_null"`
+	DefaultValue   *string `db:"default_value"`
+	ColumnOrder    int16   `db:"column_order"`
+	SequenceName   *string `db:"sequence_name"`
+	IdentityType   string  `db:"identity_type"`
+	ViewDefinition *string `db:"view_definition"`
 }
 
 type constraintRow struct {
@@ -318,7 +321,8 @@ SELECT
     pg_get_expr(d.adbin, d.adrelid) AS default_value,
     a.attnum AS column_order,
     pg_get_serial_sequence(format('%%I.%%I', n.nspname, c.relname), a.attname) AS sequence_name,
-    a.attidentity::text AS identity_type
+    a.attidentity::text AS identity_type,
+    CASE WHEN c.relkind IN ('v', 'm') THEN pg_get_viewdef(c.oid, true) END AS view_definition
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 JOIN pg_attribute a ON a.attrelid = c.oid
@@ -729,14 +733,14 @@ func fetchRelationsAndColumns(ctx context.Context, conn *pgx.Conn, f schemaFilte
 		case "view":
 			v, ok := buf.views[row.RelationName]
 			if !ok {
-				v = &ViewSchema{Name: row.RelationName}
+				v = &ViewSchema{Name: row.RelationName, Definition: strings.TrimSpace(util.DerefStr(row.ViewDefinition))}
 				buf.views[row.RelationName] = v
 			}
 			v.Columns = append(v.Columns, ViewColumnSchema{Name: row.ColumnName, Type: row.DataType})
 		case "materialized_view":
 			mv, ok := buf.matViews[row.RelationName]
 			if !ok {
-				mv = &ViewSchema{Name: row.RelationName}
+				mv = &ViewSchema{Name: row.RelationName, Definition: strings.TrimSpace(util.DerefStr(row.ViewDefinition))}
 				buf.matViews[row.RelationName] = mv
 			}
 			mv.Columns = append(mv.Columns, ViewColumnSchema{Name: row.ColumnName, Type: row.DataType})

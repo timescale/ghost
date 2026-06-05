@@ -351,6 +351,7 @@ interface TableNodeProps extends NodeProps {
 function TableNode({ ns, table, ctx }: TableNodeProps) {
   const key = childKey(ns, 'tables', table.name);
   const allCols = table.columns ?? [];
+  const allConstraints = tableConstraintItems(table);
   const allIndexes = table.indexes ?? [];
   const allTriggers = table.triggers ?? [];
   // When a search is active, only render the children that themselves match.
@@ -359,6 +360,11 @@ function TableNode({ ns, table, ctx }: TableNodeProps) {
   const cols = ctx.searchActive
     ? allCols.filter((c) => ctx.searchMatches?.has(`${key}/columns/${c.name}`))
     : allCols;
+  const constraints = ctx.searchActive
+    ? allConstraints.filter((c) =>
+        ctx.searchMatches?.has(`${key}/constraints/${c.name}`),
+      )
+    : allConstraints;
   const indexes = ctx.searchActive
     ? allIndexes.filter((i) =>
         ctx.searchMatches?.has(`${key}/indexes/${i.name}`),
@@ -409,6 +415,20 @@ function TableNode({ ns, table, ctx }: TableNodeProps) {
           ))}
         </TreeRow>
       ) : null}
+      {constraints.length > 0 ? (
+        <TreeRow
+          ctx={ctx}
+          nodeKey={`${key}/constraints`}
+          label="Constraints"
+          depth={3}
+          hasChildren
+          count={ctx.searchActive ? constraints.length : allConstraints.length}
+        >
+          {constraints.map((c) => (
+            <ConstraintRow key={c.name} ns={ns} item={c} ctx={ctx} />
+          ))}
+        </TreeRow>
+      ) : null}
       {indexes.length > 0 ? (
         <TreeRow
           ctx={ctx}
@@ -454,6 +474,7 @@ interface ColumnRowProps extends NodeProps {
 
 function ColumnRow({ parent, ns, parentName, col, ctx }: ColumnRowProps) {
   const constraint = columnConstraintLabel(parent, col);
+  const foreignKey = columnForeignKey(parent, col);
   return (
     <LeafRow
       ctx={ctx}
@@ -462,6 +483,7 @@ function ColumnRow({ parent, ns, parentName, col, ctx }: ColumnRowProps) {
       rightDetail={
         <>
           {constraint ? <Pill>{constraint}</Pill> : null}
+          {foreignKey ? <Pill>{`\u2192 ${foreignKey}`}</Pill> : null}
           <Pill>{col.type}</Pill>
         </>
       }
@@ -500,6 +522,35 @@ function IndexRow({ ns, index, ctx }: IndexRowProps) {
           x: e.clientX,
           y: e.clientY,
           items: indexMenuItems(ns, index, ctx.showModal),
+        });
+      }}
+    />
+  );
+}
+
+interface ConstraintRowProps extends NodeProps {
+  ns: string;
+  item: ConstraintItem;
+}
+
+function ConstraintRow({ ns, item, ctx }: ConstraintRowProps) {
+  return (
+    <LeafRow
+      ctx={ctx}
+      label={highlight(item.name, ctx.searchTerm)}
+      depth={4}
+      rightDetail={
+        <>
+          <Pill>{item.kindWord}</Pill>
+          <Pill>{item.detail}</Pill>
+        </>
+      }
+      onContextMenu={(e) => {
+        e.preventDefault();
+        ctx.setContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          items: [copyQualifiedNameItem(ns, item.name)],
         });
       }}
     />
@@ -549,10 +600,11 @@ function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
         ctx.setContextMenu({
           x: e.clientX,
           y: e.clientY,
-          items: tableMenuItems(
+          items: viewMenuItems(
             ns,
-            view as unknown as TableSchema,
+            view,
             kind === 'view' ? 'view' : 'materialized view',
+            ctx.showModal,
           ),
         });
       }}
@@ -937,6 +989,62 @@ function columnConstraintLabel(
   return null;
 }
 
+// columnForeignKey returns the referenced table for a single-column foreign
+// key on the given column, or null. Surfaced inline as a hint pill on the
+// column row; the full constraint (with referenced columns) is also listed
+// under the table's Constraints group.
+function columnForeignKey(
+  parent: TableSchema | ViewSchema,
+  col: { name: string },
+): string | null {
+  const constraints = (parent as TableSchema).constraints ?? [];
+  for (const c of constraints) {
+    const cols = c.columns ?? [];
+    if (
+      c.type === 'FOREIGN KEY' &&
+      cols.length === 1 &&
+      cols[0] === col.name &&
+      c.ref_table
+    ) {
+      return c.ref_table;
+    }
+  }
+  return null;
+}
+
+// A single row under the table's Constraints group.
+interface ConstraintItem {
+  name: string;
+  kindWord: string;
+  detail: string;
+}
+
+// tableConstraintItems flattens the constraints a table carries that aren't
+// already conveyed by the per-column pills: foreign keys (with their full
+// referenced table/columns), check constraints, and exclusion constraints.
+// Primary-key and unique membership is omitted here because it's shown
+// inline on each member column.
+function tableConstraintItems(table: TableSchema): ConstraintItem[] {
+  const items: ConstraintItem[] = [];
+  for (const c of table.constraints ?? []) {
+    if (c.type !== 'FOREIGN KEY') continue;
+    const cols = (c.columns ?? []).join(', ');
+    const refCols = (c.ref_columns ?? []).join(', ');
+    items.push({
+      name: c.name,
+      kindWord: 'foreign key',
+      detail: `(${cols}) \u2192 ${c.ref_table ?? '?'}(${refCols})`,
+    });
+  }
+  for (const chk of table.checks ?? []) {
+    items.push({ name: chk.name, kindWord: 'check', detail: chk.expression });
+  }
+  for (const exc of table.exclusions ?? []) {
+    items.push({ name: exc.name, kindWord: 'exclude', detail: exc.definition });
+  }
+  return items;
+}
+
 // iconLabel wraps a text label with a leading icon, matching popsql's
 // context-menu icon+label layout.
 function iconLabel(name: IconName, text: string): ReactNode {
@@ -984,6 +1092,9 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
         | {
             name: string;
             columns?: { name: string }[];
+            constraints?: { name: string }[];
+            checks?: { name: string }[];
+            exclusions?: { name: string }[];
             indexes?: { name: string }[];
             triggers?: { name: string }[];
           }[]
@@ -1009,6 +1120,10 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
           }
         };
         considerSub('columns', item.columns);
+        considerSub(
+          'constraints',
+          tableConstraintItems(item as unknown as TableSchema),
+        );
         considerSub('indexes', item.indexes);
         considerSub('triggers', item.triggers);
         if (itemHit || childHit) {
@@ -1120,6 +1235,33 @@ function tableMenuItems(
       onClick: () => copyText(qualifiedName(ns, table.name)),
     },
   ];
+}
+
+function viewMenuItems(
+  ns: string,
+  view: ViewSchema,
+  kind: 'view' | 'materialized view',
+  showModal: (title: string, text: string) => void,
+): MenuItem[] {
+  const items: MenuItem[] = [];
+  const { definition } = view;
+  if (definition) {
+    items.push(
+      {
+        key: 'view-def',
+        label: iconLabel('eye', 'View definition'),
+        onClick: () => showModal(view.name, definition),
+      },
+      {
+        key: 'copy-def',
+        label: iconLabel('copy', 'Copy definition'),
+        onClick: () => copyText(definition),
+      },
+    );
+  }
+  // Reuse the table query/copy actions (SELECT *, copy name, etc.).
+  items.push(...tableMenuItems(ns, view as unknown as TableSchema, kind));
+  return items;
 }
 
 function columnMenuItems(ns: string, table: string, col: string): MenuItem[] {

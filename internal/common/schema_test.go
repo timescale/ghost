@@ -1107,6 +1107,76 @@ VIEW: user_view
   name  CHARACTER VARYING(255)
 `,
 		},
+		{
+			name: "view with definition",
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						Views: []ViewSchema{
+							{
+								Name: "active_users",
+								Columns: []ViewColumnSchema{
+									{Name: "id", Type: "integer"},
+								},
+								Definition: "SELECT id\n   FROM users\n  WHERE active;",
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+VIEW: active_users
+  id  INTEGER
+
+  AS
+    SELECT id
+       FROM users
+      WHERE active;
+`,
+		},
+		{
+			name: "materialized view with definition",
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						MaterializedViews: []ViewSchema{
+							{
+								Name: "user_stats",
+								Columns: []ViewColumnSchema{
+									{Name: "n", Type: "bigint"},
+								},
+								Indexes: []IndexSchema{
+									{Name: "user_stats_n_idx", Columns: "n"},
+								},
+								Definition: "SELECT count(*) AS n\n   FROM users;",
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+MATERIALIZED VIEW: user_stats
+  n  BIGINT
+
+  INDEX user_stats_n_idx (n)
+
+  AS
+    SELECT count(*) AS n
+       FROM users;
+`,
+		},
 
 		// ==================== Materialized View Tests ====================
 		{
