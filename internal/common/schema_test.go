@@ -1141,6 +1141,116 @@ VIEW: active_users
 `,
 		},
 		{
+			name: "view with instead-of trigger",
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						Views: []ViewSchema{
+							{
+								Name: "active_users",
+								Columns: []ViewColumnSchema{
+									{Name: "id", Type: "integer"},
+								},
+								Triggers: []TriggerSchema{
+									{Name: "active_users_insert", Timing: "INSTEAD OF", Manipulation: "INSERT"},
+								},
+								Definition: "SELECT id\n   FROM users;",
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+VIEW: active_users
+  id  INTEGER
+
+  TRIGGER active_users_insert INSTEAD OF INSERT
+
+  AS
+    SELECT id
+       FROM users;
+`,
+		},
+		// ==================== Partitioned Table Tests ====================
+		{
+			name: "partitioned table lists its partitions",
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						Tables: []TableSchema{
+							{
+								Name: "events",
+								Columns: []TableColumnSchema{
+									{Name: "id", Type: "bigint", NotNull: true},
+									{Name: "occurred_at", Type: "date", NotNull: true},
+								},
+								Constraints: []TableConstraint{
+									{Type: ConstraintPrimaryKey, Name: "events_pk", Columns: []string{"id", "occurred_at"}},
+								},
+								Partitions: []PartitionInfo{
+									{Name: "events_2024", Bound: "FOR VALUES FROM ('2024-01-01') TO ('2025-01-01')"},
+									{Name: "events_2025", Bound: "FOR VALUES FROM ('2025-01-01') TO ('2026-01-01')"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+TABLE: events
+  id           BIGINT NOT NULL
+  occurred_at  DATE NOT NULL
+
+  PRIMARY KEY (id, occurred_at)
+  PARTITION events_2024 FOR VALUES FROM ('2024-01-01') TO ('2025-01-01')
+  PARTITION events_2025 FOR VALUES FROM ('2025-01-01') TO ('2026-01-01')
+`,
+		},
+		{
+			name: "partition without bound expression",
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						Tables: []TableSchema{
+							{
+								Name: "events",
+								Columns: []TableColumnSchema{
+									{Name: "id", Type: "bigint"},
+								},
+								Partitions: []PartitionInfo{
+									{Name: "events_default"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+TABLE: events
+  id  BIGINT
+
+  PARTITION events_default
+`,
+		},
+		{
 			name: "materialized view with definition",
 			schema: &DatabaseSchema{
 				ID:   "test123",

@@ -117,7 +117,8 @@ func formatTableContents(buf *strings.Builder, table TableSchema) {
 		len(nonInlinedChecks) > 0 ||
 		len(table.Exclusions) > 0 ||
 		len(table.Indexes) > 0 ||
-		len(table.Triggers) > 0
+		len(table.Triggers) > 0 ||
+		len(table.Partitions) > 0
 	if hasFollowup {
 		buf.WriteString("\n")
 	}
@@ -136,6 +137,13 @@ func formatTableContents(buf *strings.Builder, table TableSchema) {
 	}
 	for _, trg := range table.Triggers {
 		fmt.Fprintf(buf, "  TRIGGER %s %s %s\n", trg.Name, trg.Timing, trg.Manipulation)
+	}
+	for _, part := range table.Partitions {
+		if part.Bound != "" {
+			fmt.Fprintf(buf, "  PARTITION %s %s\n", part.Name, part.Bound)
+		} else {
+			fmt.Fprintf(buf, "  PARTITION %s\n", part.Name)
+		}
 	}
 }
 
@@ -241,6 +249,12 @@ func formatViewContents(buf *strings.Builder, view ViewSchema) {
 		buf.WriteString("\n")
 		for _, idx := range view.Indexes {
 			fmt.Fprintf(buf, "  %s\n", formatIndex(idx))
+		}
+	}
+	if len(view.Triggers) > 0 {
+		buf.WriteString("\n")
+		for _, trg := range view.Triggers {
+			fmt.Fprintf(buf, "  TRIGGER %s %s %s\n", trg.Name, trg.Timing, trg.Manipulation)
 		}
 	}
 	if view.Definition != "" {

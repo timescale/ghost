@@ -25,7 +25,17 @@ export interface TableSchema {
   checks?: CheckConstraint[];
   exclusions?: ExclusionConstraint[];
   triggers?: TriggerSchema[];
+  // Child partitions of a partitioned table. Only present for partitioned
+  // tables; the children are hidden as standalone tables.
+  partitions?: PartitionInfo[];
   hypertable?: HypertableInfo;
+}
+
+export interface PartitionInfo {
+  name: string;
+  // The partition's bound expression, e.g.
+  // "FOR VALUES FROM ('2024-01-01') TO ('2025-01-01')".
+  bound?: string;
 }
 
 export interface TableColumn {
@@ -43,6 +53,9 @@ export interface ViewSchema {
   // The view's defining SELECT (from pg_get_viewdef). Absent for tables.
   definition?: string;
   indexes?: IndexSchema[];
+  // Triggers defined on the view (e.g. INSTEAD OF triggers). Not
+  // applicable to materialized views.
+  triggers?: TriggerSchema[];
 }
 
 export interface ViewColumn {

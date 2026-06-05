@@ -10,12 +10,14 @@ import {
 import {
   type IndexSchema,
   type NamespacedSchema,
+  type PartitionInfo,
   qualifiedName,
   quoteIdent,
   type Routine,
   routineSignature,
   selectAllSql,
   type TableColumn,
+  type TableConstraint,
   type TableSchema,
   type TriggerSchema,
   type ViewSchema,
@@ -353,6 +355,7 @@ interface TableNodeProps extends NodeProps {
 function TableNode({ ns, table, ctx }: TableNodeProps) {
   const key = childKey(ns, 'tables', table.name);
   const allCols = table.columns ?? [];
+  const allPartitions = table.partitions ?? [];
   const allConstraints = tableConstraintItems(table);
   const allIndexes = table.indexes ?? [];
   const allTriggers = table.triggers ?? [];
@@ -362,6 +365,11 @@ function TableNode({ ns, table, ctx }: TableNodeProps) {
   const cols = ctx.searchActive
     ? allCols.filter((c) => ctx.searchMatches?.has(`${key}/columns/${c.name}`))
     : allCols;
+  const partitions = ctx.searchActive
+    ? allPartitions.filter((p) =>
+        ctx.searchMatches?.has(`${key}/partitions/${p.name}`),
+      )
+    : allPartitions;
   const constraints = ctx.searchActive
     ? allConstraints.filter((c) =>
         ctx.searchMatches?.has(`${key}/constraints/${c.name}`),
@@ -414,6 +422,20 @@ function TableNode({ ns, table, ctx }: TableNodeProps) {
               col={col}
               ctx={ctx}
             />
+          ))}
+        </TreeRow>
+      ) : null}
+      {partitions.length > 0 ? (
+        <TreeRow
+          ctx={ctx}
+          nodeKey={`${key}/partitions`}
+          label="Partitions"
+          depth={3}
+          hasChildren
+          count={ctx.searchActive ? partitions.length : allPartitions.length}
+        >
+          {partitions.map((part) => (
+            <PartitionRow key={part.name} ns={ns} partition={part} ctx={ctx} />
           ))}
         </TreeRow>
       ) : null}
@@ -590,6 +612,30 @@ function TriggerRow({ trigger, ctx }: TriggerRowProps) {
   );
 }
 
+interface PartitionRowProps extends NodeProps {
+  ns: string;
+  partition: PartitionInfo;
+}
+
+function PartitionRow({ ns, partition, ctx }: PartitionRowProps) {
+  return (
+    <LeafRow
+      ctx={ctx}
+      label={highlight(partition.name, ctx.searchTerm)}
+      depth={4}
+      rightDetail={partition.bound ? <Pill>{partition.bound}</Pill> : null}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        ctx.setContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          items: partitionMenuItems(ns, partition, ctx.showModal),
+        });
+      }}
+    />
+  );
+}
+
 interface ViewNodeProps extends NodeProps {
   ns: string;
   view: ViewSchema;
@@ -602,6 +648,7 @@ function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
   const key = childKey(ns, groupKind, view.name);
   const allCols = view.columns ?? [];
   const allIndexes = view.indexes ?? [];
+  const allTriggers = view.triggers ?? [];
   // When a search is active, only render the children that themselves match
   // (same behavior as TableNode).
   const cols = ctx.searchActive
@@ -612,6 +659,11 @@ function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
         ctx.searchMatches?.has(`${key}/indexes/${i.name}`),
       )
     : allIndexes;
+  const triggers = ctx.searchActive
+    ? allTriggers.filter((t) =>
+        ctx.searchMatches?.has(`${key}/triggers/${t.name}`),
+      )
+    : allTriggers;
   return (
     <TreeRow
       ctx={ctx}
@@ -685,6 +737,24 @@ function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
         >
           {indexes.map((idx) => (
             <IndexRow key={idx.name} ns={ns} index={idx} ctx={ctx} />
+          ))}
+        </TreeRow>
+      ) : null}
+      {triggers.length > 0 ? (
+        <TreeRow
+          ctx={ctx}
+          nodeKey={`${key}/triggers`}
+          label="Triggers"
+          depth={3}
+          hasChildren
+          count={ctx.searchActive ? triggers.length : allTriggers.length}
+        >
+          {triggers.map((trg) => (
+            <TriggerRow
+              key={`${trg.name}/${trg.timing}/${trg.manipulation}`}
+              trigger={trg}
+              ctx={ctx}
+            />
           ))}
         </TreeRow>
       ) : null}
@@ -1024,18 +1094,22 @@ function columnConstraintLabel(
 ): string | null {
   const t = parent as TableSchema;
   const constraints = t.constraints ?? [];
-  if (
+  // Only single-column PK/UNIQUE constraints are conveyed inline on the
+  // column. Composite (multi-column) constraints would be misleading as a
+  // per-column pill (e.g. UNIQUE (a, b) does not make `a` unique on its
+  // own), so those are surfaced under the table's Constraints group
+  // instead (see tableConstraintItems).
+  const hasSingleColumn = (type: TableConstraint['type']) =>
     constraints.some(
-      (c) => c.type === 'PRIMARY KEY' && (c.columns ?? []).includes(col.name),
-    )
-  ) {
+      (c) =>
+        c.type === type &&
+        (c.columns ?? []).length === 1 &&
+        c.columns?.[0] === col.name,
+    );
+  if (hasSingleColumn('PRIMARY KEY')) {
     return 'primary key';
   }
-  if (
-    constraints.some(
-      (c) => c.type === 'UNIQUE' && (c.columns ?? []).includes(col.name),
-    )
-  ) {
+  if (hasSingleColumn('UNIQUE')) {
     return 'unique';
   }
   if ((col as TableColumn).not_null) {
@@ -1075,20 +1149,32 @@ interface ConstraintItem {
 }
 
 // tableConstraintItems flattens the constraints a table carries that aren't
-// already conveyed by the per-column pills: foreign keys (with their full
-// referenced table/columns), check constraints, and exclusion constraints.
-// Primary-key and unique membership is omitted here because it's shown
-// inline on each member column.
+// already conveyed by the per-column pills: composite primary-key/unique
+// constraints, foreign keys (with their full referenced table/columns),
+// check constraints, and exclusion constraints. Single-column PK/UNIQUE
+// membership is omitted here because it's shown inline on each member
+// column (see columnConstraintLabel).
 function tableConstraintItems(table: TableSchema): ConstraintItem[] {
   const items: ConstraintItem[] = [];
   for (const c of table.constraints ?? []) {
+    const cols = c.columns ?? [];
+    if (c.type === 'PRIMARY KEY' || c.type === 'UNIQUE') {
+      // Single-column PK/UNIQUE are already shown inline on the column.
+      if (cols.length <= 1) continue;
+      items.push({
+        name: c.name,
+        kindWord: c.type === 'PRIMARY KEY' ? 'primary key' : 'unique',
+        detail: `(${cols.join(', ')})`,
+      });
+      continue;
+    }
     if (c.type !== 'FOREIGN KEY') continue;
-    const cols = (c.columns ?? []).join(', ');
+    const colsList = cols.join(', ');
     const refCols = (c.ref_columns ?? []).join(', ');
     items.push({
       name: c.name,
       kindWord: 'foreign key',
-      detail: `(${cols}) \u2192 ${c.ref_table ?? '?'}(${refCols})`,
+      detail: `(${colsList}) \u2192 ${c.ref_table ?? '?'}(${refCols})`,
     });
   }
   for (const chk of table.checks ?? []) {
@@ -1152,6 +1238,7 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
             exclusions?: { name: string }[];
             indexes?: { name: string }[];
             triggers?: { name: string }[];
+            partitions?: { name: string }[];
           }[]
         | undefined,
     ): boolean => {
@@ -1181,6 +1268,7 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
         );
         considerSub('indexes', item.indexes);
         considerSub('triggers', item.triggers);
+        considerSub('partitions', item.partitions);
         if (itemHit || childHit) {
           visible.add(iKey);
           groupHit = true;
@@ -1367,6 +1455,31 @@ function indexMenuItems(
     );
   }
   items.push(copyQualifiedNameItem(ns, index.name));
+  return items;
+}
+
+function partitionMenuItems(
+  ns: string,
+  partition: PartitionInfo,
+  showModal: (title: string, text: string) => void,
+): MenuItem[] {
+  const items: MenuItem[] = [];
+  const { bound } = partition;
+  if (bound) {
+    items.push(
+      {
+        key: 'view-bound',
+        label: iconLabel('eye', 'View partition bound'),
+        onClick: () => showModal(partition.name, bound),
+      },
+      {
+        key: 'copy-bound',
+        label: iconLabel('copy', 'Copy partition bound'),
+        onClick: () => copyText(bound),
+      },
+    );
+  }
+  items.push(copyQualifiedNameItem(ns, partition.name));
   return items;
 }
 

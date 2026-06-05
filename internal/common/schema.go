@@ -40,7 +40,19 @@ type TableSchema struct {
 	Checks      []CheckConstraint     `json:"checks,omitempty"`
 	Exclusions  []ExclusionConstraint `json:"exclusions,omitempty"`
 	Triggers    []TriggerSchema       `json:"triggers,omitempty"`
-	Hypertable  *HypertableInfo       `json:"hypertable,omitempty"`
+	// Partitions lists the child partitions of a partitioned table. Only
+	// populated for partitioned tables (relkind 'p'); the children
+	// themselves are hidden as standalone tables.
+	Partitions []PartitionInfo `json:"partitions,omitempty"`
+	Hypertable *HypertableInfo `json:"hypertable,omitempty"`
+}
+
+// PartitionInfo describes a single child partition of a partitioned table.
+type PartitionInfo struct {
+	Name string `json:"name"`
+	// Bound is the partition's bound expression (from pg_get_expr on
+	// relpartbound), e.g. "FOR VALUES FROM ('2024-01-01') TO ('2025-01-01')".
+	Bound string `json:"bound,omitempty"`
 }
 
 // ViewSchema holds schema information for a view or materialized view.
@@ -51,6 +63,9 @@ type ViewSchema struct {
 	Definition string `json:"definition,omitempty"`
 	// Indexes are only populated for materialized views.
 	Indexes []IndexSchema `json:"indexes,omitempty"`
+	// Triggers lists triggers defined on the view (e.g. INSTEAD OF
+	// triggers on a regular view). Not applicable to materialized views.
+	Triggers []TriggerSchema `json:"triggers,omitempty"`
 }
 
 // ViewColumnSchema holds column info for views (simpler than table columns).
@@ -301,6 +316,13 @@ type hypertableRow struct {
 	NumChunks          int    `db:"num_chunks"`
 }
 
+type partitionRow struct {
+	SchemaName     string `db:"schema_name"`
+	TableName      string `db:"table_name"`
+	PartitionName  string `db:"partition_name"`
+	PartitionBound string `db:"partition_bound"`
+}
+
 // SQL queries are built dynamically because they need to splice in
 // per-call filter clauses (schema-name restriction, internal filtering).
 // Each builder returns a fully-formed query string ready for the driver.
@@ -312,6 +334,7 @@ SELECT
     c.relname AS relation_name,
     CASE c.relkind
         WHEN 'r' THEN 'table'
+        WHEN 'p' THEN 'table'
         WHEN 'v' THEN 'view'
         WHEN 'm' THEN 'materialized_view'
     END AS relation_type,
@@ -327,7 +350,11 @@ FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 JOIN pg_attribute a ON a.attrelid = c.oid
 LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
-WHERE c.relkind IN ('r', 'v', 'm')
+-- Include partitioned tables (relkind 'p') as tables, but exclude child
+-- partitions (relispartition): they're surfaced under the parent's
+-- Partitions list rather than as standalone tables.
+WHERE c.relkind IN ('r', 'p', 'v', 'm')
+  AND NOT c.relispartition
   AND a.attnum > 0
   AND NOT a.attisdropped
   %s
@@ -408,7 +435,8 @@ FROM pg_index ix
 JOIN pg_class t ON t.oid = ix.indrelid
 JOIN pg_class i ON i.oid = ix.indexrelid
 JOIN pg_namespace n ON n.oid = t.relnamespace
-WHERE t.relkind IN ('r', 'm')
+WHERE t.relkind IN ('r', 'p', 'm')
+  AND NOT t.relispartition
   -- Exclude indexes that back a constraint (PRIMARY KEY / UNIQUE /
   -- EXCLUDE). Those are surfaced via the constraints query, so listing
   -- them here as well would duplicate them.
@@ -522,6 +550,33 @@ ORDER BY h.hypertable_schema, h.hypertable_name`,
 	)
 }
 
+// buildPartitionsQuery returns the child partitions of each partitioned
+// table (relkind 'p'), one row per child, along with the child's bound
+// expression. The same OID-based exclusion filters used elsewhere are
+// applied to the parent table so platform/extension-owned partition
+// hierarchies are filtered consistently.
+func buildPartitionsQuery(f schemaFilter) string {
+	return fmt.Sprintf(`
+SELECT
+    pn.nspname AS schema_name,
+    parent.relname AS table_name,
+    child.relname AS partition_name,
+    COALESCE(pg_get_expr(child.relpartbound, child.oid), '') AS partition_bound
+FROM pg_inherits inh
+JOIN pg_class parent ON parent.oid = inh.inhparent
+JOIN pg_namespace pn ON pn.oid = parent.relnamespace
+JOIN pg_class child ON child.oid = inh.inhrelid
+WHERE parent.relkind = 'p'
+  %s
+  %s
+  %s
+ORDER BY pn.nspname, parent.relname, child.relname`,
+		f.onSchema("pn.nspname"),
+		f.onExtensionObject("'pg_class'::regclass", "parent.oid"),
+		f.onOwner("parent.relowner"),
+	)
+}
+
 // FetchDatabaseSchema fetches the complete schema information for a
 // database. By default only user-visible schemas and objects are returned;
 // pass IncludeInternal=true to include catalog, TimescaleDB internals, and
@@ -579,6 +634,9 @@ func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*Da
 	}
 	if err := fetchHypertables(ctx, conn, filter, bld); err != nil {
 		return nil, fmt.Errorf("failed to fetch hypertables: %w", err)
+	}
+	if err := fetchPartitions(ctx, conn, filter, bld); err != nil {
+		return nil, fmt.Errorf("failed to fetch partitions: %w", err)
 	}
 
 	return &DatabaseSchema{
@@ -652,6 +710,7 @@ type schemaBuilder struct {
 	// (schema, name) -> table pointer (so subsequent queries can attach
 	// constraints/indexes/triggers/hypertable info to the right object)
 	tableIndex   map[qualifiedName]*TableSchema
+	viewIndex    map[qualifiedName]*ViewSchema
 	matViewIndex map[qualifiedName]*ViewSchema
 }
 
@@ -664,6 +723,7 @@ func newSchemaBuilder() *schemaBuilder {
 	return &schemaBuilder{
 		namespaces:   make(map[string]*NamespacedSchema),
 		tableIndex:   make(map[qualifiedName]*TableSchema),
+		viewIndex:    make(map[qualifiedName]*ViewSchema),
 		matViewIndex: make(map[qualifiedName]*ViewSchema),
 	}
 }
@@ -780,6 +840,9 @@ func fetchRelationsAndColumns(ctx context.Context, conn *pgx.Conn, f schemaFilte
 		for i := range ns.Tables {
 			b.tableIndex[qualifiedName{Schema: ns.Name, Name: ns.Tables[i].Name}] = &ns.Tables[i]
 		}
+		for i := range ns.Views {
+			b.viewIndex[qualifiedName{Schema: ns.Name, Name: ns.Views[i].Name}] = &ns.Views[i]
+		}
 		for i := range ns.MaterializedViews {
 			b.matViewIndex[qualifiedName{Schema: ns.Name, Name: ns.MaterializedViews[i].Name}] = &ns.MaterializedViews[i]
 		}
@@ -888,15 +951,42 @@ func fetchTriggers(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schem
 	}
 
 	for _, row := range results {
-		t, ok := b.tableIndex[qualifiedName{Schema: row.SchemaName, Name: row.TableName}]
-		if !ok {
-			continue
-		}
-		t.Triggers = append(t.Triggers, TriggerSchema{
+		qn := qualifiedName{Schema: row.SchemaName, Name: row.TableName}
+		trigger := TriggerSchema{
 			Name:         row.TriggerName,
 			Timing:       row.Timing,
 			Manipulation: row.Manipulation,
 			Statement:    row.ActionStmt,
+		}
+		// Triggers can live on tables or on views (e.g. INSTEAD OF
+		// triggers). Attach to whichever the event object is.
+		if t, ok := b.tableIndex[qn]; ok {
+			t.Triggers = append(t.Triggers, trigger)
+		} else if v, ok := b.viewIndex[qn]; ok {
+			v.Triggers = append(v.Triggers, trigger)
+		}
+	}
+	return nil
+}
+
+func fetchPartitions(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBuilder) error {
+	rows, err := conn.Query(ctx, buildPartitionsQuery(f), f.queryArgs()...)
+	if err != nil {
+		return err
+	}
+	results, err := pgx.CollectRows(rows, pgx.RowToStructByName[partitionRow])
+	if err != nil {
+		return err
+	}
+
+	for _, row := range results {
+		t, ok := b.tableIndex[qualifiedName{Schema: row.SchemaName, Name: row.TableName}]
+		if !ok {
+			continue
+		}
+		t.Partitions = append(t.Partitions, PartitionInfo{
+			Name:  row.PartitionName,
+			Bound: row.PartitionBound,
 		})
 	}
 	return nil
