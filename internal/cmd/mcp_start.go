@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/timescale/ghost/internal/common"
+	"github.com/timescale/ghost/internal/log"
 	"github.com/timescale/ghost/internal/mcp"
 )
 
@@ -101,7 +102,7 @@ func buildMCPHTTPCmd(app *common.App) *cobra.Command {
 func startStdioServer(cmd *cobra.Command, app *common.App) error {
 	ctx := cmd.Context()
 	// Create MCP server
-	server, err := mcp.NewServer(ctx, app, newLogger(cmd))
+	server, err := mcp.NewServer(ctx, app, log.New(cmd.ErrOrStderr()))
 	if err != nil {
 		return fmt.Errorf("failed to create MCP server: %w", err)
 	}
@@ -122,7 +123,7 @@ func startStdioServer(cmd *cobra.Command, app *common.App) error {
 // startHTTPServer starts the MCP server with HTTP transport
 func startHTTPServer(cmd *cobra.Command, app *common.App, host string, port int) error {
 	ctx := cmd.Context()
-	logger := newLogger(cmd)
+	logger := log.New(cmd.ErrOrStderr())
 
 	// Create MCP server
 	server, err := mcp.NewServer(ctx, app, logger)

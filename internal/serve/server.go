@@ -2,154 +2,121 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
-
-	"github.com/timescale/ghost/internal/api"
-	"github.com/timescale/ghost/internal/common"
 )
 
-// Config configures a Server instance.
-type Config struct {
-	// Host is the bind address. Use "127.0.0.1" for loopback-only (recommended).
-	Host string
-	// Port is the bind port. 0 lets the OS choose a free port.
-	Port int
-	// App provides access to the ghost-api client and active project. Handlers
-	// call App.Load on each request so OAuth tokens are refreshed and the user
-	// can log in/out in another terminal without restarting the server.
-	App *common.App
-	// Logger receives diagnostics from the long-running server (e.g. errors
-	// closing a database connection). Like `ghost mcp`, serve is a long-lived
-	// backend process, so structured logging to stderr is appropriate. If nil,
-	// logging is discarded.
-	Logger *slog.Logger
-}
-
-// Server wraps the HTTP server and exposes the resolved listen address.
+// Server is a wrapper around [http.Server] that encapsulates some standard
+// configuration and boilerplate for starting and stopping the server.
 type Server struct {
-	cfg      Config
-	logger   *slog.Logger
-	srv      *http.Server
-	ln       net.Listener
-	addr     string
-	runs     *runStore
-	sessions *sessionStore
-	state    *stateStore
+	host    string
+	port    int
+	handler http.Handler
+	logger  *slog.Logger
+
+	httpServer *http.Server
+	errChan    chan error
 }
 
-// New constructs a Server with all routes registered. The listener is bound
-// (so the resolved address is available immediately) but not yet serving.
-// Call Serve to begin handling requests.
-func New(cfg Config) (*Server, error) {
-	if cfg.Host == "" {
-		cfg.Host = "127.0.0.1"
+// NewServer creates a new instance of [Server]. The host may be empty to bind
+// all interfaces, though callers should generally pass a loopback address
+// (e.g. "127.0.0.1"). To start the server, call [Server.Start].
+func NewServer(host string, port int, handler http.Handler, logger *slog.Logger) *Server {
+	return &Server{
+		host:    host,
+		port:    port,
+		handler: handler,
+		logger:  logger,
 	}
-	if cfg.App == nil {
-		return nil, errors.New("serve: app is required")
+}
+
+// Start starts listening for incoming HTTP requests on the configured host and
+// port. If the port is 0, an ephemeral port is chosen, and the stored port is
+// subsequently updated to the chosen port (useful in automated tests). Note
+// that the context argument only controls the cancellation of this function
+// itself - once started, the server can only be stopped by calling
+// [Server.Close].
+func (s *Server) Start(ctx context.Context) error {
+	logger := s.logger
+
+	if s.httpServer != nil || s.errChan != nil {
+		return errors.New("server has already been started")
 	}
 
-	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
-	ln, err := net.Listen("tcp", addr)
+	addr := net.JoinHostPort(s.host, strconv.Itoa(s.port))
+	var netConfig net.ListenConfig
+	listener, err := netConfig.Listen(ctx, "tcp", addr)
 	if err != nil {
-		return nil, fmt.Errorf("listen on %s: %w", addr, err)
+		return fmt.Errorf("listen on %s: %w", addr, err)
 	}
 
-	logger := cfg.Logger
-	if logger == nil {
-		logger = slog.New(slog.DiscardHandler)
+	// Update port if using an ephemeral port (i.e. if original port was 0).
+	s.port = listener.Addr().(*net.TCPAddr).Port
+
+	stdLog := slog.NewLogLogger(logger.Handler(), slog.LevelError)
+
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           s.handler,
+		ErrorLog:          stdLog,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
+	errChan := make(chan error)
 
-	configDir := cfg.App.GetConfig().ConfigDir
-	s := &Server{
-		cfg:      cfg,
-		logger:   logger,
-		ln:       ln,
-		addr:     ln.Addr().String(),
-		runs:     newRunStore(),
-		sessions: newSessionStore(),
-		state:    newStateStore(configDir),
-	}
+	s.httpServer = httpServer
+	s.errChan = errChan
 
-	mux := http.NewServeMux()
-	mux.Handle("GET /healthz", healthzHandler())
-	mux.Handle("GET /api/bootstrap", http.HandlerFunc(s.handleBootstrap))
-	mux.Handle("GET /api/databases", http.HandlerFunc(s.handleDatabases))
-	mux.Handle("POST /api/executeQuery", http.HandlerFunc(s.handleExecuteQuery))
-	mux.Handle("POST /api/executeSessionQuery", http.HandlerFunc(s.handleExecuteSessionQuery))
-	mux.Handle("POST /api/arrowResults", http.HandlerFunc(s.handleArrowResults))
-	mux.Handle("POST /api/createSession", http.HandlerFunc(s.handleCreateSession))
-	mux.Handle("POST /api/closeSession", http.HandlerFunc(s.handleCloseSession))
-	mux.Handle("POST /api/sessionEvents", http.HandlerFunc(s.handleSessionEvents))
-	mux.Handle("POST /api/cancelRun", http.HandlerFunc(s.handleCancelRun))
-	mux.Handle("GET /api/state", http.HandlerFunc(s.handleGetState))
-	mux.Handle("PUT /api/state", http.HandlerFunc(s.handlePutState))
-	mux.Handle("/", newAssetHandler())
-
-	s.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	return s, nil
-}
-
-// Addr returns the resolved listen address (with the OS-chosen port if Port
-// was 0).
-func (s *Server) Addr() string { return s.addr }
-
-// URL returns the http://addr URL clients should connect to.
-func (s *Server) URL() string { return "http://" + s.addr }
-
-// Serve starts handling requests and blocks until ctx is canceled. On
-// cancellation the server is gracefully shut down with a 5s deadline.
-func (s *Server) Serve(ctx context.Context) error {
-	errCh := make(chan error, 1)
 	go func() {
-		err := s.srv.Serve(s.ln)
-		if errors.Is(err, http.ErrServerClosed) {
-			err = nil
+		// NOTE: It's important that we don't use s.httpServer/s.errChan here,
+		// because that could lead to a data race with Close setting them to
+		// nil. Instead, use local variable closures to reference them.
+		if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
+			errChan <- err
 		}
-		errCh <- err
 	}()
 
-	select {
-	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = s.srv.Shutdown(shutdownCtx)
-		s.sessions.closeAll()
-		return <-errCh
-	case err := <-errCh:
-		s.sessions.closeAll()
-		return err
-	}
+	return nil
 }
 
-func healthzHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
-	})
+// URL returns the http URL clients should connect to (with the OS-chosen port
+// if the configured port was 0). Only accurate after [Server.Start] has been
+// called.
+func (s *Server) URL() string {
+	u := url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(s.host, strconv.Itoa(s.port)),
+	}
+	return u.String()
 }
 
-// loadClient reloads credentials from disk (refreshing the OAuth token if
-// needed) and returns a ghost-api client bound to the active project. Called
-// per request so a long-running server doesn't keep using a stale token after
-// it expires.
-func (s *Server) loadClient(ctx context.Context) (api.ClientWithResponsesInterface, string, error) {
-	_, client, projectID, err := s.cfg.App.Load(ctx)
-	if err != nil {
-		return nil, "", err
+// Errors returns a channel on which server errors are returned. Returns a nil
+// channel if the server is not running (e.g. [Server.Start] has not yet been
+// called or if [Server.Close] has already been called).
+func (s *Server) Errors() <-chan error {
+	return s.errChan
+}
+
+// Close immediately shuts down the HTTP server started by [Server.Start],
+// closing all active connections without waiting for in-flight requests to
+// complete. If [Server.Start] has not been called successfully, or if the HTTP
+// server has already been closed, Close is a no-op. Note that it is not safe to
+// call this method concurrently with itself or [Server.Start].
+func (s *Server) Close() error {
+	if s.httpServer == nil {
+		return nil
 	}
-	if client == nil {
-		_, _, clientErr := s.cfg.App.GetClient()
-		if clientErr != nil {
-			return nil, "", clientErr
-		}
-		return nil, "", errors.New("authentication required")
+
+	if err := s.httpServer.Close(); err != nil {
+		return fmt.Errorf("error closing server: %w", err)
 	}
-	return client, projectID, nil
+	s.httpServer = nil
+	s.errChan = nil
+
+	return nil
 }

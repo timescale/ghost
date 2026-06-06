@@ -16,6 +16,10 @@ interface Database {
   type?: string;
 }
 
+interface DatabasesResponse {
+  databases: Database[];
+}
+
 async function fetchJSON<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${path}: ${res.status} ${res.statusText}`);
@@ -76,13 +80,14 @@ function ReadyApp({ bootstrap }: ReadyAppProps) {
   const databases = useQuery({
     queryKey: ['databases'],
     queryFn: async () => {
-      const data = await fetchJSON<Database[]>('/api/databases');
+      const { databases } =
+        await fetchJSON<DatabasesResponse>('/api/databases');
       if (!useServeStore.getState().selectedDatabaseId) {
-        const defaultId = pickDefaultDatabaseId(data);
+        const defaultId = pickDefaultDatabaseId(databases);
         if (defaultId)
           useServeStore.getState().setSelectedDatabaseId(defaultId);
       }
-      return data;
+      return databases;
     },
     refetchInterval: 10_000,
   });

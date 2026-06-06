@@ -49,7 +49,7 @@ func TestServeCmd(t *testing.T) {
 			preBindHost:    "0.0.0.0",
 			args:           []string{"serve", "--no-open", "--host", "0.0.0.0", "--port", "%PORT%"},
 			wantErrPrefix:  "listen on 0.0.0.0:",
-			stderrIncludes: []string{`Warning: binding to "0.0.0.0" exposes the SQL UI to your network. Consider using 127.0.0.1.`},
+			stderrIncludes: []string{"Binding to a non-loopback address exposes the SQL UI to your network"},
 		},
 		{
 			name: "no-open skips browser",
@@ -68,8 +68,8 @@ func TestServeCmd(t *testing.T) {
 				}
 			},
 			stderrIncludes: []string{
-				"Listening on http://127.0.0.1:",
-				"Press Ctrl+C to stop.",
+				"Listening url=http://127.0.0.1:",
+				"Press Ctrl+C to stop",
 			},
 			stderrExcludes: []string{"Failed to open browser"},
 		},

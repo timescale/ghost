@@ -2,170 +2,393 @@ package serve
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/timescale/ghost/internal/serve/dbdriver"
+	"github.com/google/uuid"
+	"github.com/timescale/ghost/internal/log"
 )
 
-// rowChanBuffer is the capacity of Run.rows. A small buffer smooths out
-// per-row scheduling jitter between the producer (the query goroutine) and
-// the consumer (the arrowResults handler) without letting memory usage grow
-// unbounded: once the buffer fills, the producer blocks on its next send,
-// which throttles how fast we read from the database. This backpressure is
-// what keeps memory flat for arbitrarily large result sets.
-const rowChanBuffer = 100
-
-// Run coordinates a single in-flight query between the executeQuery and
-// arrowResults handlers. The query runs in a dedicated goroutine that streams
-// scanned rows over the rows channel (see streamQuery). executeQuery waits for
-// ready (columns known), writes the columns NDJSON line, then blocks on done.
-// arrowResults waits for ready, ranges over rows building an Arrow IPC stream
-// with backpressure, then closes done so executeQuery can emit the
-// success/error terminator. Rows are never buffered in full — they flow from
-// the database straight to the wire.
-type Run struct {
-	id        string
-	projectID string
-	serviceID string
-	startedAt time.Time
-
-	// columns is set by the query goroutine before it closes ready.
-	columns dbdriver.Columns
-
-	// rows streams scanned rows from the query goroutine to arrowResults. It
-	// is closed by the query goroutine once the result set is exhausted (or on
-	// error/cancellation). Backpressure on this channel bounds memory use.
-	rows chan []any
-
-	// rowCount and rowsAffected are set by the query goroutine before it
-	// closes rows; they are safe to read after done is closed.
-	rowCount     int64
-	rowsAffected *int64
-
-	// Number of statements the database executed for this run — used by the
-	// UI to show "Executed N statements" when N > 1.
-	executedStatements int64
-
-	// arrowStarted guards against more than one arrowResults handler draining
-	// the rows channel. Only the first caller wins; concurrent/duplicate
-	// fetches are rejected (mirrors the upstream single-reader pipe design).
-	arrowStarted atomic.Bool
-
-	// cancelQuery aborts the in-flight query via pg_cancel_backend (wired
-	// through driver.Context's cancelContext). Used by /api/cancelRun and
-	// by client-disconnect detection in executeQuery / arrowResults.
-	cancelQuery context.CancelFunc
-
-	ready chan struct{}
-	done  chan struct{}
-
-	err      *dbdriver.NormalizedError
-	errOnce  sync.Once
-	doneOnce sync.Once
+type sessionExp struct {
+	*Session
+	timer *time.Timer // Triggers session expiration function after timeout
+	held  uint64      // The number of callers actively using the session
+	lock  sync.Mutex  // Protects access to timer and held
 }
 
-func (r *Run) setError(e *dbdriver.NormalizedError) {
-	r.errOnce.Do(func() { r.err = e })
+type sessionKey struct {
+	userID    int64
+	sessionID uuid.UUID
 }
 
-func (r *Run) closeDone() {
-	r.doneOnce.Do(func() { close(r.done) })
+type runKey struct {
+	userID int64
+	runID  uuid.UUID
 }
 
-// runStore holds all in-flight runs keyed by their widget-generated run id.
-type runStore struct {
-	mu   sync.Mutex
-	runs map[string]*Run
-}
-
-func newRunStore() *runStore {
-	return &runStore{runs: make(map[string]*Run)}
-}
-
-func (s *runStore) add(r *Run) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.runs[r.id] = r
-}
-
-func (s *runStore) get(id string) *Run {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.runs[id]
-}
-
-func (s *runStore) delete(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.runs, id)
-}
-
-// Session holds a long-lived driver across multiple queries from one widget
-// tab. Sessions live until /api/closeSession is invoked or the server shuts
-// down. There is no idle timeout for now.
-type Session struct {
-	id        string
-	projectID string
-	serviceID string
-	startedAt time.Time
-
-	driver dbdriver.Driver
+// Store maintains in-memory lookups of all current sessions and in-progress
+// runs, and persists the serve UI state to disk.
+type Store struct {
 	logger *slog.Logger
 
-	closed    chan struct{}
-	closeErr  *dbdriver.NormalizedError
-	closeOnce sync.Once
+	sessions     map[sessionKey]*sessionExp
+	sessionsLock sync.RWMutex
+	runs         map[runKey]*Run
+	runsLock     sync.RWMutex
+
+	// Persisted `ghost serve` web UI state. statePath is the JSON file the
+	// state is written to; stateLock serializes reads/writes to it.
+	statePath string
+	stateLock sync.Mutex
 }
 
-func (s *Session) close(reason *dbdriver.NormalizedError) {
-	s.closeOnce.Do(func() {
-		s.closeErr = reason
-		close(s.closed)
-		if s.driver != nil {
-			if err := s.driver.Close(); err != nil && s.logger != nil {
-				s.logger.Warn("error closing session database connection", "err", err)
-			}
-		}
+// NewStore initializes and returns a new [Store] instance. configDir is the
+// directory in which the serve UI state file is persisted.
+func NewStore(configDir string, logger *slog.Logger) *Store {
+	return &Store{
+		logger: logger,
+
+		sessions: map[sessionKey]*sessionExp{},
+		runs:     map[runKey]*Run{},
+
+		statePath: filepath.Join(configDir, stateFileName),
+	}
+}
+
+func (s *Store) SessionCount() float64 {
+	s.sessionsLock.RLock()
+	defer s.sessionsLock.RUnlock()
+	return float64(len(s.sessions))
+}
+
+func (s *Store) RunCount() float64 {
+	s.runsLock.RLock()
+	defer s.runsLock.RUnlock()
+	return float64(len(s.runs))
+}
+
+// GetSession retrieves a session from the store and returns it. It does not
+// pause or extend the session timeout. If the session is being retrieved in
+// order to be used by an end-user (e.g. in order to run a query or listen for
+// session status events), [Store.AcquireSession] should be used instead.
+func (s *Store) GetSession(userID int64, sessionID uuid.UUID) (*Session, error) {
+	key := sessionKey{
+		userID:    userID,
+		sessionID: sessionID,
+	}
+
+	session, ok := s.getSession(key)
+	if !ok {
+		return nil, &InvalidSessionIDError{ID: sessionID}
+	}
+	return session.Session, nil
+}
+
+// When a session has been acquired, the timeout is paused by resetting the
+// timer to this large value (approximately a month). It's reset to the real
+// timeout once the session is released. We use a long pause rather than
+// stopping the timer entirely so that a leaked acquisition can't keep a session
+// alive forever.
+const persistedSessionTimeout = 30 * 24 * time.Hour
+
+// AcquireSession retrieves a session from the store and returns it. It also
+// pauses the session timeout, if active (i.e. if it was not already paused by
+// another acquisition). ReleaseSession should be called when the session is
+// done being used to reset the timeout.
+func (s *Store) AcquireSession(userID int64, sessionID uuid.UUID) (*Session, error) {
+	key := sessionKey{
+		userID:    userID,
+		sessionID: sessionID,
+	}
+
+	session, ok := s.getSession(key)
+	if !ok {
+		return nil, &InvalidSessionIDError{ID: sessionID}
+	}
+
+	session.lock.Lock()
+	defer session.lock.Unlock()
+
+	if session.held == 0 {
+		// NOTE: If session.timer.Reset() returns false, it means the session
+		// has already timed out (but presumably the expiration function hasn't
+		// actually executed yet, since we were able to find the session in the
+		// map). In that case, there are some extremely unlikely race conditions
+		// where the timer could end up being reset in ReleaseSession after being
+		// closed in the expiration function, and the expiration function might
+		// therefore run again. However, I don't believe that to be a major
+		// concern, since it should be idempotent. I therefore think it's okay to
+		// not check the Reset() return value here.
+		session.timer.Reset(persistedSessionTimeout)
+	}
+	session.held += 1
+
+	return session.Session, nil
+}
+
+// ReleaseSession resets the session timeout that was paused by a call to
+// [Store.AcquireSession], if there are no other callers still using the
+// session. It should always be called when a session obtained via that method
+// is done being used. Failure to call it could create a leaked session that is
+// never closed.
+func (s *Store) ReleaseSession(session *Session) {
+	key := sessionKey{
+		userID:    session.UserID,
+		sessionID: session.ID,
+	}
+
+	sessionExp, ok := s.getSession(key)
+	if !ok {
+		// Session has been deleted since being acquired. This is okay.
+		return
+	}
+
+	sessionExp.lock.Lock()
+	defer sessionExp.lock.Unlock()
+
+	sessionExp.held -= 1
+	if sessionExp.held == 0 {
+		sessionExp.timer.Reset(sessionExp.Timeout)
+	}
+}
+
+func (s *Store) getSession(key sessionKey) (*sessionExp, bool) {
+	s.sessionsLock.RLock()
+	defer s.sessionsLock.RUnlock()
+
+	session, ok := s.sessions[key]
+	return session, ok
+}
+
+func (s *Store) InsertSession(session *Session) error {
+	key := sessionKey{
+		userID:    session.UserID,
+		sessionID: session.ID,
+	}
+	return s.insertSession(key, session)
+}
+
+func (s *Store) insertSession(key sessionKey, session *Session) error {
+	s.sessionsLock.Lock()
+	defer s.sessionsLock.Unlock()
+
+	if _, exists := s.sessions[key]; exists {
+		return &SessionIDConflictError{ID: session.ID}
+	}
+
+	s.sessions[key] = &sessionExp{
+		Session: session,
+		timer:   s.expireSession(session),
+	}
+	return nil
+}
+
+func (s *Store) expireSession(session *Session) *time.Timer {
+	return time.AfterFunc(session.Timeout, func() {
+		ctx := s.newSessionContext(session)
+		s.TryCloseSession(ctx, session)
+		s.TryDeleteSession(ctx, session)
 	})
 }
 
-// sessionStore holds active sessions.
-type sessionStore struct {
-	mu       sync.Mutex
-	sessions map[string]*Session
-}
-
-func newSessionStore() *sessionStore {
-	return &sessionStore{sessions: make(map[string]*Session)}
-}
-
-func (s *sessionStore) add(sess *Session) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sessions[sess.id] = sess
-}
-
-func (s *sessionStore) get(id string) *Session {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.sessions[id]
-}
-
-func (s *sessionStore) delete(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.sessions, id)
-}
-
-// closeAll terminates every session. Called when the server shuts down.
-func (s *sessionStore) closeAll() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for id, sess := range s.sessions {
-		sess.close(&dbdriver.NormalizedError{Message: "server shutting down", Source: "ghost", Fatal: true})
-		delete(s.sessions, id)
+func (s *Store) DeleteSession(session *Session) {
+	key := sessionKey{
+		userID:    session.UserID,
+		sessionID: session.ID,
 	}
+	s.deleteSession(key)
+}
+
+func (s *Store) deleteSession(key sessionKey) {
+	s.sessionsLock.Lock()
+	defer s.sessionsLock.Unlock()
+
+	if session, ok := s.sessions[key]; ok {
+		session.lock.Lock()
+		defer session.lock.Unlock()
+
+		session.timer.Stop()
+		delete(s.sessions, key)
+	}
+}
+
+func (s *Store) GetRun(userID int64, runID uuid.UUID) (*Run, error) {
+	key := runKey{
+		userID: userID,
+		runID:  runID,
+	}
+
+	run, ok := s.getRun(key)
+	if !ok {
+		return nil, &InvalidRunIDError{ID: runID}
+	}
+	return run, nil
+}
+
+func (s *Store) getRun(key runKey) (*Run, bool) {
+	s.runsLock.RLock()
+	defer s.runsLock.RUnlock()
+
+	run, ok := s.runs[key]
+	return run, ok
+}
+
+func (s *Store) InsertRun(run *Run) error {
+	key := runKey{
+		userID: run.UserID,
+		runID:  run.ID,
+	}
+	return s.insertRun(key, run)
+}
+
+func (s *Store) insertRun(key runKey, run *Run) error {
+	s.runsLock.Lock()
+	defer s.runsLock.Unlock()
+
+	if _, exists := s.runs[key]; exists {
+		return &RunIDConflictError{ID: run.ID}
+	}
+
+	s.runs[key] = run
+	return nil
+}
+
+func (s *Store) DeleteRun(run *Run) {
+	key := runKey{
+		userID: run.UserID,
+		runID:  run.ID,
+	}
+	s.deleteRun(key)
+}
+
+func (s *Store) deleteRun(key runKey) {
+	s.runsLock.Lock()
+	defer s.runsLock.Unlock()
+	delete(s.runs, key)
+}
+
+// Close attempts to close all outstanding database sessions and remove them
+// from the store. It waits for any in-progress queries to complete before
+// returning. Errors closing or removing database connections are logged.
+func (s *Store) Close() {
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	s.sessionsLock.Lock()
+	defer s.sessionsLock.Unlock()
+
+	for _, session := range s.sessions {
+		ctx := s.newSessionContext(session.Session)
+
+		wg.Add(1)
+		go func(session *Session) {
+			defer wg.Done()
+			s.TryCloseSession(ctx, session)
+			s.TryDeleteSession(ctx, session)
+		}(session.Session)
+	}
+}
+
+func (s *Store) newSessionContext(session *Session) context.Context {
+	ctx, _ := log.NewContext(context.Background(), s.logger.With(
+		slog.Int64("userId", session.UserID),
+		slog.String("sessionId", session.ID.String()),
+	))
+	return ctx
+}
+
+func (s *Store) TryCloseSession(ctx context.Context, session *Session) {
+	logger := log.FromContext(ctx)
+
+	logger.Debug("Closing database session")
+	if err := session.Close(); err != nil {
+		logger.Error("Error closing database session", slog.Any("error", err))
+		return
+	}
+	logger.Debug("Database session closed")
+}
+
+func (s *Store) TryDeleteSession(ctx context.Context, session *Session) {
+	logger := log.FromContext(ctx)
+
+	logger.Debug("Deleting database session")
+	s.DeleteSession(session)
+	logger.Debug("Database session deleted")
+}
+
+func (s *Store) TryDeleteRun(ctx context.Context, run *Run) {
+	logger := log.FromContext(ctx)
+
+	logger.Debug("Deleting run")
+	s.DeleteRun(run)
+	logger.Debug("Run deleted")
+}
+
+const stateFileName = "serve-state.json"
+
+// LoadState reads the persisted serve UI state from the store's state file. A
+// missing file is not an error - it yields a zero State.
+func (s *Store) LoadState() (State, error) {
+	s.stateLock.Lock()
+	defer s.stateLock.Unlock()
+
+	data, err := os.ReadFile(s.statePath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return State{}, nil
+		}
+		return State{}, fmt.Errorf("failed to read state file: %w", err)
+	}
+	var state State
+	if err := json.Unmarshal(data, &state); err != nil {
+		return State{}, fmt.Errorf("failed to parse state file: %w", err)
+	}
+	return state, nil
+}
+
+// SaveState persists the serve UI state to the store's state file. Writes are
+// atomic (temp file + rename) and serialized via stateLock so concurrent PUTs
+// can't interleave.
+func (s *Store) SaveState(state State) error {
+	s.stateLock.Lock()
+	defer s.stateLock.Unlock()
+
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to encode state: %w", err)
+	}
+
+	dir := filepath.Dir(s.statePath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create config dir: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(dir, ".serve-state.json.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	defer tmp.Close()
+
+	if _, err := tmp.Write(data); err != nil {
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+	if err := os.Chmod(tmpName, 0o600); err != nil {
+		return fmt.Errorf("failed to chmod temp file: %w", err)
+	}
+	if err := os.Rename(tmpName, s.statePath); err != nil {
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+	return nil
 }

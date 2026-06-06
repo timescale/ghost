@@ -191,6 +191,8 @@ var validSizes = []string{"1x", "2x", "4x", "8x"}
 
 var sizeCompletion = cobra.FixedCompletions(validSizes, cobra.ShellCompDirectiveNoFileComp)
 
+var logLevelCompletion = cobra.FixedCompletions([]string{"debug", "info", "warn", "error"}, cobra.ShellCompDirectiveNoFileComp)
+
 func shareTokenCompletion(app *common.App) func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		// Share token is always first positional argument
