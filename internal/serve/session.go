@@ -24,7 +24,6 @@ const SessionOpenTimeout = 10 * time.Second
 // SessionRequest represents the common fields of a request capable of opening
 // a new database session.
 type SessionRequest struct {
-	Client   string   `json:"client,omitempty"`
 	Commands []string `json:"commands,omitempty"`
 	DSN      string   `json:"dsn,omitempty"`
 }
@@ -41,9 +40,6 @@ type Session struct {
 	// endpoints (which did not take a user ID parameter).
 	UserID int64
 
-	// The database type to which the session is connected.
-	Client string
-
 	// Whether the session is an ephemeral session (i.e. only exists for the
 	// lifetime of a single run).
 	Ephemeral bool
@@ -59,12 +55,11 @@ type Session struct {
 	// [NewSession].
 	Timeout time.Duration
 
-	driver   driver.Driver
-	lock     sync.Mutex
-	broken   atomic.Bool
-	closeFn  func() error
-	closed   chan bool
-	lastPing time.Time
+	driver  *driver.Driver
+	lock    sync.Mutex
+	broken  atomic.Bool
+	closeFn func() error
+	closed  chan bool
 }
 
 // NewSession opens new database [Session] given a [SessionRequest] and
@@ -78,7 +73,7 @@ func (h *Handler) NewSession(ctx context.Context, userID int64, req SessionReque
 	ctx, cancel := context.WithTimeout(ctx, SessionOpenTimeout)
 	defer cancel()
 
-	d, err := driver.Open(ctx, req.Client, req.DSN)
+	d, err := driver.Open(ctx, req.DSN)
 	if err != nil {
 		// TODO: Only errors caused by bad user input or an inability to
 		// connect to the database should be returned as NormalizedError.
@@ -86,7 +81,7 @@ func (h *Handler) NewSession(ctx context.Context, userID int64, req SessionReque
 		// can discriminate more easily.
 		return nil, &api.NormalizedError{
 			Message: err.Error(),
-			Source:  req.Client,
+			Source:  driver.Source,
 			Connect: true,
 		}
 	}
@@ -112,7 +107,6 @@ func (h *Handler) NewSession(ctx context.Context, userID int64, req SessionReque
 	return &Session{
 		ID:        uuid.New(),
 		UserID:    userID,
-		Client:    req.Client,
 		Ephemeral: ephemeral,
 		Start:     start,
 		Timeout:   sessionTimeout(timeout),
@@ -122,7 +116,7 @@ func (h *Handler) NewSession(ctx context.Context, userID int64, req SessionReque
 	}, nil
 }
 
-func runSetupCommands(ctx context.Context, d driver.Driver, commands []string) (err error) {
+func runSetupCommands(ctx context.Context, d *driver.Driver, commands []string) (err error) {
 	for _, cmd := range commands {
 		rows, err := d.Query(ctx, cmd)
 		if err != nil {

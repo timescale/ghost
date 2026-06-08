@@ -75,7 +75,7 @@ func fetchDatabase(ctx context.Context, client ghostapi.ClientWithResponsesInter
 func connectErr(format string, args ...any) *api.NormalizedError {
 	return &api.NormalizedError{
 		Message: fmt.Sprintf(format, args...),
-		Source:  driver.Timescale,
+		Source:  driver.Source,
 		Connect: true,
 	}
 }

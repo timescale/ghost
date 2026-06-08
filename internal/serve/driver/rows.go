@@ -11,40 +11,6 @@ import (
 	"github.com/timescale/ghost/internal/serve/types"
 )
 
-// Rows is the result of running a query. It contains a row iterator in the
-// style of [sql.Rows], as well as additional methods for getting column data,
-// metadata about the query execution, and the number of rows affected. Not all
-// functionality is supported by all [Driver] implementations.
-type Rows interface {
-	// See [sql.Rows.Next] documentation.
-	Next() bool
-
-	// See [sql.Rows.Scan] documentation.
-	Scan(dest ...any) error
-
-	// See [sql.Rows.Err] documentation.
-	Err() error
-
-	// See [sql.Rows.Close] documentation.
-	Close() error
-
-	// Columns returns information about the query result columns being
-	// returned, including their names, types, and other column metadata. Also
-	// identifies the Go type into which columns values should be scanned, and
-	// provides convenience methods useful during scanning.
-	Columns() (Columns, error)
-
-	// RowsAffected returns the number of rows affected by the query (e.g. for
-	// INSERT/UPDATE/DELETE statements), if supported by the underlying
-	// [Driver] implementation. Returns nil if not supported or if the number
-	// of rows affected is not available. For SELECT statements and other
-	// statements that return rows, it may return the resulting row count. Note
-	// that this method may return nil if called before the query has
-	// completed. It is typically best to wait until the rows iterator has been
-	// closed before calling it.
-	RowsAffected(ctx context.Context) (*int64, error)
-}
-
 // Columns is a slice of Column types, with some additional convenience
 // methods.
 type Columns []api.Column
@@ -82,14 +48,19 @@ func (s ScanTargets) Values() []any {
 	return vals
 }
 
-type scanTypeFn func(columnType *sql.ColumnType) reflect.Type
-
-type baseRows struct {
+// Rows is the result of running a query. It embeds [sql.Rows] for
+// iteration/scanning (Next, Scan, Err, Close) and adds methods for column
+// metadata and the number of rows affected, the latter sourced from the query
+// tracer.
+type Rows struct {
 	*sql.Rows
-	scanTypeFn scanTypeFn
+	tracer *postgresQueryTracer
 }
 
-func (r *baseRows) Columns() (Columns, error) {
+// Columns returns information about the query result columns being returned,
+// including their names, types, and other column metadata. It also identifies
+// the Go type into which column values should be scanned.
+func (r *Rows) Columns() (Columns, error) {
 	columnTypes, err := r.ColumnTypes()
 	if err != nil {
 		return nil, err
@@ -105,25 +76,40 @@ func (r *baseRows) Columns() (Columns, error) {
 	// used by another field returned from the database).
 	for i, ct := range columnTypes {
 		if ct.Name() != "" {
-			columns[i] = r.buildColumn(deduper, ct)
+			columns[i] = buildColumn(deduper, ct)
 		}
 	}
 	for i, ct := range columnTypes {
 		if ct.Name() == "" {
-			columns[i] = r.buildColumn(deduper, ct)
+			columns[i] = buildColumn(deduper, ct)
 		}
 	}
 	return columns, nil
 }
 
-func (r *baseRows) buildColumn(deduper deduper, ct *sql.ColumnType) api.Column {
-	scanType := r.scanTypeFn(ct)
+// RowsAffected returns the number of rows affected by the query (e.g. for
+// INSERT/UPDATE/DELETE statements), if available. Returns nil if the number of
+// rows affected is not available. For SELECT statements and other statements
+// that return rows, it may return the resulting row count. Note that this
+// method may return nil if called before the query has completed. It is
+// typically best to wait until the rows iterator has been closed before calling
+// it.
+func (r *Rows) RowsAffected(ctx context.Context) (*int64, error) {
+	if r.tracer.lastCommandTag != nil {
+		rowsAffected := r.tracer.lastCommandTag.RowsAffected()
+		return &rowsAffected, nil
+	}
+	return nil, nil
+}
+
+func buildColumn(deduper deduper, ct *sql.ColumnType) api.Column {
+	st := scanType(ct)
 	column := api.Column{
 		Name:     deduper.dedupe(ct),
 		Type:     ct.DatabaseTypeName(),
-		Object:   scanType == types.JSONPtrType,
-		Numeric:  scanType == types.NumericPtrType,
-		ScanType: scanType,
+		Object:   st == types.JSONPtrType,
+		Numeric:  st == types.NumericPtrType,
+		ScanType: st,
 	}
 	if length, ok := ct.Length(); ok {
 		column.Length = length
@@ -135,8 +121,75 @@ func (r *baseRows) buildColumn(deduper deduper, ct *sql.ColumnType) api.Column {
 	return column
 }
 
-func (r *baseRows) RowsAffected(ctx context.Context) (*int64, error) {
-	return nil, nil
+// scanType identifies the Go type into which a column's values should be
+// scanned. Postgres-specific database types are mapped first; everything else
+// falls back to normalizing the driver's reported scan type.
+func scanType(columnType *sql.ColumnType) reflect.Type {
+	switch columnType.DatabaseTypeName() {
+	case "JSON", "JSONB":
+		return types.JSONPtrType
+	case "NUMERIC":
+		// Maintain exact precision by scanning as a types.Number (which also
+		// supports special values like NaN and Infinity/-Infinity).
+		return types.NumericPtrType
+	case "BYTEA":
+		// Represent binary types in standard Postgres hex format.
+		return types.BinaryPtrType
+	case "DATE":
+		// The stdlib adapter scans dates into time.Time values, which add time
+		// and time zone information when output as a string. Scan into custom
+		// Date type instead to keep the plain date format.
+		return types.DatePtrType
+	case "TIMESTAMP":
+		// The stdlib adapter scans dates into time.Time values, which add time
+		// zone information when output as a string. Scan into custom DateTime
+		// type instead to keep the plain timestamp format.
+		return types.DateTimePtrType
+	case "TIMESTAMPTZ":
+		// Date types can be Infinity/-Infinity, which cannot be represented in
+		// a time.Time value, so scan them as strings.
+		return types.TimestampPtrType
+	}
+
+	t := columnType.ScanType()
+	switch t {
+	// NOTE: Some drivers return sql.NullWhatever (or *sql.NullWhatever) types,
+	// which don't serialize to JSON well. A pointer to a built-in type works
+	// just as well for scanning nullable values.
+	case types.NullBoolType, types.NullBoolPtrType:
+		t = types.BoolType
+	case types.NullByteType, types.NullBytePtrType:
+		t = types.ByteType
+	case types.NullFloat64Type, types.NullFloat64PtrType:
+		t = types.Float64Type
+	case types.NullInt16Type, types.NullInt16PtrType:
+		t = types.Int16Type
+	case types.NullInt32Type, types.NullInt32PtrType:
+		t = types.Int32Type
+	case types.NullInt64Type, types.NullInt64PtrType:
+		t = types.Int64Type
+	case types.NullStringType, types.NullStringPtrType:
+		t = types.StringType
+	case types.NullTimeType, types.NullTimePtrType:
+		t = types.TimeType
+	case types.RawBytesType:
+		// The sql.RawBytes type is not safe if you aren't sure how long the
+		// memory will be needed for. A standard []byte is safer and more
+		// consistent.
+		t = types.BytesType
+	case nil:
+		// Some non-compliant drivers will sometimes return nil for the scan
+		// type, instead of any. Fix that here.
+		t = types.AnyType
+	}
+
+	switch t.Kind() {
+	case reflect.Pointer, reflect.Interface:
+	default:
+		// Return pointer for sake of scanning NULLs.
+		t = reflect.PointerTo(t)
+	}
+	return t
 }
 
 type deduper map[string]int
@@ -163,10 +216,9 @@ func (d deduper) columnKey(name string) string {
 func (d deduper) columnName(ct *sql.ColumnType) string {
 	name := ct.Name()
 
-	// Some database types (in particular, Microsoft SQL Server) are capable of
-	// returning empty column names. This throws off the DuckDB results cache,
-	// which cannot handle columns without names. We therefore convert them to
-	// a placeholder value instead.
+	// Some database types are capable of returning empty column names. This
+	// throws off the DuckDB results cache, which cannot handle columns without
+	// names. We therefore convert them to a placeholder value instead.
 	if name == "" {
 		name = "column"
 	}

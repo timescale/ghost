@@ -10,8 +10,8 @@ import (
 )
 
 // statusEventInterval is the amount of time between session status events
-// returned from [Session.Events]. It also controls the minimum of time between
-// database pings (i.e. the granularity of [driver.Driver.PingInterval]).
+// returned from [Session.Events]. It is also the cadence at which the database
+// is pinged to check the health of the connection.
 const statusEventInterval = 5 * time.Second
 
 // Events returns a channel on which session status events are returned. Pings
@@ -98,12 +98,6 @@ func (s *Session) ping(ctx context.Context) *api.NormalizedError {
 		return nil
 	}
 	defer s.lock.Unlock()
-
-	now := time.Now()
-	if s.lastPing.Add(s.driver.PingInterval()).After(now) {
-		return nil
-	}
-	s.lastPing = now
 
 	logger.Debug("Pinging database")
 	if err := s.driver.Ping(pingCtx); err != nil {

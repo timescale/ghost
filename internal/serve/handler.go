@@ -16,7 +16,6 @@ import (
 	"github.com/timescale/ghost/internal/config"
 	"github.com/timescale/ghost/internal/log"
 	"github.com/timescale/ghost/internal/serve/api"
-	"github.com/timescale/ghost/internal/serve/driver"
 	"github.com/timescale/ghost/internal/serve/writer"
 )
 
@@ -703,8 +702,7 @@ func (h *Handler) sessionRequestForService(ctx context.Context, w http.ResponseW
 		return SessionRequest{}, err
 	}
 	return SessionRequest{
-		Client: driver.Timescale,
-		DSN:    connStr,
+		DSN: connStr,
 	}, nil
 }
 
