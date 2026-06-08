@@ -62,18 +62,6 @@ func NewStore(configDir string, logger *slog.Logger) *Store {
 	}
 }
 
-func (s *Store) SessionCount() float64 {
-	s.sessionsLock.RLock()
-	defer s.sessionsLock.RUnlock()
-	return float64(len(s.sessions))
-}
-
-func (s *Store) RunCount() float64 {
-	s.runsLock.RLock()
-	defer s.runsLock.RUnlock()
-	return float64(len(s.runs))
-}
-
 // GetSession retrieves a session from the store and returns it. It does not
 // pause or extend the session timeout. If the session is being retrieved in
 // order to be used by an end-user (e.g. in order to run a query or listen for
@@ -90,6 +78,12 @@ func (s *Store) GetSession(userID int64, sessionID uuid.UUID) (*Session, error) 
 	}
 	return session.Session, nil
 }
+
+// sessionDisconnectTimeout is how long a session lingers after the client
+// disconnects from /api/sessionEvents before it is automatically closed. While
+// the events stream is connected the timeout is paused (see AcquireSession), so
+// this is effectively the post-disconnect grace period.
+const sessionDisconnectTimeout = 15 * time.Second
 
 // When a session has been acquired, the timeout is paused by resetting the
 // timer to this large value (approximately a month). It's reset to the real
@@ -155,7 +149,7 @@ func (s *Store) ReleaseSession(session *Session) {
 
 	sessionExp.held -= 1
 	if sessionExp.held == 0 {
-		sessionExp.timer.Reset(sessionExp.Timeout)
+		sessionExp.timer.Reset(sessionDisconnectTimeout)
 	}
 }
 
@@ -191,7 +185,7 @@ func (s *Store) insertSession(key sessionKey, session *Session) error {
 }
 
 func (s *Store) expireSession(session *Session) *time.Timer {
-	return time.AfterFunc(session.Timeout, func() {
+	return time.AfterFunc(sessionDisconnectTimeout, func() {
 		ctx := s.newSessionContext(session)
 		s.TryCloseSession(ctx, session)
 		s.TryDeleteSession(ctx, session)

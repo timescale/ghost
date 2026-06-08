@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/pprof"
-	"time"
 
 	"github.com/google/uuid"
 	ghostapi "github.com/timescale/ghost/internal/api"
@@ -279,14 +278,12 @@ func (r ServiceRequest) Validate() error {
 // ExecuteRequest holds the fields common to the executeQuery and
 // executeSessionQuery endpoints. Clients send both a top-level query (legacy)
 // and a statements array (the editor text split by the client's SQL parser);
-// statements is preferred when present. Timeout is accepted for compatibility
-// but currently unused (runs use the default timeout).
+// statements is preferred when present.
 type ExecuteRequest struct {
 	ServiceRequest
 	RunID      uuid.UUID `json:"runId"`
 	Query      string    `json:"query"`
 	Statements []string  `json:"statements"`
-	Timeout    *int64    `json:"timeout,omitempty"`
 }
 
 // Validate returns an error if a required field is missing.
@@ -317,8 +314,8 @@ func (h *Handler) executeQueryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create the run first so that the run timeout applies to opening the
-	// database session as well.
+	// Create the run first so that canceling the run (via /api/cancelQuery)
+	// also interrupts opening the database session.
 	run, ctx := NewRun(ctx, userID, req.ExecuteRequest)
 	defer run.Close()
 
@@ -329,7 +326,7 @@ func (h *Handler) executeQueryHandler(w http.ResponseWriter, r *http.Request) {
 	defer h.store.TryDeleteRun(ctx, run)
 
 	logger.Debug("Opening database session")
-	session, err := h.NewSession(ctx, userID, dsn, true, nil)
+	session, err := h.NewSession(ctx, userID, dsn)
 	if err != nil {
 		h.handleNewSessionError(ctx, w, err)
 		return
@@ -523,8 +520,7 @@ func (h *Handler) createSessionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Debug("Opening database session")
-	timeout := sessionDisconnectTimeout
-	session, err := h.NewSession(ctx, userID, dsn, false, &timeout)
+	session, err := h.NewSession(ctx, userID, dsn)
 	if err != nil {
 		h.handleNewSessionError(ctx, w, err)
 		return
@@ -824,9 +820,3 @@ func (h *Handler) handleGetRunError(ctx context.Context, w http.ResponseWriter, 
 // serveUserID is the user ID used for all sessions/runs. ghost serve is a
 // single local user, so the per-user keying is unused (0).
 const serveUserID int64 = 0
-
-// sessionDisconnectTimeout is how long a session lingers after the client
-// disconnects from /api/sessionEvents before it is automatically closed. While
-// the events stream is connected the timeout is paused (see AcquireSession), so
-// this is effectively the post-disconnect grace period.
-const sessionDisconnectTimeout = 15 * time.Second

@@ -11,10 +11,6 @@ import (
 	"github.com/timescale/ghost/internal/serve/driver"
 )
 
-// DefaultSessionTimeout is the default amount of time that an idle session
-// will remain in the [Store] before being automatically closed and removed.
-const DefaultSessionTimeout = 24 * time.Hour
-
 // SessionOpenTimeout is the maximum amount of time that the service will wait
 // while attempting to open a database connection before returning an error.
 const SessionOpenTimeout = 10 * time.Second
@@ -31,21 +27,6 @@ type Session struct {
 	// endpoints (which did not take a user ID parameter).
 	UserID int64
 
-	// Whether the session is an ephemeral session (i.e. only exists for the
-	// lifetime of a single run).
-	Ephemeral bool
-
-	// The time at which the session was opened.
-	Start time.Time
-
-	// The length of time after which the session will automatically be closed
-	// when idle. Issuing queries on a session will reset the timeout. Care
-	// should be taken to ensure that the run timeout is greater than the
-	// session timeout, or a session could time out while a run is in progress.
-	// Defaults to [DefaultSessionTimeout] if not provided in the call to
-	// [NewSession].
-	Timeout time.Duration
-
 	driver  *driver.Driver
 	lock    sync.Mutex
 	broken  atomic.Bool
@@ -53,21 +34,15 @@ type Session struct {
 	closed  chan bool
 }
 
-// NewSession opens new database [Session] given a DSN and optional session
-// timeout, which determines how long the session can be idle before it will be
-// automatically closed. It returns an [api.NormalizedError] if the database
-// connection could not be established, or if the connection attempt took longer
-// than [SessionOpenTimeout].
-func (h *Handler) NewSession(ctx context.Context, userID int64, dsn string, ephemeral bool, timeout *time.Duration) (session *Session, err error) {
+// NewSession opens new database [Session] given a DSN. It returns an
+// [api.NormalizedError] if the database connection could not be established, or
+// if the connection attempt took longer than [SessionOpenTimeout].
+func (h *Handler) NewSession(ctx context.Context, userID int64, dsn string) (session *Session, err error) {
 	ctx, cancel := context.WithTimeout(ctx, SessionOpenTimeout)
 	defer cancel()
 
 	d, err := driver.Open(ctx, dsn)
 	if err != nil {
-		// TODO: Only errors caused by bad user input or an inability to
-		// connect to the database should be returned as NormalizedError.
-		// Should probably move the logic into the driver package itself so we
-		// can discriminate more easily.
 		return nil, &api.NormalizedError{
 			Message: err.Error(),
 			Source:  driver.Source,
@@ -75,7 +50,6 @@ func (h *Handler) NewSession(ctx context.Context, userID int64, dsn string, ephe
 		}
 	}
 
-	start := time.Now()
 	closed := make(chan bool)
 	closeFn := sync.OnceValue(func() error {
 		close(closed)
@@ -83,22 +57,12 @@ func (h *Handler) NewSession(ctx context.Context, userID int64, dsn string, ephe
 	})
 
 	return &Session{
-		ID:        uuid.New(),
-		UserID:    userID,
-		Ephemeral: ephemeral,
-		Start:     start,
-		Timeout:   sessionTimeout(timeout),
-		driver:    d,
-		closeFn:   closeFn,
-		closed:    closed,
+		ID:      uuid.New(),
+		UserID:  userID,
+		driver:  d,
+		closeFn: closeFn,
+		closed:  closed,
 	}, nil
-}
-
-func sessionTimeout(timeout *time.Duration) time.Duration {
-	if timeout != nil {
-		return *timeout
-	}
-	return DefaultSessionTimeout
 }
 
 // SetBroken marks the underlying database connection as broken, which signals

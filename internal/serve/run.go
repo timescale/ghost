@@ -2,16 +2,11 @@ package serve
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/timescale/ghost/internal/serve/api"
 	"github.com/timescale/ghost/internal/serve/writer"
 )
-
-// DefaultRunTimeout is the default amount of time that a query can be
-// executing before it will time out and be canceled.
-const DefaultRunTimeout = 30 * time.Minute
 
 // arrowStreamEndpointOutput is the single output every run is configured with:
 // an Arrow IPC stream piped to the results endpoint, which the client fetches
@@ -25,8 +20,7 @@ var arrowStreamEndpointOutput = api.Output{
 
 // Run represents an in-progress query. After being created via [NewRun], it is
 // passed to [Session.Query], which executes the query against the database.
-// All runs are stored in the [Store] until they complete, are canceled, or
-// time out.
+// All runs are stored in the [Store] until they complete or are canceled.
 type Run struct {
 	// Unique identifier for the run.
 	ID uuid.UUID
@@ -46,18 +40,16 @@ type Run struct {
 	// Destinations and formats to write arrow records to.
 	Outputs writer.Outputs
 
-	// The length of time after which the run will time out.
-	Timeout time.Duration
-
 	// A function which, when called, triggers cancellation of the run.
 	Cancel context.CancelFunc
 }
 
 // NewRun creates a new [Run] from an [ExecuteRequest], configured to stream
 // results as Arrow over the results endpoint. It returns the fully initialized
-// run, along with a context that times out after [DefaultRunTimeout].
+// run, along with a context that is canceled when the run is canceled (via
+// [Run.Cancel] or [Run.Close]). Runs do not time out.
 func NewRun(ctx context.Context, userID int64, req ExecuteRequest) (*Run, context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, DefaultRunTimeout)
+	ctx, cancel := context.WithCancel(ctx)
 
 	return &Run{
 		ID:         req.RunID,
@@ -65,7 +57,6 @@ func NewRun(ctx context.Context, userID int64, req ExecuteRequest) (*Run, contex
 		Statements: req.Statements,
 		Query:      req.Query,
 		Outputs:    writer.NewOutputs(api.Outputs{arrowStreamEndpointOutput}),
-		Timeout:    DefaultRunTimeout,
 		Cancel:     cancel,
 	}, ctx
 }
