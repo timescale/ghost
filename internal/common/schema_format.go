@@ -136,7 +136,7 @@ func formatTableContents(buf *strings.Builder, table TableSchema) {
 		fmt.Fprintf(buf, "  %s\n", formatIndex(idx))
 	}
 	for _, trg := range table.Triggers {
-		fmt.Fprintf(buf, "  TRIGGER %s %s %s\n", trg.Name, trg.Timing, trg.Manipulation)
+		fmt.Fprintf(buf, "  %s\n", formatTrigger(trg))
 	}
 	for _, part := range table.Partitions {
 		if part.Bound != "" {
@@ -145,6 +145,14 @@ func formatTableContents(buf *strings.Builder, table TableSchema) {
 			fmt.Fprintf(buf, "  PARTITION %s\n", part.Name)
 		}
 	}
+}
+
+func formatTrigger(trg TriggerSchema) string {
+	line := fmt.Sprintf("TRIGGER %s %s %s", trg.Name, trg.Timing, trg.Manipulation)
+	if trg.Statement != "" {
+		line += " " + trg.Statement
+	}
+	return line
 }
 
 func formatIndex(idx IndexSchema) string {
@@ -254,7 +262,7 @@ func formatViewContents(buf *strings.Builder, view ViewSchema) {
 	if len(view.Triggers) > 0 {
 		buf.WriteString("\n")
 		for _, trg := range view.Triggers {
-			fmt.Fprintf(buf, "  TRIGGER %s %s %s\n", trg.Name, trg.Timing, trg.Manipulation)
+			fmt.Fprintf(buf, "  %s\n", formatTrigger(trg))
 		}
 	}
 	if view.Definition != "" {

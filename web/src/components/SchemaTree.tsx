@@ -479,6 +479,7 @@ function TableNode({ ns, table, ctx }: TableNodeProps) {
           {triggers.map((trg) => (
             <TriggerRow
               key={`${trg.name}/${trg.timing}/${trg.manipulation}`}
+              ns={ns}
               trigger={trg}
               ctx={ctx}
             />
@@ -593,10 +594,11 @@ function ConstraintRow({ ns, item, ctx }: ConstraintRowProps) {
 }
 
 interface TriggerRowProps extends NodeProps {
+  ns: string;
   trigger: TriggerSchema;
 }
 
-function TriggerRow({ trigger, ctx }: TriggerRowProps) {
+function TriggerRow({ ns, trigger, ctx }: TriggerRowProps) {
   return (
     <LeafRow
       ctx={ctx}
@@ -608,6 +610,14 @@ function TriggerRow({ trigger, ctx }: TriggerRowProps) {
           <Pill>{trigger.manipulation.toLowerCase()}</Pill>
         </>
       }
+      onContextMenu={(e) => {
+        e.preventDefault();
+        ctx.setContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          items: triggerMenuItems(ns, trigger, ctx.showModal),
+        });
+      }}
     />
   );
 }
@@ -752,6 +762,7 @@ function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
           {triggers.map((trg) => (
             <TriggerRow
               key={`${trg.name}/${trg.timing}/${trg.manipulation}`}
+              ns={ns}
               trigger={trg}
               ctx={ctx}
             />
@@ -1455,6 +1466,31 @@ function indexMenuItems(
     );
   }
   items.push(copyQualifiedNameItem(ns, index.name));
+  return items;
+}
+
+function triggerMenuItems(
+  ns: string,
+  trigger: TriggerSchema,
+  showModal: (title: string, text: string) => void,
+): MenuItem[] {
+  const items: MenuItem[] = [];
+  const { statement } = trigger;
+  if (statement) {
+    items.push(
+      {
+        key: 'view-statement',
+        label: iconLabel('eye', 'View action statement'),
+        onClick: () => showModal(trigger.name, statement),
+      },
+      {
+        key: 'copy-statement',
+        label: iconLabel('copy', 'Copy action statement'),
+        onClick: () => copyText(statement),
+      },
+    );
+  }
+  items.push(copyQualifiedNameItem(ns, trigger.name));
   return items;
 }
 

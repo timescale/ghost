@@ -199,16 +199,16 @@ func (f schemaFilter) queryArgs() []any {
 // and passing queryArgs() to the query so `$1` is bound to the schema
 // name.
 func (f schemaFilter) onSchema(col string) string {
+	// An explicit --schema request targets that namespace directly. The
+	// standard exclusions must not apply, or requesting a system schema
+	// (e.g. pg_catalog) would always return an empty result.
+	if f.schema != "" {
+		return fmt.Sprintf(" AND %s = $1", col)
+	}
 	if f.includeInternal {
-		if f.schema != "" {
-			return fmt.Sprintf(" AND %s = $1", col)
-		}
 		return ""
 	}
 	var b strings.Builder
-	if f.schema != "" {
-		fmt.Fprintf(&b, " AND %s = $1", col)
-	}
 	// Standard exclusions: catalog schemas, TimescaleDB internals,
 	// information_schema. Matches what popsql uses for the same purpose.
 	fmt.Fprintf(&b, ` AND %s !~ '^pg_'`, col)
@@ -663,8 +663,15 @@ func checkSchemaExists(ctx context.Context, conn *pgx.Conn, schema string) error
 		return nil
 	}
 
+	// Keep these exclusions in sync with schemaFilter.onSchema so the
+	// suggested schemas are exactly those that produce non-empty results.
 	rows, err := conn.Query(ctx,
-		`SELECT nspname FROM pg_namespace WHERE nspname !~ '^pg_' AND nspname <> 'information_schema' ORDER BY nspname`,
+		`SELECT nspname FROM pg_namespace
+		 WHERE nspname !~ '^pg_'
+		   AND nspname <> 'information_schema'
+		   AND nspname !~ '^_?timescaledb_'
+		   AND nspname <> 'toolkit_experimental'
+		 ORDER BY nspname`,
 	)
 	if err != nil {
 		return fmt.Errorf("schema %q not found (failed to list available schemas: %w)", schema, err)

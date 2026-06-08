@@ -1155,7 +1155,7 @@ VIEW: active_users
 									{Name: "id", Type: "integer"},
 								},
 								Triggers: []TriggerSchema{
-									{Name: "active_users_insert", Timing: "INSTEAD OF", Manipulation: "INSERT"},
+									{Name: "active_users_insert", Timing: "INSTEAD OF", Manipulation: "INSERT", Statement: "EXECUTE FUNCTION active_users_insert_fn()"},
 								},
 								Definition: "SELECT id\n   FROM users;",
 							},
@@ -1170,7 +1170,7 @@ SCHEMA: public
 VIEW: active_users
   id  INTEGER
 
-  TRIGGER active_users_insert INSTEAD OF INSERT
+  TRIGGER active_users_insert INSTEAD OF INSERT EXECUTE FUNCTION active_users_insert_fn()
 
   AS
     SELECT id
