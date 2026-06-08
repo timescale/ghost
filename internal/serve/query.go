@@ -56,16 +56,13 @@ func (s *Session) Query(ctx context.Context, run *Run) <-chan api.Result {
 			return
 		}
 
-		queryCtx, cancel := s.driver.Context(ctx)
-		defer cancel()
-
-		if err := s.runStatements(ctx, queryCtx, run.LeadingStatements()); err != nil {
+		if err := s.runStatements(ctx, run.LeadingStatements()); err != nil {
 			sendError(err)
 			return
 		}
 
 		logger.Debug("Querying database")
-		rows, err := s.driver.Query(queryCtx, run.FinalQuery())
+		rows, err := s.driver.Query(ctx, run.FinalQuery())
 		if err != nil {
 			logger.Debug("Error querying database", slog.Any("error", err))
 			sendError(err)
@@ -143,22 +140,22 @@ func (s *Session) Query(ctx context.Context, run *Run) <-chan api.Result {
 	return results
 }
 
-func (s *Session) runStatements(ctx, queryCtx context.Context, statements []string) error {
+func (s *Session) runStatements(ctx context.Context, statements []string) error {
 	for _, stmt := range statements {
-		if err := s.runStatement(ctx, queryCtx, stmt); err != nil {
+		if err := s.runStatement(ctx, stmt); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *Session) runStatement(ctx, queryCtx context.Context, query string) error {
+func (s *Session) runStatement(ctx context.Context, query string) error {
 	logger := log.FromContext(ctx)
 
 	logger.Debug("Running statement",
 		slog.String("statement", query),
 	)
-	rows, err := s.driver.Query(queryCtx, query)
+	rows, err := s.driver.Query(ctx, query)
 	if err != nil {
 		logger.Debug("Error running statement", slog.Any("error", err))
 		return err

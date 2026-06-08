@@ -30,16 +30,9 @@ type Driver interface {
 	// pings than others.
 	PingInterval() time.Duration
 
-	// Context returns a new context that should be passed to Query. The
-	// returned context will not necessarily be a child of the passed-in
-	// context, and may differ with respect to cancellation and timeout
-	// behavior. The cancel function should be called after the query completes
-	// to free resources.
-	Context(ctx context.Context) (context.Context, context.CancelFunc)
-
-	// Query issues an SQL query and returns the results. For cancellation and
-	// timeouts to work correctly, the passed-in context should be the result
-	// of a call to Context. It is not safe to call this method concurrently
+	// Query issues an SQL query and returns the results. Canceling the
+	// passed-in context cancels the in-progress query via the connection's
+	// context-watcher handler. It is not safe to call this method concurrently
 	// with itself or Ping.
 	Query(ctx context.Context, query string) (Rows, error)
 
@@ -71,10 +64,6 @@ func (b *baseDriver) Ping(ctx context.Context) error {
 
 func (b *baseDriver) PingInterval() time.Duration {
 	return 5 * time.Second
-}
-
-func (b *baseDriver) Context(ctx context.Context) (context.Context, context.CancelFunc) {
-	return ctx, func() {}
 }
 
 func (b *baseDriver) Query(ctx context.Context, query string) (Rows, error) {
