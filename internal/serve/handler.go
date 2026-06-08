@@ -16,6 +16,7 @@ import (
 	"github.com/timescale/ghost/internal/config"
 	"github.com/timescale/ghost/internal/log"
 	"github.com/timescale/ghost/internal/serve/api"
+	"github.com/timescale/ghost/internal/serve/driver"
 	"github.com/timescale/ghost/internal/serve/writer"
 )
 
@@ -310,15 +311,15 @@ func (h *Handler) executeQueryHandler(w http.ResponseWriter, r *http.Request) {
 	userID := serveUserID
 	req := requestFromContext(ctx).(*ExecuteQueryRequest)
 
-	sessionReq, err := h.sessionRequestForService(ctx, w, req.ServiceID)
+	dsn, err := h.connectionStringForService(ctx, req.ServiceID)
 	if err != nil {
-		return // response already written
+		h.handleNewSessionError(ctx, w, err)
+		return
 	}
-	runReq := newQueryRunRequest(req.ExecuteRequest)
 
 	// Create the run first so that the run timeout applies to opening the
 	// database session as well.
-	run, ctx := NewRun(ctx, userID, runReq)
+	run, ctx := NewRun(ctx, userID, req.ExecuteRequest)
 	defer run.Close()
 
 	if err := h.store.InsertRun(run); err != nil {
@@ -328,7 +329,7 @@ func (h *Handler) executeQueryHandler(w http.ResponseWriter, r *http.Request) {
 	defer h.store.TryDeleteRun(ctx, run)
 
 	logger.Debug("Opening database session")
-	session, err := h.NewSession(ctx, userID, sessionReq, true, nil)
+	session, err := h.NewSession(ctx, userID, dsn, true, nil)
 	if err != nil {
 		h.handleNewSessionError(ctx, w, err)
 		return
@@ -515,14 +516,15 @@ func (h *Handler) createSessionHandler(w http.ResponseWriter, r *http.Request) {
 	userID := serveUserID
 	req := requestFromContext(ctx).(*CreateSessionRequest)
 
-	sessionReq, err := h.sessionRequestForService(ctx, w, req.ServiceID)
+	dsn, err := h.connectionStringForService(ctx, req.ServiceID)
 	if err != nil {
-		return // response already written
+		h.handleNewSessionError(ctx, w, err)
+		return
 	}
 
 	logger.Debug("Opening database session")
 	timeout := sessionDisconnectTimeout
-	session, err := h.NewSession(ctx, userID, sessionReq, false, &timeout)
+	session, err := h.NewSession(ctx, userID, dsn, false, &timeout)
 	if err != nil {
 		h.handleNewSessionError(ctx, w, err)
 		return
@@ -570,7 +572,6 @@ func (h *Handler) executeSessionQueryHandler(w http.ResponseWriter, r *http.Requ
 	userID := serveUserID
 	req := requestFromContext(ctx).(*ExecuteSessionQueryRequest)
 	sessionID := req.SessionID
-	runReq := newQueryRunRequest(req.ExecuteRequest)
 
 	session, err := h.store.AcquireSession(userID, sessionID)
 	if err != nil {
@@ -579,7 +580,7 @@ func (h *Handler) executeSessionQueryHandler(w http.ResponseWriter, r *http.Requ
 	}
 	defer h.releaseSession(ctx, session)
 
-	run, ctx := NewRun(ctx, userID, runReq)
+	run, ctx := NewRun(ctx, userID, req.ExecuteRequest)
 	defer run.Close()
 
 	if err := h.store.InsertRun(run); err != nil {
@@ -684,26 +685,70 @@ func (h *Handler) loadClient(ctx context.Context) (ghostapi.ClientWithResponsesI
 	return client, projectID, nil
 }
 
-// sessionRequestForService resolves the database connection for the given
-// service (a database ref) and returns a session request that opens it via
-// DSN. On failure it writes an error response (via handleNewSessionError) and
-// returns a non-nil error, so callers can just return. The active project is
+// defaultRole matches the role used by `ghost sql` / `ghost connect` / etc.
+const defaultRole = "tsdbadmin"
+
+// connectionStringForService resolves the database connection for the given
+// service (a database ref): it fetches the ghost-api database, retrieves the
+// password for the default role, and builds a Postgres connection string (DSN).
+// Connection failures are returned as an [api.NormalizedError], so callers can
+// route the error through handleNewSessionError. The active project is
 // authoritative; the request's projectId is accepted for compatibility but not
 // used for routing.
-func (h *Handler) sessionRequestForService(ctx context.Context, w http.ResponseWriter, serviceID string) (SessionRequest, error) {
+func (h *Handler) connectionStringForService(ctx context.Context, serviceID string) (string, error) {
 	client, projectID, err := h.loadClient(ctx)
 	if err != nil {
-		h.handleNewSessionError(ctx, w, err)
-		return SessionRequest{}, err
+		return "", err
 	}
-	connStr, err := connectionStringForService(ctx, client, projectID, serviceID, h.app.GetConfig().ReadOnly)
+
+	resp, err := client.GetDatabaseWithResponse(ctx, projectID, serviceID)
 	if err != nil {
-		h.handleNewSessionError(ctx, w, err)
-		return SessionRequest{}, err
+		return "", connectErr("fetching database: %v", err)
 	}
-	return SessionRequest{
-		DSN: connStr,
-	}, nil
+	if resp.StatusCode() != http.StatusOK {
+		if resp.JSONDefault != nil {
+			return "", connectErr("API error: %s", resp.JSONDefault.Message)
+		}
+		return "", connectErr("API returned status %d", resp.StatusCode())
+	}
+	if resp.JSON200 == nil {
+		return "", connectErr("empty response from API")
+	}
+	database := *resp.JSON200
+
+	if err := common.CheckReady(database); err != nil {
+		return "", connectErr("%v", err)
+	}
+
+	password, err := common.GetPassword(database, defaultRole)
+	if err != nil {
+		if errors.Is(err, common.ErrPasswordNotFound) {
+			return "", connectErr("no password found for database %s; run `ghost password %s` or add an entry to ~/.pgpass", database.Name, database.Id)
+		}
+		return "", connectErr("retrieving password: %v", err)
+	}
+
+	connStr, err := common.BuildConnectionString(common.ConnectionStringArgs{
+		Database: database,
+		Role:     defaultRole,
+		Password: password,
+	})
+	if err != nil {
+		return "", connectErr("building connection string: %v", err)
+	}
+	return connStr, nil
+}
+
+// connectErr builds an [api.NormalizedError] for failures that occur while
+// resolving a database connection (before the query starts). Marking it as a
+// connect error lets the handleNewSessionError path surface it to the widget
+// the same way an actual connection failure would.
+func connectErr(format string, args ...any) *api.NormalizedError {
+	return &api.NormalizedError{
+		Message: fmt.Sprintf(format, args...),
+		Source:  driver.Source,
+		Connect: true,
+	}
 }
 
 func (h *Handler) handleNewSessionError(ctx context.Context, w http.ResponseWriter, err error) {
@@ -785,25 +830,3 @@ const serveUserID int64 = 0
 // the events stream is connected the timeout is paused (see AcquireSession), so
 // this is effectively the post-disconnect grace period.
 const sessionDisconnectTimeout = 15 * time.Second
-
-// arrowStreamEndpointOutput is the single output every run is configured with:
-// an Arrow IPC stream piped to the results endpoint, which the client fetches
-// via POST /api/arrowResults.
-var arrowStreamEndpointOutput = api.Output{
-	Format:      api.OutputFormatArrowStream,
-	Destination: api.OutputDestinationEndpoint,
-	Compression: api.OutputCompressionGzip,
-	RowNum:      true,
-}
-
-// newQueryRunRequest builds a [RunRequest] from an execute request,
-// configured to stream results as Arrow over the results endpoint.
-func newQueryRunRequest(req ExecuteRequest) RunRequest {
-	runID := req.RunID
-	return RunRequest{
-		RunID:      &runID,
-		Query:      req.Query,
-		Statements: req.Statements,
-		Outputs:    api.Outputs{arrowStreamEndpointOutput},
-	}
-}

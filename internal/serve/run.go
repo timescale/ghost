@@ -13,14 +13,14 @@ import (
 // executing before it will time out and be canceled.
 const DefaultRunTimeout = 30 * time.Minute
 
-// RunRequest represents the common fields of a request capable of issuing a
-// query against a database.
-type RunRequest struct {
-	RunID      *uuid.UUID    `json:"runId,omitempty"`
-	Query      string        `json:"query,omitempty"`
-	Statements []string      `json:"statements,omitempty"`
-	Outputs    api.Outputs   `json:"outputs,omitempty"`
-	Timeout    *api.Duration `json:"timeout,omitempty"`
+// arrowStreamEndpointOutput is the single output every run is configured with:
+// an Arrow IPC stream piped to the results endpoint, which the client fetches
+// via POST /api/arrowResults.
+var arrowStreamEndpointOutput = api.Output{
+	Format:      api.OutputFormatArrowStream,
+	Destination: api.OutputDestinationEndpoint,
+	Compression: api.OutputCompressionGzip,
+	RowNum:      true,
 }
 
 // Run represents an in-progress query. After being created via [NewRun], it is
@@ -28,8 +28,7 @@ type RunRequest struct {
 // All runs are stored in the [Store] until they complete, are canceled, or
 // time out.
 type Run struct {
-	// Unique identifier for the run. Automatically generated if not provided
-	// in the [RunRequest].
+	// Unique identifier for the run.
 	ID uuid.UUID
 
 	// ID of the user to whom the session belongs. Defaults to zero for the old
@@ -47,45 +46,28 @@ type Run struct {
 	// Destinations and formats to write arrow records to.
 	Outputs writer.Outputs
 
-	// The length of time after which the run will time out. Defaults to
-	// DefaultRunTimeout if not provided in the [RunRequest].
+	// The length of time after which the run will time out.
 	Timeout time.Duration
 
 	// A function which, when called, triggers cancellation of the run.
 	Cancel context.CancelFunc
 }
 
-// NewRun creates a new [Run] given a [RunRequest]. It returns the fully
-// initialized run, along with a context that times out when the run times out.
-// The timeout is determined by the Timeout field of the [RunRequest], or
-// by [DefaultRunTimeout] if the Timeout field was nil.
-func NewRun(ctx context.Context, userID int64, req RunRequest) (*Run, context.Context) {
-	timeout := runTimeout(req)
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+// NewRun creates a new [Run] from an [ExecuteRequest], configured to stream
+// results as Arrow over the results endpoint. It returns the fully initialized
+// run, along with a context that times out after [DefaultRunTimeout].
+func NewRun(ctx context.Context, userID int64, req ExecuteRequest) (*Run, context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, DefaultRunTimeout)
 
 	return &Run{
-		ID:         runID(req),
+		ID:         req.RunID,
 		UserID:     userID,
 		Statements: req.Statements,
 		Query:      req.Query,
-		Outputs:    writer.NewOutputs(req.Outputs),
-		Timeout:    timeout,
+		Outputs:    writer.NewOutputs(api.Outputs{arrowStreamEndpointOutput}),
+		Timeout:    DefaultRunTimeout,
 		Cancel:     cancel,
 	}, ctx
-}
-
-func runTimeout(req RunRequest) time.Duration {
-	if timeout := req.Timeout.Value(); timeout != nil {
-		return *timeout
-	}
-	return DefaultRunTimeout
-}
-
-func runID(req RunRequest) uuid.UUID {
-	if req.RunID != nil {
-		return *req.RunID
-	}
-	return uuid.New()
 }
 
 // LeadingStatements returns all of the statements in the run's statement list

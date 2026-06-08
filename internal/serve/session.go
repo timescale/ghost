@@ -2,13 +2,11 @@ package serve
 
 import (
 	"context"
-	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/timescale/ghost/internal/log"
 	"github.com/timescale/ghost/internal/serve/api"
 	"github.com/timescale/ghost/internal/serve/driver"
 )
@@ -20,13 +18,6 @@ const DefaultSessionTimeout = 24 * time.Hour
 // SessionOpenTimeout is the maximum amount of time that the service will wait
 // while attempting to open a database connection before returning an error.
 const SessionOpenTimeout = 10 * time.Second
-
-// SessionRequest represents the common fields of a request capable of opening
-// a new database session.
-type SessionRequest struct {
-	Commands []string `json:"commands,omitempty"`
-	DSN      string   `json:"dsn,omitempty"`
-}
 
 // Session represents a user's database connection. Ephemeral sessions are
 // closed automatically after a run, but long-lived sessions are stored in the
@@ -62,18 +53,16 @@ type Session struct {
 	closed  chan bool
 }
 
-// NewSession opens new database [Session] given a [SessionRequest] and
-// optional session timeout, which determines how long the session can be idle
-// before it will be automatically closed. It returns an [api.NormalizedError]
-// if the database connection could not be established, or if the connection
-// attempt took longer than [SessionOpenTimeout].
-func (h *Handler) NewSession(ctx context.Context, userID int64, req SessionRequest, ephemeral bool, timeout *time.Duration) (session *Session, err error) {
-	logger := log.FromContext(ctx)
-
+// NewSession opens new database [Session] given a DSN and optional session
+// timeout, which determines how long the session can be idle before it will be
+// automatically closed. It returns an [api.NormalizedError] if the database
+// connection could not be established, or if the connection attempt took longer
+// than [SessionOpenTimeout].
+func (h *Handler) NewSession(ctx context.Context, userID int64, dsn string, ephemeral bool, timeout *time.Duration) (session *Session, err error) {
 	ctx, cancel := context.WithTimeout(ctx, SessionOpenTimeout)
 	defer cancel()
 
-	d, err := driver.Open(ctx, req.DSN)
+	d, err := driver.Open(ctx, dsn)
 	if err != nil {
 		// TODO: Only errors caused by bad user input or an inability to
 		// connect to the database should be returned as NormalizedError.
@@ -84,17 +73,6 @@ func (h *Handler) NewSession(ctx context.Context, userID int64, req SessionReque
 			Source:  driver.Source,
 			Connect: true,
 		}
-	}
-
-	// Run provided setup commands against the connection. These commands are
-	// for the sake of configuring the session (for example, running SET ROLE).
-	if err := runSetupCommands(ctx, d, req.Commands); err != nil {
-		if err := d.Close(); err != nil {
-			logger.Error("Error closing database session", slog.Any("error", err))
-		} else {
-			logger.Debug("Database session closed")
-		}
-		return nil, err
 	}
 
 	start := time.Now()
@@ -114,23 +92,6 @@ func (h *Handler) NewSession(ctx context.Context, userID int64, req SessionReque
 		closeFn:   closeFn,
 		closed:    closed,
 	}, nil
-}
-
-func runSetupCommands(ctx context.Context, d *driver.Driver, commands []string) (err error) {
-	for _, cmd := range commands {
-		rows, err := d.Query(ctx, cmd)
-		if err != nil {
-			return d.NormalizeError(ctx, err)
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return d.NormalizeError(ctx, err)
-		}
-		if err := rows.Close(); err != nil {
-			return d.NormalizeError(ctx, err)
-		}
-	}
-	return nil
 }
 
 func sessionTimeout(timeout *time.Duration) time.Duration {
