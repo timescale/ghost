@@ -305,7 +305,6 @@ type ExecuteQueryRequest struct {
 func (h *Handler) executeQueryHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := log.FromContext(ctx)
-	userID := serveUserID
 	req := requestFromContext(ctx).(*ExecuteQueryRequest)
 
 	dsn, err := h.connectionStringForService(ctx, req.ServiceID)
@@ -316,7 +315,7 @@ func (h *Handler) executeQueryHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Create the run first so that canceling the run (via /api/cancelQuery)
 	// also interrupts opening the database session.
-	run, ctx := NewRun(ctx, userID, req.ExecuteRequest)
+	run, ctx := NewRun(ctx, req.ExecuteRequest)
 	defer run.Close()
 
 	if err := h.store.InsertRun(run); err != nil {
@@ -326,7 +325,7 @@ func (h *Handler) executeQueryHandler(w http.ResponseWriter, r *http.Request) {
 	defer h.store.TryDeleteRun(ctx, run)
 
 	logger.Debug("Opening database session")
-	session, err := h.NewSession(ctx, userID, dsn)
+	session, err := h.NewSession(ctx, dsn)
 	if err != nil {
 		h.handleNewSessionError(ctx, w, err)
 		return
@@ -362,13 +361,12 @@ func (r ArrowResultsRequest) Validate() error {
 func (h *Handler) arrowResultsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := log.FromContext(ctx)
-	userID := serveUserID
 	req := requestFromContext(ctx).(*ArrowResultsRequest)
 	runID := req.RunID
 	// This endpoint only ever returns the Arrow IPC stream.
 	format := api.OutputFormatArrowStream
 
-	run, err := h.store.GetRun(userID, runID)
+	run, err := h.store.GetRun(runID)
 	if err != nil {
 		h.handleGetRunError(ctx, w, err)
 		return
@@ -442,11 +440,10 @@ type CancelQueryResponse struct {
 func (h *Handler) cancelQueryHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := log.FromContext(ctx)
-	userID := serveUserID
 	req := requestFromContext(ctx).(*CancelQueryRequest)
 	runID := req.RunID
 
-	run, err := h.store.GetRun(userID, runID)
+	run, err := h.store.GetRun(runID)
 	if err != nil {
 		h.handleGetRunError(ctx, w, err)
 		return
@@ -479,11 +476,10 @@ func (r SessionEventsRequest) Validate() error {
 
 func (h *Handler) sessionEventsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	userID := serveUserID
 	req := requestFromContext(ctx).(*SessionEventsRequest)
 	sessionID := req.SessionID
 
-	session, err := h.store.AcquireSession(userID, sessionID)
+	session, err := h.store.AcquireSession(sessionID)
 	if err != nil {
 		h.handleGetSessionError(ctx, w, err)
 		return
@@ -510,7 +506,6 @@ type CreateSessionResponse struct {
 func (h *Handler) createSessionHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := log.FromContext(ctx)
-	userID := serveUserID
 	req := requestFromContext(ctx).(*CreateSessionRequest)
 
 	dsn, err := h.connectionStringForService(ctx, req.ServiceID)
@@ -520,7 +515,7 @@ func (h *Handler) createSessionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Debug("Opening database session")
-	session, err := h.NewSession(ctx, userID, dsn)
+	session, err := h.NewSession(ctx, dsn)
 	if err != nil {
 		h.handleNewSessionError(ctx, w, err)
 		return
@@ -565,18 +560,17 @@ func (r ExecuteSessionQueryRequest) Validate() error {
 
 func (h *Handler) executeSessionQueryHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	userID := serveUserID
 	req := requestFromContext(ctx).(*ExecuteSessionQueryRequest)
 	sessionID := req.SessionID
 
-	session, err := h.store.AcquireSession(userID, sessionID)
+	session, err := h.store.AcquireSession(sessionID)
 	if err != nil {
 		h.handleGetSessionError(ctx, w, err)
 		return
 	}
 	defer h.releaseSession(ctx, session)
 
-	run, ctx := NewRun(ctx, userID, req.ExecuteRequest)
+	run, ctx := NewRun(ctx, req.ExecuteRequest)
 	defer run.Close()
 
 	if err := h.store.InsertRun(run); err != nil {
@@ -616,11 +610,10 @@ type CloseSessionResponse struct {
 func (h *Handler) closeSessionHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := log.FromContext(ctx)
-	userID := serveUserID
 	req := requestFromContext(ctx).(*CloseSessionRequest)
 	sessionID := req.SessionID
 
-	session, err := h.store.GetSession(userID, sessionID)
+	session, err := h.store.GetSession(sessionID)
 	if err != nil {
 		h.handleGetSessionError(ctx, w, err)
 		return
@@ -816,7 +809,3 @@ func (h *Handler) handleGetRunError(ctx context.Context, w http.ResponseWriter, 
 	logger.Error("Error getting run", slog.Any("error", err))
 	internalServerError(w, logger)
 }
-
-// serveUserID is the user ID used for all sessions/runs. ghost serve is a
-// single local user, so the per-user keying is unused (0).
-const serveUserID int64 = 0

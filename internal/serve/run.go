@@ -25,10 +25,6 @@ type Run struct {
 	// Unique identifier for the run.
 	ID uuid.UUID
 
-	// ID of the user to whom the session belongs. Defaults to zero for the old
-	// endpoints (which did not take a user ID parameter).
-	UserID int64
-
 	// The list of SQL statements that the run is executing. Either this field
 	// or Query will be present, but not both.
 	Statements []string
@@ -48,12 +44,11 @@ type Run struct {
 // results as Arrow over the results endpoint. It returns the fully initialized
 // run, along with a context that is canceled when the run is canceled (via
 // [Run.Cancel] or [Run.Close]). Runs do not time out.
-func NewRun(ctx context.Context, userID int64, req ExecuteRequest) (*Run, context.Context) {
+func NewRun(ctx context.Context, req ExecuteRequest) (*Run, context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	return &Run{
 		ID:         req.RunID,
-		UserID:     userID,
 		Statements: req.Statements,
 		Query:      req.Query,
 		Outputs:    writer.NewOutputs(api.Outputs{arrowStreamEndpointOutput}),

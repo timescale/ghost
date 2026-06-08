@@ -23,10 +23,6 @@ type Session struct {
 	// the session is created.
 	ID uuid.UUID
 
-	// ID of the user to whom the session belongs. Defaults to zero for the old
-	// endpoints (which did not take a user ID parameter).
-	UserID int64
-
 	driver  *driver.Driver
 	lock    sync.Mutex
 	broken  atomic.Bool
@@ -37,7 +33,7 @@ type Session struct {
 // NewSession opens new database [Session] given a DSN. It returns an
 // [api.NormalizedError] if the database connection could not be established, or
 // if the connection attempt took longer than [SessionOpenTimeout].
-func (h *Handler) NewSession(ctx context.Context, userID int64, dsn string) (session *Session, err error) {
+func (h *Handler) NewSession(ctx context.Context, dsn string) (session *Session, err error) {
 	ctx, cancel := context.WithTimeout(ctx, SessionOpenTimeout)
 	defer cancel()
 
@@ -58,7 +54,6 @@ func (h *Handler) NewSession(ctx context.Context, userID int64, dsn string) (ses
 
 	return &Session{
 		ID:      uuid.New(),
-		UserID:  userID,
 		driver:  d,
 		closeFn: closeFn,
 		closed:  closed,

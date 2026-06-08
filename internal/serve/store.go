@@ -16,6 +16,19 @@ import (
 	"github.com/timescale/ghost/internal/log"
 )
 
+// sessionDisconnectTimeout is how long a session lingers after the client
+// disconnects from /api/sessionEvents before it is automatically closed. While
+// the events stream is connected the timeout is paused (see AcquireSession), so
+// this is effectively the post-disconnect grace period.
+const sessionDisconnectTimeout = 15 * time.Second
+
+// When a session has been acquired, the timeout is paused by resetting the
+// timer to this large value (approximately a month). It's reset to the real
+// timeout once the session is released. We use a long pause rather than
+// stopping the timer entirely so that a leaked acquisition can't keep a session
+// alive forever.
+const persistedSessionTimeout = 30 * 24 * time.Hour
+
 type sessionExp struct {
 	*Session
 	timer *time.Timer // Triggers session expiration function after timeout
@@ -23,24 +36,14 @@ type sessionExp struct {
 	lock  sync.Mutex  // Protects access to timer and held
 }
 
-type sessionKey struct {
-	userID    int64
-	sessionID uuid.UUID
-}
-
-type runKey struct {
-	userID int64
-	runID  uuid.UUID
-}
-
 // Store maintains in-memory lookups of all current sessions and in-progress
-// runs, and persists the serve UI state to disk.
+// runs (keyed by ID), and persists the serve UI state to disk.
 type Store struct {
 	logger *slog.Logger
 
-	sessions     map[sessionKey]*sessionExp
+	sessions     map[uuid.UUID]*sessionExp
 	sessionsLock sync.RWMutex
-	runs         map[runKey]*Run
+	runs         map[uuid.UUID]*Run
 	runsLock     sync.RWMutex
 
 	// Persisted `ghost serve` web UI state. statePath is the JSON file the
@@ -55,8 +58,8 @@ func NewStore(configDir string, logger *slog.Logger) *Store {
 	return &Store{
 		logger: logger,
 
-		sessions: map[sessionKey]*sessionExp{},
-		runs:     map[runKey]*Run{},
+		sessions: map[uuid.UUID]*sessionExp{},
+		runs:     map[uuid.UUID]*Run{},
 
 		statePath: filepath.Join(configDir, stateFileName),
 	}
@@ -66,43 +69,20 @@ func NewStore(configDir string, logger *slog.Logger) *Store {
 // pause or extend the session timeout. If the session is being retrieved in
 // order to be used by an end-user (e.g. in order to run a query or listen for
 // session status events), [Store.AcquireSession] should be used instead.
-func (s *Store) GetSession(userID int64, sessionID uuid.UUID) (*Session, error) {
-	key := sessionKey{
-		userID:    userID,
-		sessionID: sessionID,
-	}
-
-	session, ok := s.getSession(key)
+func (s *Store) GetSession(sessionID uuid.UUID) (*Session, error) {
+	session, ok := s.getSession(sessionID)
 	if !ok {
 		return nil, &InvalidSessionIDError{ID: sessionID}
 	}
 	return session.Session, nil
 }
 
-// sessionDisconnectTimeout is how long a session lingers after the client
-// disconnects from /api/sessionEvents before it is automatically closed. While
-// the events stream is connected the timeout is paused (see AcquireSession), so
-// this is effectively the post-disconnect grace period.
-const sessionDisconnectTimeout = 15 * time.Second
-
-// When a session has been acquired, the timeout is paused by resetting the
-// timer to this large value (approximately a month). It's reset to the real
-// timeout once the session is released. We use a long pause rather than
-// stopping the timer entirely so that a leaked acquisition can't keep a session
-// alive forever.
-const persistedSessionTimeout = 30 * 24 * time.Hour
-
 // AcquireSession retrieves a session from the store and returns it. It also
 // pauses the session timeout, if active (i.e. if it was not already paused by
 // another acquisition). ReleaseSession should be called when the session is
 // done being used to reset the timeout.
-func (s *Store) AcquireSession(userID int64, sessionID uuid.UUID) (*Session, error) {
-	key := sessionKey{
-		userID:    userID,
-		sessionID: sessionID,
-	}
-
-	session, ok := s.getSession(key)
+func (s *Store) AcquireSession(sessionID uuid.UUID) (*Session, error) {
+	session, ok := s.getSession(sessionID)
 	if !ok {
 		return nil, &InvalidSessionIDError{ID: sessionID}
 	}
@@ -133,12 +113,7 @@ func (s *Store) AcquireSession(userID int64, sessionID uuid.UUID) (*Session, err
 // is done being used. Failure to call it could create a leaked session that is
 // never closed.
 func (s *Store) ReleaseSession(session *Session) {
-	key := sessionKey{
-		userID:    session.UserID,
-		sessionID: session.ID,
-	}
-
-	sessionExp, ok := s.getSession(key)
+	sessionExp, ok := s.getSession(session.ID)
 	if !ok {
 		// Session has been deleted since being acquired. This is okay.
 		return
@@ -153,31 +128,23 @@ func (s *Store) ReleaseSession(session *Session) {
 	}
 }
 
-func (s *Store) getSession(key sessionKey) (*sessionExp, bool) {
+func (s *Store) getSession(sessionID uuid.UUID) (*sessionExp, bool) {
 	s.sessionsLock.RLock()
 	defer s.sessionsLock.RUnlock()
 
-	session, ok := s.sessions[key]
+	session, ok := s.sessions[sessionID]
 	return session, ok
 }
 
 func (s *Store) InsertSession(session *Session) error {
-	key := sessionKey{
-		userID:    session.UserID,
-		sessionID: session.ID,
-	}
-	return s.insertSession(key, session)
-}
-
-func (s *Store) insertSession(key sessionKey, session *Session) error {
 	s.sessionsLock.Lock()
 	defer s.sessionsLock.Unlock()
 
-	if _, exists := s.sessions[key]; exists {
+	if _, exists := s.sessions[session.ID]; exists {
 		return &SessionIDConflictError{ID: session.ID}
 	}
 
-	s.sessions[key] = &sessionExp{
+	s.sessions[session.ID] = &sessionExp{
 		Session: session,
 		timer:   s.expireSession(session),
 	}
@@ -193,79 +160,45 @@ func (s *Store) expireSession(session *Session) *time.Timer {
 }
 
 func (s *Store) DeleteSession(session *Session) {
-	key := sessionKey{
-		userID:    session.UserID,
-		sessionID: session.ID,
-	}
-	s.deleteSession(key)
-}
-
-func (s *Store) deleteSession(key sessionKey) {
 	s.sessionsLock.Lock()
 	defer s.sessionsLock.Unlock()
 
-	if session, ok := s.sessions[key]; ok {
+	if session, ok := s.sessions[session.ID]; ok {
 		session.lock.Lock()
 		defer session.lock.Unlock()
 
 		session.timer.Stop()
-		delete(s.sessions, key)
+		delete(s.sessions, session.ID)
 	}
 }
 
-func (s *Store) GetRun(userID int64, runID uuid.UUID) (*Run, error) {
-	key := runKey{
-		userID: userID,
-		runID:  runID,
-	}
+func (s *Store) GetRun(runID uuid.UUID) (*Run, error) {
+	s.runsLock.RLock()
+	defer s.runsLock.RUnlock()
 
-	run, ok := s.getRun(key)
+	run, ok := s.runs[runID]
 	if !ok {
 		return nil, &InvalidRunIDError{ID: runID}
 	}
 	return run, nil
 }
 
-func (s *Store) getRun(key runKey) (*Run, bool) {
-	s.runsLock.RLock()
-	defer s.runsLock.RUnlock()
-
-	run, ok := s.runs[key]
-	return run, ok
-}
-
 func (s *Store) InsertRun(run *Run) error {
-	key := runKey{
-		userID: run.UserID,
-		runID:  run.ID,
-	}
-	return s.insertRun(key, run)
-}
-
-func (s *Store) insertRun(key runKey, run *Run) error {
 	s.runsLock.Lock()
 	defer s.runsLock.Unlock()
 
-	if _, exists := s.runs[key]; exists {
+	if _, exists := s.runs[run.ID]; exists {
 		return &RunIDConflictError{ID: run.ID}
 	}
 
-	s.runs[key] = run
+	s.runs[run.ID] = run
 	return nil
 }
 
 func (s *Store) DeleteRun(run *Run) {
-	key := runKey{
-		userID: run.UserID,
-		runID:  run.ID,
-	}
-	s.deleteRun(key)
-}
-
-func (s *Store) deleteRun(key runKey) {
 	s.runsLock.Lock()
 	defer s.runsLock.Unlock()
-	delete(s.runs, key)
+	delete(s.runs, run.ID)
 }
 
 // Close attempts to close all outstanding database sessions and remove them
@@ -292,7 +225,6 @@ func (s *Store) Close() {
 
 func (s *Store) newSessionContext(session *Session) context.Context {
 	ctx, _ := log.NewContext(context.Background(), s.logger.With(
-		slog.Int64("userId", session.UserID),
 		slog.String("sessionId", session.ID.String()),
 	))
 	return ctx
