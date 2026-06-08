@@ -50,6 +50,11 @@ type TableSchema struct {
 // PartitionInfo describes a single child partition of a partitioned table.
 type PartitionInfo struct {
 	Name string `json:"name"`
+	// Schema is the partition child's schema. It is only populated when the
+	// partition lives in a different schema than its parent table (PostgreSQL
+	// allows this), so that callers can schema-qualify the partition
+	// correctly. When empty, the partition shares its parent's schema.
+	Schema string `json:"schema,omitempty"`
 	// Bound is the partition's bound expression (from pg_get_expr on
 	// relpartbound), e.g. "FOR VALUES FROM ('2024-01-01') TO ('2025-01-01')".
 	Bound string `json:"bound,omitempty"`
@@ -317,10 +322,11 @@ type hypertableRow struct {
 }
 
 type partitionRow struct {
-	SchemaName     string `db:"schema_name"`
-	TableName      string `db:"table_name"`
-	PartitionName  string `db:"partition_name"`
-	PartitionBound string `db:"partition_bound"`
+	SchemaName      string `db:"schema_name"`
+	TableName       string `db:"table_name"`
+	PartitionName   string `db:"partition_name"`
+	PartitionSchema string `db:"partition_schema"`
+	PartitionBound  string `db:"partition_bound"`
 }
 
 // SQL queries are built dynamically because they need to splice in
@@ -563,11 +569,13 @@ SELECT
     pn.nspname AS schema_name,
     parent.relname AS table_name,
     child.relname AS partition_name,
+    cn.nspname AS partition_schema,
     COALESCE(pg_get_expr(child.relpartbound, child.oid), '') AS partition_bound
 FROM pg_inherits inh
 JOIN pg_class parent ON parent.oid = inh.inhparent
 JOIN pg_namespace pn ON pn.oid = parent.relnamespace
 JOIN pg_class child ON child.oid = inh.inhrelid
+JOIN pg_namespace cn ON cn.oid = child.relnamespace
 WHERE parent.relkind = 'p'
   %s
   %s
@@ -993,9 +1001,17 @@ func fetchPartitions(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *sch
 		if !ok {
 			continue
 		}
+		// Only record the partition's schema when it differs from its parent
+		// table's schema; partitions normally share the parent's schema, but
+		// PostgreSQL allows them to live elsewhere.
+		partitionSchema := ""
+		if row.PartitionSchema != row.SchemaName {
+			partitionSchema = row.PartitionSchema
+		}
 		t.Partitions = append(t.Partitions, PartitionInfo{
-			Name:  row.PartitionName,
-			Bound: row.PartitionBound,
+			Name:   row.PartitionName,
+			Schema: partitionSchema,
+			Bound:  row.PartitionBound,
 		})
 	}
 	return nil

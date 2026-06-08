@@ -33,6 +33,10 @@ export interface TableSchema {
 
 export interface PartitionInfo {
   name: string;
+  // The partition child's schema. Only present when the partition lives in a
+  // different schema than its parent table (PostgreSQL allows this). When
+  // absent, the partition shares its parent's schema.
+  schema?: string;
   // The partition's bound expression, e.g.
   // "FOR VALUES FROM ('2024-01-01') TO ('2025-01-01')".
   bound?: string;

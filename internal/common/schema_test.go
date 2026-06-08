@@ -1251,6 +1251,40 @@ TABLE: events
 `,
 		},
 		{
+			name: "partition in a different schema is schema-qualified",
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						Tables: []TableSchema{
+							{
+								Name: "events",
+								Columns: []TableColumnSchema{
+									{Name: "id", Type: "bigint"},
+								},
+								Partitions: []PartitionInfo{
+									{Name: "events_2024", Bound: "FOR VALUES FROM ('2024-01-01') TO ('2025-01-01')"},
+									{Name: "events_archive", Schema: "archive", Bound: "FOR VALUES FROM ('2023-01-01') TO ('2024-01-01')"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+TABLE: events
+  id  BIGINT
+
+  PARTITION events_2024 FOR VALUES FROM ('2024-01-01') TO ('2025-01-01')
+  PARTITION archive.events_archive FOR VALUES FROM ('2023-01-01') TO ('2024-01-01')
+`,
+		},
+		{
 			name: "materialized view with definition",
 			schema: &DatabaseSchema{
 				ID:   "test123",

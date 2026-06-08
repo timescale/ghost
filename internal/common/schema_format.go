@@ -139,10 +139,16 @@ func formatTableContents(buf *strings.Builder, table TableSchema) {
 		fmt.Fprintf(buf, "  %s\n", formatTrigger(trg))
 	}
 	for _, part := range table.Partitions {
+		// Schema-qualify the partition only when it lives in a different
+		// schema than its parent table (PostgreSQL allows this).
+		name := part.Name
+		if part.Schema != "" {
+			name = part.Schema + "." + part.Name
+		}
 		if part.Bound != "" {
-			fmt.Fprintf(buf, "  PARTITION %s %s\n", part.Name, part.Bound)
+			fmt.Fprintf(buf, "  PARTITION %s %s\n", name, part.Bound)
 		} else {
-			fmt.Fprintf(buf, "  PARTITION %s\n", part.Name)
+			fmt.Fprintf(buf, "  PARTITION %s\n", name)
 		}
 	}
 }

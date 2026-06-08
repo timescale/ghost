@@ -363,26 +363,28 @@ function TableNode({ ns, table, ctx }: TableNodeProps) {
   // popsql does the same: searching for "plan" inside a multi-column table
   // collapses Columns down to just the matching ones.
   const cols = ctx.searchActive
-    ? allCols.filter((c) => ctx.searchMatches?.has(`${key}/columns/${c.name}`))
+    ? allCols.filter((c) =>
+        ctx.searchMatches?.has(subItemKey(key, 'columns', c.name)),
+      )
     : allCols;
   const partitions = ctx.searchActive
     ? allPartitions.filter((p) =>
-        ctx.searchMatches?.has(`${key}/partitions/${p.name}`),
+        ctx.searchMatches?.has(subItemKey(key, 'partitions', p.name)),
       )
     : allPartitions;
   const constraints = ctx.searchActive
     ? allConstraints.filter((c) =>
-        ctx.searchMatches?.has(`${key}/constraints/${c.name}`),
+        ctx.searchMatches?.has(subItemKey(key, 'constraints', c.name)),
       )
     : allConstraints;
   const indexes = ctx.searchActive
     ? allIndexes.filter((i) =>
-        ctx.searchMatches?.has(`${key}/indexes/${i.name}`),
+        ctx.searchMatches?.has(subItemKey(key, 'indexes', i.name)),
       )
     : allIndexes;
   const triggers = ctx.searchActive
     ? allTriggers.filter((t) =>
-        ctx.searchMatches?.has(`${key}/triggers/${t.name}`),
+        ctx.searchMatches?.has(subItemKey(key, 'triggers', t.name)),
       )
     : allTriggers;
   return (
@@ -662,16 +664,18 @@ function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
   // When a search is active, only render the children that themselves match
   // (same behavior as TableNode).
   const cols = ctx.searchActive
-    ? allCols.filter((c) => ctx.searchMatches?.has(`${key}/columns/${c.name}`))
+    ? allCols.filter((c) =>
+        ctx.searchMatches?.has(subItemKey(key, 'columns', c.name)),
+      )
     : allCols;
   const indexes = ctx.searchActive
     ? allIndexes.filter((i) =>
-        ctx.searchMatches?.has(`${key}/indexes/${i.name}`),
+        ctx.searchMatches?.has(subItemKey(key, 'indexes', i.name)),
       )
     : allIndexes;
   const triggers = ctx.searchActive
     ? allTriggers.filter((t) =>
-        ctx.searchMatches?.has(`${key}/triggers/${t.name}`),
+        ctx.searchMatches?.has(subItemKey(key, 'triggers', t.name)),
       )
     : allTriggers;
   return (
@@ -1074,12 +1078,28 @@ function HypertableBadge({
 
 // ---- Helpers ---------------------------------------------------------------
 
+// Node keys are built by joining segments with '/'. PostgreSQL identifiers
+// (schema/table/column names, routine signatures) can themselves contain '/',
+// so the variable segments are escaped before joining. Without this, e.g. a
+// table named `a/columns` would collide with the "columns" subgroup key of a
+// table named `a`. Backslash is the escape character.
+function encodeKeySegment(segment: string): string {
+  return segment.replace(/\\/g, '\\\\').replace(/\//g, '\\/');
+}
+
 function schemaKey(ns: { name: string }): string {
-  return `schema:${ns.name}`;
+  return `schema:${encodeKeySegment(ns.name)}`;
 }
 
 function childKey(ns: string, group: GroupKind, name: string): string {
-  return `${schemaKey({ name: ns })}/${group}/${name}`;
+  return `${schemaKey({ name: ns })}/${group}/${encodeKeySegment(name)}`;
+}
+
+// subItemKey builds the key for a leaf node nested under a group item (e.g. a
+// column or partition under a table). The sub-item name is escaped for the
+// same reason as childKey's name segment.
+function subItemKey(itemKey: string, subKind: string, name: string): string {
+  return `${itemKey}/${subKind}/${encodeKeySegment(name)}`;
 }
 
 // itemLabel returns the display/key label for a group item. Routines use
@@ -1266,7 +1286,7 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
           if (!subs) return;
           for (const sub of subs) {
             if (match(sub.name)) {
-              visible.add(`${iKey}/${subKind}/${sub.name}`);
+              visible.add(subItemKey(iKey, subKind, sub.name));
               visible.add(`${iKey}/${subKind}`);
               childHit = true;
             }
@@ -1515,7 +1535,10 @@ function partitionMenuItems(
       },
     );
   }
-  items.push(copyQualifiedNameItem(ns, partition.name));
+  // PostgreSQL allows a partition to live in a different schema than its
+  // parent table; when that happens the partition carries its own schema, so
+  // qualify with that rather than the parent's schema.
+  items.push(copyQualifiedNameItem(partition.schema ?? ns, partition.name));
   return items;
 }
 
