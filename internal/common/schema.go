@@ -351,12 +351,12 @@ type enumRow struct {
 }
 
 type triggerRow struct {
-	SchemaName   string `db:"schema_name"`
-	TableName    string `db:"table_name"`
-	TriggerName  string `db:"trigger_name"`
-	Timing       string `db:"timing"`
-	Manipulation string `db:"manipulation"`
-	ActionStmt   string `db:"action_statement"`
+	SchemaName   string  `db:"schema_name"`
+	TableName    string  `db:"table_name"`
+	TriggerName  string  `db:"trigger_name"`
+	Timing       *string `db:"timing"`
+	Manipulation *string `db:"manipulation"`
+	ActionStmt   *string `db:"action_statement"`
 }
 
 type routineRow struct {
@@ -1073,9 +1073,9 @@ func fetchTriggers(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schem
 		qn := qualifiedName{Schema: row.SchemaName, Name: row.TableName}
 		trigger := TriggerSchema{
 			Name:         row.TriggerName,
-			Timing:       row.Timing,
-			Manipulation: row.Manipulation,
-			Statement:    row.ActionStmt,
+			Timing:       util.DerefStr(row.Timing),
+			Manipulation: util.DerefStr(row.Manipulation),
+			Statement:    util.DerefStr(row.ActionStmt),
 		}
 		// Triggers can live on tables or on views (e.g. INSTEAD OF
 		// triggers). Attach to whichever the event object is.
