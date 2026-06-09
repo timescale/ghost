@@ -22,6 +22,7 @@ export function Modal({ children, className, onClose }: Props) {
   }, []);
 
   return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the backdrop's onClick is a mouse-only click-outside affordance; the keyboard equivalent (Escape) is handled by the global window keydown listener above
     <div
       ref={ref}
       onClick={(e: MouseEvent<HTMLDivElement>) => {
