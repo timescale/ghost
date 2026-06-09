@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { DatabaseSchema } from '../schema';
 import { useServeStore } from '../store';
@@ -40,6 +40,7 @@ export function SchemaPane({ databaseId }: Props) {
     () => debounce(setSearchTerm, 150),
     [],
   );
+  useEffect(() => debouncedSetSearchTerm.cancel, [debouncedSetSearchTerm]);
 
   return (
     <div className="flex h-full min-w-0 flex-col">
