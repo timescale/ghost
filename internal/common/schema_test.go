@@ -8,9 +8,10 @@ import (
 
 func TestFormatSchema(t *testing.T) {
 	tests := []struct {
-		name     string
-		schema   *DatabaseSchema
-		expected string
+		name               string
+		schema             *DatabaseSchema
+		includeDefinitions bool
+		expected           string
 	}{
 		// ==================== Database Header Tests ====================
 		{
@@ -1108,7 +1109,8 @@ VIEW: user_view
 `,
 		},
 		{
-			name: "view with definition",
+			name:               "view with definition",
+			includeDefinitions: true,
 			schema: &DatabaseSchema{
 				ID:   "test123",
 				Name: "testdb",
@@ -1141,7 +1143,8 @@ VIEW: active_users
 `,
 		},
 		{
-			name: "view with instead-of trigger",
+			name:               "view with instead-of trigger",
+			includeDefinitions: true,
 			schema: &DatabaseSchema{
 				ID:   "test123",
 				Name: "testdb",
@@ -1285,7 +1288,8 @@ TABLE: events
 `,
 		},
 		{
-			name: "materialized view with definition",
+			name:               "materialized view with definition",
+			includeDefinitions: true,
 			schema: &DatabaseSchema{
 				ID:   "test123",
 				Name: "testdb",
@@ -1319,6 +1323,99 @@ MATERIALIZED VIEW: user_stats
   AS
     SELECT count(*) AS n
        FROM users;
+`,
+		},
+		{
+			name: "view definition omitted by default",
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						Views: []ViewSchema{
+							{
+								Name: "active_users",
+								Columns: []ViewColumnSchema{
+									{Name: "id", Type: "integer"},
+								},
+								Definition: "SELECT id\n   FROM users\n  WHERE active;",
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+VIEW: active_users
+  id  INTEGER
+`,
+		},
+
+		// ==================== Routine (Function/Procedure) Tests ====================
+		{
+			name:               "function with body included",
+			includeDefinitions: true,
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						Functions: []Routine{
+							{
+								Name:       "add",
+								Arguments:  "integer, integer",
+								Definition: "CREATE OR REPLACE FUNCTION public.add(a integer, b integer)\n RETURNS integer\nAS $function$ SELECT a + b $function$;",
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+FUNCTION: add(integer, integer)
+  CREATE OR REPLACE FUNCTION public.add(a integer, b integer)
+   RETURNS integer
+  AS $function$ SELECT a + b $function$;
+`,
+		},
+		{
+			name: "function body omitted by default",
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						Functions: []Routine{
+							{
+								Name:       "add",
+								Arguments:  "integer, integer",
+								Definition: "CREATE OR REPLACE FUNCTION public.add(a integer, b integer)\n RETURNS integer\nAS $function$ SELECT a + b $function$;",
+							},
+						},
+						Procedures: []Routine{
+							{
+								Name:       "do_thing",
+								Arguments:  "text",
+								Definition: "CREATE OR REPLACE PROCEDURE public.do_thing(t text)\nAS $procedure$ BEGIN END $procedure$;",
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+FUNCTION: add(integer, integer)
+
+PROCEDURE: do_thing(text)
 `,
 		},
 
@@ -2009,7 +2106,7 @@ TABLE: config
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := FormatSchema(tt.schema)
+			result := FormatSchema(tt.schema, tt.includeDefinitions)
 			if diff := cmp.Diff(tt.expected, result); diff != "" {
 				t.Errorf("FormatSchema() mismatch (-expected +got):\n%s", diff)
 			}

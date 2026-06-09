@@ -8,8 +8,9 @@ import (
 
 func buildSchemaCmd(app *common.App) *cobra.Command {
 	var (
-		schemaName      string
-		includeInternal bool
+		schemaName         string
+		includeInternal    bool
+		includeDefinitions bool
 	)
 	cmd := &cobra.Command{
 		Use:   "schema <name-or-id>",
@@ -19,7 +20,11 @@ enum types, functions, and procedures with their columns, constraints, indexes,
 and triggers. Only objects the connecting user can access are listed. By default
 system schemas (information_schema, pg_*, _timescaledb_*) and extension-owned
 objects are excluded; use --schema to target a specific schema (including a
-system schema such as pg_catalog) or --internal to include everything.`,
+system schema such as pg_catalog) or --internal to include everything.
+
+Object definitions (view SELECT statements and function/procedure bodies) are
+omitted by default to keep the output concise; pass --definitions to include
+them.`,
 		Example: `  ghost schema my-database
   ghost schema my-database --schema reporting
   ghost schema my-database --internal`,
@@ -45,13 +50,14 @@ system schema such as pg_catalog) or --internal to include everything.`,
 				return handleDatabaseError(err, databaseRef)
 			}
 
-			cmd.Print(common.FormatSchema(schema))
+			cmd.Print(common.FormatSchema(schema, includeDefinitions))
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&schemaName, "schema", "", "Restrict output to a single Postgres schema (may be a system schema; only objects you can access are shown)")
 	cmd.Flags().BoolVar(&includeInternal, "internal", false, "Include system schemas (information_schema, pg_*, _timescaledb_*) and extension-owned objects")
+	cmd.Flags().BoolVar(&includeDefinitions, "definitions", false, "Include full object definitions (view SELECT statements and function/procedure bodies)")
 
 	return cmd
 }

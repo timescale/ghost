@@ -13,9 +13,10 @@ import (
 
 // SchemaInput represents input for ghost_schema
 type SchemaInput struct {
-	Ref        string `json:"name_or_id"`
-	SchemaName string `json:"schema,omitempty"`
-	Internal   bool   `json:"internal,omitempty"`
+	Ref         string `json:"name_or_id"`
+	SchemaName  string `json:"schema,omitempty"`
+	Internal    bool   `json:"internal,omitempty"`
+	Definitions bool   `json:"definitions,omitempty"`
 }
 
 func (SchemaInput) Schema() *jsonschema.Schema {
@@ -24,6 +25,8 @@ func (SchemaInput) Schema() *jsonschema.Schema {
 	schema.Properties["schema"].Description = "Restrict output to a single Postgres schema (e.g. 'public', 'reporting'). May target a system schema such as 'pg_catalog'. Only objects the connecting user can access are returned. If omitted, all accessible non-system schemas are returned."
 	schema.Properties["internal"].Description = "Include system schemas (information_schema, pg_*, _timescaledb_*) and extension-owned objects. Defaults to false."
 	schema.Properties["internal"].Default = json.RawMessage("false")
+	schema.Properties["definitions"].Description = "Include full object definitions (view SELECT statements and function/procedure bodies). Omitted by default to keep the output concise. Defaults to false."
+	schema.Properties["definitions"].Default = json.RawMessage("false")
 	return schema
 }
 
@@ -60,7 +63,7 @@ func (s *Server) handleSchema(ctx context.Context, req *mcp.CallToolRequest, inp
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
-			&mcp.TextContent{Text: common.FormatSchema(schema)},
+			&mcp.TextContent{Text: common.FormatSchema(schema, input.Definitions)},
 		},
 	}, nil, nil
 }

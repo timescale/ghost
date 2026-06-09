@@ -6,8 +6,11 @@ import (
 )
 
 // FormatSchema formats a DatabaseSchema into a human-readable string,
-// grouping objects under a SCHEMA: <name> header for each namespace.
-func FormatSchema(schema *DatabaseSchema) string {
+// grouping objects under a SCHEMA: <name> header for each namespace. When
+// includeDefinitions is false, the verbose object source bodies (view
+// defining SELECTs and function/procedure bodies) are omitted, leaving just
+// the structural summary (columns, constraints, indexes, signatures, etc.).
+func FormatSchema(schema *DatabaseSchema, includeDefinitions bool) string {
 	var buf strings.Builder
 
 	fmt.Fprintf(&buf, "DATABASE: %s (%s)\n", schema.Name, schema.ID)
@@ -20,11 +23,11 @@ func FormatSchema(schema *DatabaseSchema) string {
 		}
 		for _, view := range ns.Views {
 			fmt.Fprintf(&buf, "\nVIEW: %s\n", view.Name)
-			formatViewContents(&buf, view)
+			formatViewContents(&buf, view, includeDefinitions)
 		}
 		for _, mv := range ns.MaterializedViews {
 			fmt.Fprintf(&buf, "\nMATERIALIZED VIEW: %s\n", mv.Name)
-			formatViewContents(&buf, mv)
+			formatViewContents(&buf, mv, includeDefinitions)
 		}
 		for _, enum := range ns.Enums {
 			fmt.Fprintf(&buf, "\nENUM: %s\n", enum.Name)
@@ -32,11 +35,11 @@ func FormatSchema(schema *DatabaseSchema) string {
 		}
 		for _, fn := range ns.Functions {
 			fmt.Fprintf(&buf, "\nFUNCTION: %s\n", routineSignature(fn))
-			formatRoutineContents(&buf, fn)
+			formatRoutineContents(&buf, fn, includeDefinitions)
 		}
 		for _, proc := range ns.Procedures {
 			fmt.Fprintf(&buf, "\nPROCEDURE: %s\n", routineSignature(proc))
-			formatRoutineContents(&buf, proc)
+			formatRoutineContents(&buf, proc, includeDefinitions)
 		}
 	}
 
@@ -249,7 +252,7 @@ func formatConstraint(con TableConstraint) string {
 	}
 }
 
-func formatViewContents(buf *strings.Builder, view ViewSchema) {
+func formatViewContents(buf *strings.Builder, view ViewSchema, includeDefinitions bool) {
 	maxNameLen := 0
 	for _, col := range view.Columns {
 		if len(col.Name) > maxNameLen {
@@ -271,7 +274,7 @@ func formatViewContents(buf *strings.Builder, view ViewSchema) {
 			fmt.Fprintf(buf, "  %s\n", formatTrigger(trg))
 		}
 	}
-	if view.Definition != "" {
+	if includeDefinitions && view.Definition != "" {
 		buf.WriteString("\n  AS\n")
 		for line := range strings.SplitSeq(view.Definition, "\n") {
 			fmt.Fprintf(buf, "    %s\n", line)
@@ -294,8 +297,8 @@ func routineSignature(r Routine) string {
 	return fmt.Sprintf("%s(%s)", r.Name, r.Arguments)
 }
 
-func formatRoutineContents(buf *strings.Builder, r Routine) {
-	if r.Definition == "" {
+func formatRoutineContents(buf *strings.Builder, r Routine, includeDefinitions bool) {
+	if !includeDefinitions || r.Definition == "" {
 		return
 	}
 	for line := range strings.SplitSeq(r.Definition, "\n") {

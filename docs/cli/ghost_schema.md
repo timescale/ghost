@@ -17,6 +17,10 @@ system schemas (information_schema, pg_*, _timescaledb_*) and extension-owned
 objects are excluded; use --schema to target a specific schema (including a
 system schema such as pg_catalog) or --internal to include everything.
 
+Object definitions (view SELECT statements and function/procedure bodies) are
+omitted by default to keep the output concise; pass --definitions to include
+them.
+
 ```
 ghost schema <name-or-id> [flags]
 ```
@@ -32,6 +36,7 @@ ghost schema <name-or-id> [flags]
 ### Options
 
 ```
+      --definitions     Include full object definitions (view SELECT statements and function/procedure bodies)
   -h, --help            help for schema
       --internal        Include system schemas (information_schema, pg_*, _timescaledb_*) and extension-owned objects
       --schema string   Restrict output to a single Postgres schema (may be a system schema; only objects you can access are shown)
