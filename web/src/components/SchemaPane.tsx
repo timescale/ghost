@@ -62,7 +62,7 @@ export function SchemaPane({ databaseId }: Props) {
           className={`rounded p-1 hover:bg-slate-200 hover:text-slate-900 ${
             showInternalObjects
               ? 'bg-slate-200 text-slate-900'
-              : 'text-slate-500'
+              : 'text-slate-400'
           }`}
           aria-label="Toggle internal objects"
           title={
@@ -71,7 +71,7 @@ export function SchemaPane({ databaseId }: Props) {
               : 'Show internal objects (system schemas and extension-owned objects)'
           }
         >
-          <Icon name="eye" size={14} />
+          <Icon name={showInternalObjects ? 'eye' : 'eye-off'} size={14} />
         </button>
         <button
           type="button"

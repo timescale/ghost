@@ -23,6 +23,7 @@ export type IconName =
   | 'check'
   | 'copy'
   | 'eye'
+  | 'eye-off'
   | 'function'
   | 'new-query'
   | 'refresh'
