@@ -51,15 +51,8 @@ func (h *Handler) schemaHandler(w http.ResponseWriter, r *http.Request) {
 		IncludeInternal: includeInternal,
 	})
 	if err != nil {
-		status := http.StatusBadGateway
-		switch {
-		case errors.Is(err, common.ErrPaused), errors.Is(err, common.ErrNotReady):
-			status = http.StatusConflict
-		case errors.Is(err, common.ErrPasswordNotFound):
-			status = http.StatusPreconditionFailed
-		}
 		logger.Error("Error fetching database schema", slog.Any("error", err))
-		writeError(w, status, err, logger)
+		writeError(w, httpStatusForFetchError(err), err, logger)
 		return
 	}
 

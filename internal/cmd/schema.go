@@ -16,9 +16,10 @@ func buildSchemaCmd(app *common.App) *cobra.Command {
 		Short: "Display database schema information",
 		Long: `Display database schema information including tables, views, materialized views,
 enum types, functions, and procedures with their columns, constraints, indexes,
-and triggers. By default all user-visible schemas are shown; system schemas
-(information_schema, pg_*, _timescaledb_*) and extension-owned objects are
-excluded.`,
+and triggers. Only objects the connecting user can access are listed. By default
+system schemas (information_schema, pg_*, _timescaledb_*) and extension-owned
+objects are excluded; use --schema to target a specific schema (including a
+system schema such as pg_catalog) or --internal to include everything.`,
 		Example: `  ghost schema my-database
   ghost schema my-database --schema reporting
   ghost schema my-database --internal`,
@@ -49,7 +50,7 @@ excluded.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&schemaName, "schema", "", "Restrict output to a single Postgres schema")
+	cmd.Flags().StringVar(&schemaName, "schema", "", "Restrict output to a single Postgres schema (may be a system schema; only objects you can access are shown)")
 	cmd.Flags().BoolVar(&includeInternal, "internal", false, "Include system schemas (information_schema, pg_*, _timescaledb_*) and extension-owned objects")
 
 	return cmd

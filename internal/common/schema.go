@@ -40,9 +40,11 @@ type TableSchema struct {
 	Checks      []CheckConstraint     `json:"checks,omitempty"`
 	Exclusions  []ExclusionConstraint `json:"exclusions,omitempty"`
 	Triggers    []TriggerSchema       `json:"triggers,omitempty"`
-	// Partitions lists the child partitions of a partitioned table. Only
-	// populated for partitioned tables (relkind 'p'); the children
-	// themselves are hidden as standalone tables.
+	// Partitions lists the direct child partitions of a partitioned table.
+	// Only populated for partitioned tables (relkind 'p'). Leaf partitions
+	// are hidden as standalone tables, but in a multi-level hierarchy an
+	// intermediate partitioned table is shown both as an entry here (under
+	// its parent) and as its own table carrying its sub-partitions.
 	Partitions []PartitionInfo `json:"partitions,omitempty"`
 	Hypertable *HypertableInfo `json:"hypertable,omitempty"`
 }
@@ -241,17 +243,68 @@ func (f schemaFilter) onExtensionObject(classidExpr, oidExpr string) string {
         )`, classidExpr, oidExpr)
 }
 
-// onOwner returns a clause that excludes objects whose owner role the
-// current session role isn't a member of. Filters out platform-managed
-// objects (e.g. `postgres`-owned helper functions that ship with Tiger
-// Cloud) while keeping anything the user can rightfully claim. ownerCol
-// is the SQL expression identifying the owner role OID (e.g.
-// `c.relowner`, `p.proowner`, `t.typowner`).
-func (f schemaFilter) onOwner(ownerCol string) string {
+// objectKind identifies the privilege class onAccessible uses to test
+// whether the current user can access an object. Each kind maps to the
+// appropriate `has_*_privilege` catalog function.
+type objectKind int
+
+const (
+	// relationObject covers tables, views, materialized views, and the
+	// tables that triggers/partitions hang off of. Visibility is gated on
+	// any table-level privilege.
+	relationObject objectKind = iota
+	// typeObject covers user-defined types such as enums. Visibility is
+	// gated on the USAGE privilege.
+	typeObject
+	// routineObject covers functions and procedures. Visibility is gated on
+	// the EXECUTE privilege.
+	routineObject
+)
+
+// onAccessible returns a clause that keeps only objects the current user
+// can access, using the privilege class appropriate to kind. oidCol is the
+// SQL expression for the object's own OID (e.g. `c.oid`, `t.oid`,
+// `p.oid`). This is what scopes the schema to "objects the user has access
+// to": it keeps objects the user owns *or* has been GRANTed access to, and
+// drops objects the user cannot touch (e.g. platform-managed helpers the
+// user has no privilege on). When IncludeInternal is set, no clause is
+// emitted so the full catalog is returned.
+func (f schemaFilter) onAccessible(kind objectKind, oidCol string) string {
 	if f.includeInternal {
 		return ""
 	}
-	return fmt.Sprintf(" AND pg_catalog.pg_has_role(current_user, %s, 'MEMBER')", ownerCol)
+	switch kind {
+	case typeObject:
+		return fmt.Sprintf(" AND pg_catalog.has_type_privilege(current_user, %s, 'USAGE')", oidCol)
+	case routineObject:
+		return fmt.Sprintf(" AND pg_catalog.has_function_privilege(current_user, %s, 'EXECUTE')", oidCol)
+	default:
+		return fmt.Sprintf(" AND pg_catalog.has_table_privilege(current_user, %s, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')", oidCol)
+	}
+}
+
+// onUserOwned returns a clause that excludes objects owned by a superuser
+// role. On Tiger Cloud the connecting user (e.g. tsdbadmin) is never a
+// superuser, so superuser-owned objects are platform-managed helpers (e.g.
+// the `postgres`-owned functions in `public`/`timescale_functions` that
+// aren't extension-owned and so slip past onExtensionObject). ownerCol is
+// the SQL expression identifying the owner role OID (e.g. `c.relowner`,
+// `p.proowner`, `t.typowner`).
+//
+// This is only emitted on the default browse: like onSchema's name
+// exclusions, it is dropped when an explicit --schema is requested (so
+// `--schema pg_catalog`, whose objects are all superuser-owned, still
+// returns results) or when IncludeInternal is set.
+func (f schemaFilter) onUserOwned(ownerCol string) string {
+	if f.includeInternal || f.schema != "" {
+		return ""
+	}
+	return fmt.Sprintf(`
+        AND NOT EXISTS (
+            SELECT 1 FROM pg_catalog.pg_roles r
+            WHERE r.oid = %s
+              AND r.rolsuper
+        )`, ownerCol)
 }
 
 // Row types for scanning query results
@@ -356,20 +409,24 @@ FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 JOIN pg_attribute a ON a.attrelid = c.oid
 LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
--- Include partitioned tables (relkind 'p') as tables, but exclude child
--- partitions (relispartition): they're surfaced under the parent's
--- Partitions list rather than as standalone tables.
+-- Include partitioned tables (relkind 'p') as tables. Leaf partitions are
+-- hidden as standalone tables and surfaced under their parent's Partitions
+-- list instead. Intermediate partitioned tables in a multi-level hierarchy
+-- (relispartition children that are themselves partitioned, relkind 'p')
+-- ARE kept, so their own sub-partitions remain reachable.
 WHERE c.relkind IN ('r', 'p', 'v', 'm')
-  AND NOT c.relispartition
+  AND NOT (c.relispartition AND c.relkind <> 'p')
   AND a.attnum > 0
   AND NOT a.attisdropped
+  %s
   %s
   %s
   %s
 ORDER BY n.nspname, c.relname, a.attnum`,
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_class'::regclass", "c.oid"),
-		f.onOwner("c.relowner"),
+		f.onAccessible(relationObject, "c.oid"),
+		f.onUserOwned("c.relowner"),
 	)
 }
 
@@ -408,10 +465,12 @@ WHERE con.contype IN ('p', 'u', 'f', 'c', 'x')
   %s
   %s
   %s
+  %s
 ORDER BY n.nspname, c.relname, con.contype, con.conname`,
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_class'::regclass", "c.oid"),
-		f.onOwner("c.relowner"),
+		f.onAccessible(relationObject, "c.oid"),
+		f.onUserOwned("c.relowner"),
 	)
 }
 
@@ -442,7 +501,9 @@ JOIN pg_class t ON t.oid = ix.indrelid
 JOIN pg_class i ON i.oid = ix.indexrelid
 JOIN pg_namespace n ON n.oid = t.relnamespace
 WHERE t.relkind IN ('r', 'p', 'm')
-  AND NOT t.relispartition
+  -- Mirror the relations query: hide leaf partitions but keep intermediate
+  -- partitioned tables so their indexes stay visible.
+  AND NOT (t.relispartition AND t.relkind <> 'p')
   -- Exclude indexes that back a constraint (PRIMARY KEY / UNIQUE /
   -- EXCLUDE). Those are surfaced via the constraints query, so listing
   -- them here as well would duplicate them.
@@ -453,10 +514,12 @@ WHERE t.relkind IN ('r', 'p', 'm')
   %s
   %s
   %s
+  %s
 ORDER BY n.nspname, t.relname, i.relname`,
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_class'::regclass", "t.oid"),
-		f.onOwner("t.relowner"),
+		f.onAccessible(relationObject, "t.oid"),
+		f.onUserOwned("t.relowner"),
 	)
 }
 
@@ -473,11 +536,13 @@ WHERE TRUE
   %s
   %s
   %s
+  %s
 GROUP BY n.nspname, t.typname
 ORDER BY n.nspname, t.typname`,
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_type'::regclass", "t.oid"),
-		f.onOwner("t.typowner"),
+		f.onAccessible(typeObject, "t.oid"),
+		f.onUserOwned("t.typowner"),
 	)
 }
 
@@ -487,8 +552,8 @@ func buildTriggersQuery(f schemaFilter) string {
 	// action_statement), which the popsql tree also flattens into separate
 	// entries. We join it to pg_trigger/pg_class/pg_namespace so we can apply
 	// the same OID-based filters used for every other object kind: excluding
-	// extension-owned triggers (onExtensionObject), triggers on tables owned
-	// by platform roles (onOwner), and internally generated triggers
+	// extension-owned triggers (onExtensionObject), triggers on tables the
+	// user can't access (onAccessible), and internally generated triggers
 	// (tgisinternal). The join is on the trigger's identity (schema, table,
 	// name), so it preserves information_schema's per-manipulation rows.
 	return fmt.Sprintf(`
@@ -507,10 +572,12 @@ WHERE NOT tg.tgisinternal
   %s
   %s
   %s
+  %s
 ORDER BY schema_name, table_name, trigger_name, manipulation`,
 		f.onSchema("ist.trigger_schema"),
 		f.onExtensionObject("'pg_trigger'::regclass", "tg.oid"),
-		f.onOwner("c.relowner"),
+		f.onAccessible(relationObject, "c.oid"),
+		f.onUserOwned("c.relowner"),
 	)
 }
 
@@ -533,10 +600,12 @@ WHERE p.prokind IN ('f', 'p')
   %s
   %s
   %s
+  %s
 ORDER BY n.nspname, p.proname, routine_args`,
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_proc'::regclass", "p.oid"),
-		f.onOwner("p.proowner"),
+		f.onAccessible(routineObject, "p.oid"),
+		f.onUserOwned("p.proowner"),
 	)
 }
 
@@ -558,11 +627,15 @@ ORDER BY h.hypertable_schema, h.hypertable_name`,
 	)
 }
 
-// buildPartitionsQuery returns the child partitions of each partitioned
-// table (relkind 'p'), one row per child, along with the child's bound
-// expression. The same OID-based exclusion filters used elsewhere are
-// applied to the parent table so platform/extension-owned partition
-// hierarchies are filtered consistently.
+// buildPartitionsQuery returns the direct child partitions of each
+// partitioned table (relkind 'p'), one row per child, along with the
+// child's bound expression. In a multi-level hierarchy each level yields
+// its own rows (e.g. top->intermediate and intermediate->leaf); because
+// intermediate partitioned tables are kept in the relations query, every
+// parent resolves in tableIndex and no level is dropped. The same
+// OID-based exclusion filters used elsewhere are applied to the parent
+// table so extension-owned and inaccessible partition hierarchies are
+// filtered consistently.
 func buildPartitionsQuery(f schemaFilter) string {
 	return fmt.Sprintf(`
 SELECT
@@ -580,10 +653,12 @@ WHERE parent.relkind = 'p'
   %s
   %s
   %s
+  %s
 ORDER BY pn.nspname, parent.relname, child.relname`,
 		f.onSchema("pn.nspname"),
 		f.onExtensionObject("'pg_class'::regclass", "parent.oid"),
-		f.onOwner("parent.relowner"),
+		f.onAccessible(relationObject, "parent.oid"),
+		f.onUserOwned("parent.relowner"),
 	)
 }
 

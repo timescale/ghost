@@ -262,7 +262,7 @@ interface GroupNodeProps extends NodeProps {
 }
 
 function GroupNode({ ns, group, ctx }: GroupNodeProps) {
-  const key = `schema:${ns}/${group.kind}`;
+  const key = `${schemaKey({ name: ns })}/${group.kind}`;
   const items = group.items;
   const visibleItems = ctx.searchActive
     ? items.filter((item) =>

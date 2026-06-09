@@ -35,9 +35,6 @@ export function Modal({ children, className, onClose }: Props) {
         downTarget.current = e.target;
       }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose();
-      }}
     >
       <div
         className={`flex max-h-[80vh] max-w-[90vw] min-h-24 min-w-40 flex-col rounded-lg border border-slate-200 bg-white shadow-xl ${className ?? ''}`}

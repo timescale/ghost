@@ -12,9 +12,10 @@ Display database schema information
 
 Display database schema information including tables, views, materialized views,
 enum types, functions, and procedures with their columns, constraints, indexes,
-and triggers. By default all user-visible schemas are shown; system schemas
-(information_schema, pg_*, _timescaledb_*) and extension-owned objects are
-excluded.
+and triggers. Only objects the connecting user can access are listed. By default
+system schemas (information_schema, pg_*, _timescaledb_*) and extension-owned
+objects are excluded; use --schema to target a specific schema (including a
+system schema such as pg_catalog) or --internal to include everything.
 
 ```
 ghost schema <name-or-id> [flags]
@@ -33,7 +34,7 @@ ghost schema <name-or-id> [flags]
 ```
   -h, --help            help for schema
       --internal        Include system schemas (information_schema, pg_*, _timescaledb_*) and extension-owned objects
-      --schema string   Restrict output to a single Postgres schema
+      --schema string   Restrict output to a single Postgres schema (may be a system schema; only objects you can access are shown)
 ```
 
 ### Options inherited from parent commands
