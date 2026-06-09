@@ -59,10 +59,10 @@ export function SchemaPane({ databaseId }: Props) {
           type="button"
           onClick={() => setShowInternalObjects(!showInternalObjects)}
           aria-pressed={showInternalObjects}
-          className={`rounded p-1 hover:bg-slate-200 hover:text-slate-900 ${
+          className={`rounded p-1 ${
             showInternalObjects
-              ? 'bg-slate-200 text-slate-900'
-              : 'text-slate-400'
+              ? 'bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700'
+              : 'text-slate-400 hover:bg-slate-200 hover:text-slate-900'
           }`}
           aria-label="Toggle internal objects"
           title={
