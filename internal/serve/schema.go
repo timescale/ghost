@@ -10,7 +10,7 @@ import (
 	"github.com/timescale/ghost/internal/log"
 )
 
-// schemaHandler serves GET /api/schema?databaseId=…&schema=…&internal=true.
+// schemaHandler serves GET /api/schema?databaseId=…&schema=…&internal=true&definitions=true.
 // Returns the database schema as JSON. Opens a short-lived pgx connection
 // per request via common.FetchDatabaseSchema — same path used by the CLI's
 // `ghost schema` command, so the two stay in sync automatically.
@@ -36,6 +36,16 @@ func (h *Handler) schemaHandler(w http.ResponseWriter, r *http.Request) {
 		includeInternal = parsed
 	}
 
+	includeDefinitions := false
+	if v := r.URL.Query().Get("definitions"); v != "" {
+		parsed, err := strconv.ParseBool(v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, errors.New("definitions must be a boolean"), logger)
+			return
+		}
+		includeDefinitions = parsed
+	}
+
 	client, projectID, err := h.loadClient(ctx)
 	if err != nil {
 		logger.Warn("Error loading client", slog.Any("error", err))
@@ -44,11 +54,12 @@ func (h *Handler) schemaHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	schema, err := common.FetchDatabaseSchema(ctx, common.FetchDatabaseSchemaArgs{
-		Client:          client,
-		ProjectID:       projectID,
-		DatabaseRef:     databaseRef,
-		Schema:          schemaName,
-		IncludeInternal: includeInternal,
+		Client:             client,
+		ProjectID:          projectID,
+		DatabaseRef:        databaseRef,
+		Schema:             schemaName,
+		IncludeInternal:    includeInternal,
+		IncludeDefinitions: includeDefinitions,
 	})
 	if err != nil {
 		status := httpStatusForFetchError(err)

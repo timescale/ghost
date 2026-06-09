@@ -180,13 +180,31 @@ type FetchDatabaseSchemaArgs struct {
 	// IncludeInternal, when true, disables all schema/object exclusion
 	// filters. Catalog (pg_*) and extension-owned objects will be included.
 	IncludeInternal bool
+	// IncludeDefinitions, when true, fetches full object definitions (view
+	// SELECT statements and function/procedure bodies). These are omitted by
+	// default because they can be large and may embed implementation details
+	// or secrets; only fetch them when the caller will actually use them.
+	IncludeDefinitions bool
 }
 
 // schemaFilter holds the SQL fragments needed to scope a query to the
 // user-visible schemas / objects.
 type schemaFilter struct {
-	includeInternal bool
-	schema          string
+	includeInternal    bool
+	includeDefinitions bool
+	schema             string
+}
+
+// definitionExpr returns the SQL expression to select for an object
+// definition column (e.g. a view's defining SELECT or a routine's body).
+// When definitions are not requested it returns NULL, so the heavy
+// pg_get_*def catalog calls are skipped and definition text (which may
+// embed implementation details or secrets) is never returned.
+func (f schemaFilter) definitionExpr(expr string) string {
+	if f.includeDefinitions {
+		return expr
+	}
+	return "NULL"
 }
 
 // queryArgs returns the positional query arguments referenced by the SQL
@@ -404,7 +422,7 @@ SELECT
     a.attnum AS column_order,
     pg_get_serial_sequence(format('%%I.%%I', n.nspname, c.relname), a.attname) AS sequence_name,
     a.attidentity::text AS identity_type,
-    CASE WHEN c.relkind IN ('v', 'm') THEN pg_get_viewdef(c.oid, true) END AS view_definition
+    CASE WHEN c.relkind IN ('v', 'm') THEN %s END AS view_definition
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 JOIN pg_attribute a ON a.attrelid = c.oid
@@ -423,6 +441,7 @@ WHERE c.relkind IN ('r', 'p', 'v', 'm')
   %s
   %s
 ORDER BY n.nspname, c.relname, a.attnum`,
+		f.definitionExpr("pg_get_viewdef(c.oid, true)"),
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_class'::regclass", "c.oid"),
 		f.onAccessible(relationObject, "c.oid"),
@@ -593,7 +612,7 @@ SELECT
         WHEN 'f' THEN 'FUNCTION'
         WHEN 'p' THEN 'PROCEDURE'
     END AS routine_type,
-    pg_get_functiondef(p.oid) AS routine_definition
+    %s AS routine_definition
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE p.prokind IN ('f', 'p')
@@ -602,6 +621,7 @@ WHERE p.prokind IN ('f', 'p')
   %s
   %s
 ORDER BY n.nspname, p.proname, routine_args`,
+		f.definitionExpr("pg_get_functiondef(p.oid)"),
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_proc'::regclass", "p.oid"),
 		f.onAccessible(routineObject, "p.oid"),
@@ -666,7 +686,8 @@ ORDER BY pn.nspname, parent.relname, child.relname`,
 // database. By default only user-visible schemas and objects are returned;
 // pass IncludeInternal=true to include catalog, TimescaleDB internals, and
 // extension-owned objects. Pass Schema to limit results to a single
-// namespace.
+// namespace. View/routine definitions are omitted unless
+// IncludeDefinitions=true.
 func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*DatabaseSchema, error) {
 	database, err := fetchDatabase(ctx, args.Client, args.ProjectID, args.DatabaseRef)
 	if err != nil {
@@ -690,8 +711,9 @@ func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*Da
 	}
 
 	filter := schemaFilter{
-		includeInternal: args.IncludeInternal,
-		schema:          args.Schema,
+		includeInternal:    args.IncludeInternal,
+		includeDefinitions: args.IncludeDefinitions,
+		schema:             args.Schema,
 	}
 
 	// Build the schema in stages: first collect every object keyed by

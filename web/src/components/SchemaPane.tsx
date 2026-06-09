@@ -18,7 +18,10 @@ export function SchemaPane({ databaseId }: Props) {
   const query = useQuery({
     queryKey: ['schema', databaseId, showInternalObjects],
     queryFn: async () => {
-      const params = new URLSearchParams({ databaseId });
+      // Request object definitions so the tree's View/Copy definition
+      // actions have data. The server omits them by default to keep the
+      // payload light, so this opt-in is required.
+      const params = new URLSearchParams({ databaseId, definitions: 'true' });
       if (showInternalObjects) params.set('internal', 'true');
       const res = await fetch(`/api/schema?${params}`);
       if (!res.ok) {

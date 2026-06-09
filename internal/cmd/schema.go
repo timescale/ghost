@@ -40,11 +40,12 @@ them.`,
 			}
 
 			schema, err := common.FetchDatabaseSchema(cmd.Context(), common.FetchDatabaseSchemaArgs{
-				Client:          client,
-				ProjectID:       projectID,
-				DatabaseRef:     databaseRef,
-				Schema:          schemaName,
-				IncludeInternal: includeInternal,
+				Client:             client,
+				ProjectID:          projectID,
+				DatabaseRef:        databaseRef,
+				Schema:             schemaName,
+				IncludeInternal:    includeInternal,
+				IncludeDefinitions: includeDefinitions,
 			})
 			if err != nil {
 				return handleDatabaseError(err, databaseRef)

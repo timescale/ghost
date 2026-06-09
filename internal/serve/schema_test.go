@@ -36,6 +36,11 @@ func TestSchemaHandler_ParamValidation(t *testing.T) {
 			query:      "databaseId=db-1&internal=2",
 			wantStatus: http.StatusBadRequest,
 		},
+		{
+			name:       "non-boolean definitions returns 400",
+			query:      "databaseId=db-1&definitions=maybe",
+			wantStatus: http.StatusBadRequest,
+		},
 	}
 
 	for _, tc := range tests {

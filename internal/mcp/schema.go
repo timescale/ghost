@@ -51,11 +51,12 @@ func (s *Server) handleSchema(ctx context.Context, req *mcp.CallToolRequest, inp
 	}
 
 	schema, err := common.FetchDatabaseSchema(ctx, common.FetchDatabaseSchemaArgs{
-		Client:          client,
-		ProjectID:       projectID,
-		DatabaseRef:     input.Ref,
-		Schema:          input.SchemaName,
-		IncludeInternal: input.Internal,
+		Client:             client,
+		ProjectID:          projectID,
+		DatabaseRef:        input.Ref,
+		Schema:             input.SchemaName,
+		IncludeInternal:    input.Internal,
+		IncludeDefinitions: input.Definitions,
 	})
 	if err != nil {
 		return nil, nil, handleDatabaseError(err)
