@@ -2,6 +2,7 @@
 set -ex
 
 ./scripts/build-web.sh
+(cd web && ./bun run lint)
 
 go mod tidy
 go install ./...
