@@ -731,9 +731,39 @@ func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*Da
 	}, nil
 }
 
+// SchemaNotFoundError indicates the requested namespace does not exist. It
+// carries a friendly message listing the available schemas when they could be
+// enumerated. Callers can detect it with errors.As to distinguish a mistyped
+// schema (a client input error) from an upstream/connection failure.
+type SchemaNotFoundError struct {
+	// Schema is the requested namespace that was not found.
+	Schema string
+	// Available lists the schemas that would produce non-empty results. It is
+	// nil when enumeration failed (in which case ListErr is set).
+	Available []string
+	// ListErr is non-nil when listing the available schemas failed.
+	ListErr error
+}
+
+// Error implements the error interface.
+func (e *SchemaNotFoundError) Error() string {
+	switch {
+	case e.ListErr != nil:
+		return fmt.Sprintf("schema %q not found (failed to list available schemas: %v)", e.Schema, e.ListErr)
+	case len(e.Available) == 0:
+		return fmt.Sprintf("schema %q not found", e.Schema)
+	default:
+		return fmt.Sprintf("schema %q not found; available schemas: %s", e.Schema, strings.Join(e.Available, ", "))
+	}
+}
+
+// Unwrap exposes the underlying listing error (if any) for errors.Is/As.
+func (e *SchemaNotFoundError) Unwrap() error { return e.ListErr }
+
 // checkSchemaExists verifies the requested namespace exists, returning a
-// friendly error listing the available schemas if it does not. This keeps an
-// empty result for a mistyped --schema from looking like an empty database.
+// *SchemaNotFoundError listing the available schemas if it does not. This
+// keeps an empty result for a mistyped --schema from looking like an empty
+// database.
 func checkSchemaExists(ctx context.Context, conn *pgx.Conn, schema string) error {
 	var exists bool
 	if err := conn.QueryRow(ctx,
@@ -757,16 +787,13 @@ func checkSchemaExists(ctx context.Context, conn *pgx.Conn, schema string) error
 		 ORDER BY nspname`,
 	)
 	if err != nil {
-		return fmt.Errorf("schema %q not found (failed to list available schemas: %w)", schema, err)
+		return &SchemaNotFoundError{Schema: schema, ListErr: err}
 	}
 	available, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
-		return fmt.Errorf("schema %q not found (failed to list available schemas: %w)", schema, err)
+		return &SchemaNotFoundError{Schema: schema, ListErr: err}
 	}
-	if len(available) == 0 {
-		return fmt.Errorf("schema %q not found", schema)
-	}
-	return fmt.Errorf("schema %q not found; available schemas: %s", schema, strings.Join(available, ", "))
+	return &SchemaNotFoundError{Schema: schema, Available: available}
 }
 
 // connectToDatabase establishes a connection to the given database.

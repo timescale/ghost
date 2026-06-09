@@ -51,8 +51,15 @@ func (h *Handler) schemaHandler(w http.ResponseWriter, r *http.Request) {
 		IncludeInternal: includeInternal,
 	})
 	if err != nil {
-		logger.Error("Error fetching database schema", slog.Any("error", err))
-		writeError(w, httpStatusForFetchError(err), err, logger)
+		status := httpStatusForFetchError(err)
+		// Client errors (4xx) — e.g. a mistyped ?schema= — are expected and
+		// shouldn't be logged as server-side errors.
+		if status >= http.StatusInternalServerError {
+			logger.Error("Error fetching database schema", slog.Any("error", err))
+		} else {
+			logger.Warn("Could not fetch database schema", slog.Any("error", err))
+		}
+		writeError(w, status, err, logger)
 		return
 	}
 

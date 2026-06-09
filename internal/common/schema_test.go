@@ -1,6 +1,7 @@
 package common
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -2109,6 +2110,42 @@ TABLE: config
 			result := FormatSchema(tt.schema, tt.includeDefinitions)
 			if diff := cmp.Diff(tt.expected, result); diff != "" {
 				t.Errorf("FormatSchema() mismatch (-expected +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestSchemaNotFoundError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      *SchemaNotFoundError
+		expected string
+	}{
+		{
+			name:     "with available schemas",
+			err:      &SchemaNotFoundError{Schema: "typo", Available: []string{"public", "sales"}},
+			expected: `schema "typo" not found; available schemas: public, sales`,
+		},
+		{
+			name:     "no available schemas",
+			err:      &SchemaNotFoundError{Schema: "typo"},
+			expected: `schema "typo" not found`,
+		},
+		{
+			name:     "listing failed",
+			err:      &SchemaNotFoundError{Schema: "typo", ListErr: errors.New("boom")},
+			expected: `schema "typo" not found (failed to list available schemas: boom)`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if diff := cmp.Diff(tt.expected, tt.err.Error()); diff != "" {
+				t.Errorf("Error() mismatch (-expected +got):\n%s", diff)
+			}
+			// ListErr should be unwrappable for errors.Is/As chains.
+			if tt.err.ListErr != nil && !errors.Is(tt.err, tt.err.ListErr) {
+				t.Errorf("errors.Is did not match wrapped ListErr")
 			}
 		})
 	}
