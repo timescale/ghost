@@ -224,6 +224,10 @@ type State struct {
 	// persisted; the web client defaults a missing value to true.
 	SchemaPaneVisible  *bool               `json:"schemaPaneVisible,omitempty"`
 	SchemaTreeExpanded map[string][]string `json:"schemaTreeExpanded,omitempty"`
+	// ShowInternalObjects controls whether the schema browser includes system
+	// schemas and extension-owned objects. Defaults to false (a plain bool, not
+	// a pointer, since the web client also defaults a missing value to false).
+	ShowInternalObjects bool `json:"showInternalObjects,omitempty"`
 }
 
 // GetStateResponse is the response body of the GET /api/state endpoint.

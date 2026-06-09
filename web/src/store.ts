@@ -8,6 +8,7 @@ export interface PersistedState {
   schemaPaneWidth?: number;
   schemaPaneVisible?: boolean;
   schemaTreeExpanded?: Record<string, string[]>;
+  showInternalObjects?: boolean;
 }
 
 interface ServeStore {
@@ -18,6 +19,7 @@ interface ServeStore {
   schemaPaneWidth: number;
   schemaPaneVisible: boolean;
   schemaTreeExpanded: Record<string, string[]>;
+  showInternalObjects: boolean;
   hydrate: (saved: PersistedState) => void;
   setSelectedDatabaseId: (id: string | null) => void;
   setEditorSql: (sql: string) => void;
@@ -25,6 +27,7 @@ interface ServeStore {
   setEditorHeight: (height: number) => void;
   setSchemaPaneWidth: (width: number) => void;
   setSchemaPaneVisible: (visible: boolean) => void;
+  setShowInternalObjects: (show: boolean) => void;
   toggleSchemaNode: (databaseId: string, key: string) => void;
 }
 
@@ -60,6 +63,7 @@ function snapshotFor(store: ServeStore): PersistedState {
     schemaPaneWidth: store.schemaPaneWidth,
     schemaPaneVisible: store.schemaPaneVisible,
     schemaTreeExpanded: store.schemaTreeExpanded,
+    showInternalObjects: store.showInternalObjects,
   };
 }
 
@@ -75,6 +79,7 @@ export const useServeStore = create<ServeStore>((set, get) => ({
   schemaPaneWidth: DEFAULT_SCHEMA_PANE_WIDTH,
   schemaPaneVisible: true,
   schemaTreeExpanded: {},
+  showInternalObjects: false,
   hydrate: (saved) => {
     const selectedDatabaseId = getUrlDbId() ?? saved.selectedDatabaseId ?? null;
     if (selectedDatabaseId) setUrlDbId(selectedDatabaseId);
@@ -90,6 +95,7 @@ export const useServeStore = create<ServeStore>((set, get) => ({
       ),
       schemaPaneVisible: saved.schemaPaneVisible ?? true,
       schemaTreeExpanded: saved.schemaTreeExpanded ?? {},
+      showInternalObjects: saved.showInternalObjects ?? false,
     });
   },
   setSelectedDatabaseId: (id) => {
@@ -123,6 +129,10 @@ export const useServeStore = create<ServeStore>((set, get) => ({
   },
   setSchemaPaneVisible: (visible) => {
     set({ schemaPaneVisible: visible });
+    persist(snapshotFor(get()));
+  },
+  setShowInternalObjects: (show) => {
+    set({ showInternalObjects: show });
     persist(snapshotFor(get()));
   },
   toggleSchemaNode: (databaseId, key) => {
