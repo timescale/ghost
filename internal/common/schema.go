@@ -42,9 +42,11 @@ type TableSchema struct {
 	Triggers    []TriggerSchema       `json:"triggers,omitempty"`
 	// Partitions lists the direct child partitions of a partitioned table.
 	// Only populated for partitioned tables (relkind 'p'). Leaf partitions
-	// are hidden as standalone tables, but in a multi-level hierarchy an
-	// intermediate partitioned table is shown both as an entry here (under
-	// its parent) and as its own table carrying its sub-partitions.
+	// are normally hidden as standalone tables, but in a multi-level hierarchy
+	// an intermediate partitioned table is shown both as an entry here (under
+	// its parent) and as its own table carrying its sub-partitions. When a
+	// single schema is requested, a leaf whose parent lives in a different
+	// schema is shown as a standalone table instead (see leafPartitionExclusion).
 	Partitions []PartitionInfo `json:"partitions,omitempty"`
 	Hypertable *HypertableInfo `json:"hypertable,omitempty"`
 }
@@ -205,6 +207,46 @@ func (f schemaFilter) definitionExpr(expr string) string {
 		return expr
 	}
 	return "NULL"
+}
+
+// leafPartitionExclusion returns the WHERE clause that hides leaf partitions
+// (partition children that aren't themselves partitioned tables) as
+// standalone relations. Leaf partitions are normally surfaced under their
+// parent's Partitions list instead, so showing them as their own tables
+// would be redundant.
+//
+// That surfacing only works when the parent table is in scope to carry the
+// child. On the default browse every schema is in scope, so the parent is
+// always present and the leaf can always be suppressed. But when a single
+// schema is requested, a leaf whose immediate parent lives in a *different*
+// schema would otherwise vanish entirely: the parent is filtered out, so
+// nothing surfaces the child, and the child itself is suppressed here.
+// PostgreSQL allows a partition to live in a different schema than its
+// parent, so this is a real (if unusual) case.
+//
+// To keep such a leaf visible, only suppress leaves whose immediate parent
+// is also in the requested schema. The predicate matches exactly the
+// condition under which fetchPartitions can attach the leaf to its parent
+// (parent in tableIndex), so every leaf is shown exactly once: grouped
+// under its parent when the parent is in scope, or standalone otherwise.
+//
+// The schema name is referenced as $1, the same parameter onSchema binds;
+// PostgreSQL allows a positional parameter to appear multiple times.
+func (f schemaFilter) leafPartitionExclusion() string {
+	if f.schema == "" {
+		return ` AND NOT (c.relispartition AND c.relkind <> 'p')`
+	}
+	return ` AND NOT (
+        c.relispartition AND c.relkind <> 'p'
+        AND EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_inherits inh
+            JOIN pg_catalog.pg_class parent ON parent.oid = inh.inhparent
+            JOIN pg_catalog.pg_namespace pn ON pn.oid = parent.relnamespace
+            WHERE inh.inhrelid = c.oid
+              AND pn.nspname = $1
+        )
+    )`
 }
 
 // queryArgs returns the positional query arguments referenced by the SQL
@@ -428,12 +470,14 @@ JOIN pg_namespace n ON n.oid = c.relnamespace
 JOIN pg_attribute a ON a.attrelid = c.oid
 LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
 -- Include partitioned tables (relkind 'p') as tables. Leaf partitions are
--- hidden as standalone tables and surfaced under their parent's Partitions
--- list instead. Intermediate partitioned tables in a multi-level hierarchy
--- (relispartition children that are themselves partitioned, relkind 'p')
--- ARE kept, so their own sub-partitions remain reachable.
+-- normally hidden as standalone tables and surfaced under their parent's
+-- Partitions list instead (see leafPartitionExclusion, which makes an
+-- exception for cross-schema leaves when a single schema is requested).
+-- Intermediate partitioned tables in a multi-level hierarchy (relispartition
+-- children that are themselves partitioned, relkind 'p') ARE kept, so their
+-- own sub-partitions remain reachable.
 WHERE c.relkind IN ('r', 'p', 'v', 'm')
-  AND NOT (c.relispartition AND c.relkind <> 'p')
+  %s
   AND a.attnum > 0
   AND NOT a.attisdropped
   %s
@@ -442,6 +486,7 @@ WHERE c.relkind IN ('r', 'p', 'v', 'm')
   %s
 ORDER BY n.nspname, c.relname, a.attnum`,
 		f.definitionExpr("pg_get_viewdef(c.oid, true)"),
+		f.leafPartitionExclusion(),
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_class'::regclass", "c.oid"),
 		f.onAccessible(relationObject, "c.oid"),

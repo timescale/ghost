@@ -2,6 +2,7 @@ package common
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -2149,4 +2150,62 @@ func TestSchemaNotFoundError(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestLeafPartitionExclusion verifies the leaf-partition suppression clause
+// adapts to whether a single schema is requested. This guards the
+// cross-schema partition regression: when --schema is set, a leaf whose
+// parent lives in another schema must remain visible (shown standalone),
+// so the suppression is gated on the parent being in the requested schema.
+func TestLeafPartitionExclusion(t *testing.T) {
+	t.Run("default browse suppresses every leaf unconditionally", func(t *testing.T) {
+		clause := schemaFilter{}.leafPartitionExclusion()
+		if want := ` AND NOT (c.relispartition AND c.relkind <> 'p')`; clause != want {
+			t.Errorf("clause = %q, want %q", clause, want)
+		}
+	})
+
+	t.Run("schema-scoped only suppresses leaves whose parent is in scope", func(t *testing.T) {
+		clause := schemaFilter{schema: "archive"}.leafPartitionExclusion()
+		// Still gated on relispartition leaves, but now only when the
+		// immediate parent shares the requested schema ($1).
+		for _, want := range []string{
+			"c.relispartition AND c.relkind <> 'p'",
+			"pg_catalog.pg_inherits",
+			"inh.inhrelid = c.oid",
+			"pn.nspname = $1",
+		} {
+			if !strings.Contains(clause, want) {
+				t.Errorf("schema-scoped clause missing %q:\n%s", want, clause)
+			}
+		}
+	})
+
+	t.Run("includeInternal does not affect the clause; only schema does", func(t *testing.T) {
+		if got := (schemaFilter{includeInternal: true}).leafPartitionExclusion(); strings.Contains(got, "$1") {
+			t.Errorf("default-browse clause unexpectedly references $1:\n%s", got)
+		}
+		if got := (schemaFilter{schema: "archive", includeInternal: true}).leafPartitionExclusion(); !strings.Contains(got, "$1") {
+			t.Errorf("schema-scoped clause should reference $1:\n%s", got)
+		}
+	})
+
+	t.Run("clause is spliced into the relations query, not the literal", func(t *testing.T) {
+		// The default-browse query keeps the terse literal form.
+		def := buildRelationsAndColumnsQuery(schemaFilter{})
+		if !strings.Contains(def, ` AND NOT (c.relispartition AND c.relkind <> 'p')`) {
+			t.Errorf("default query missing terse leaf exclusion:\n%s", def)
+		}
+		if strings.Contains(def, "pg_catalog.pg_inherits") {
+			t.Errorf("default query should not reference the cross-schema EXISTS:\n%s", def)
+		}
+		// The schema-scoped query uses the cross-schema-aware form.
+		scoped := buildRelationsAndColumnsQuery(schemaFilter{schema: "archive"})
+		if !strings.Contains(scoped, "pg_catalog.pg_inherits") {
+			t.Errorf("schema-scoped query missing cross-schema EXISTS:\n%s", scoped)
+		}
+		if strings.Contains(scoped, "%!") {
+			t.Errorf("schema-scoped query has a format error:\n%s", scoped)
+		}
+	})
 }
