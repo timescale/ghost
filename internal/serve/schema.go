@@ -2,6 +2,7 @@ package serve
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -9,6 +10,20 @@ import (
 	"github.com/timescale/ghost/internal/common"
 	"github.com/timescale/ghost/internal/log"
 )
+
+// parseBoolQueryParam reads a boolean query param. A missing or empty value
+// returns defaultValue; a present but unparseable value returns an error.
+func parseBoolQueryParam(r *http.Request, name string, defaultValue bool) (bool, error) {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return defaultValue, nil
+	}
+	parsed, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean", name)
+	}
+	return parsed, nil
+}
 
 // schemaHandler serves GET /api/schema?databaseId=…&schema=…&internal=true&definitions=true.
 // Returns the database schema as JSON. Opens a short-lived pgx connection
@@ -26,24 +41,16 @@ func (h *Handler) schemaHandler(w http.ResponseWriter, r *http.Request) {
 
 	schemaName := r.URL.Query().Get("schema")
 
-	includeInternal := false
-	if v := r.URL.Query().Get("internal"); v != "" {
-		parsed, err := strconv.ParseBool(v)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, errors.New("internal must be a boolean"), logger)
-			return
-		}
-		includeInternal = parsed
+	includeInternal, err := parseBoolQueryParam(r, "internal", false)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err, logger)
+		return
 	}
 
-	includeDefinitions := false
-	if v := r.URL.Query().Get("definitions"); v != "" {
-		parsed, err := strconv.ParseBool(v)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, errors.New("definitions must be a boolean"), logger)
-			return
-		}
-		includeDefinitions = parsed
+	includeDefinitions, err := parseBoolQueryParam(r, "definitions", false)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err, logger)
+		return
 	}
 
 	client, projectID, err := h.loadClient(ctx)
