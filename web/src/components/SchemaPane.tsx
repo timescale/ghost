@@ -5,7 +5,7 @@ import type { DatabaseSchema } from '../schema';
 import { useServeStore } from '../store';
 import { debounce } from '../util/debounce';
 import { Icon } from './Icon';
-import { SchemaTree } from './SchemaTree';
+import { SchemaTree } from './schema-tree/SchemaTree';
 
 interface Props {
   databaseId: string;
