@@ -1,4 +1,10 @@
-import { type ReactNode, useEffect, useRef } from 'react';
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 export interface MenuItem {
   key: string;
@@ -21,6 +27,23 @@ export function ContextMenu({ state, onClose }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+
+  // Open at the cursor, then clamp into the viewport once we can measure the
+  // rendered menu. Without this, right-clicking near the bottom or right edge
+  // would push menu items off-screen with no way to reach them. useLayoutEffect
+  // runs before paint, so the clamped position is applied without a flicker.
+  const [pos, setPos] = useState({ top: state.y, left: state.x });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const margin = 8;
+    const maxLeft = window.innerWidth - el.offsetWidth - margin;
+    const maxTop = window.innerHeight - el.offsetHeight - margin;
+    setPos({
+      left: Math.max(margin, Math.min(state.x, maxLeft)),
+      top: Math.max(margin, Math.min(state.y, maxTop)),
+    });
+  }, [state.x, state.y]);
 
   useEffect(() => {
     const onDown = (e: globalThis.MouseEvent) => {
@@ -51,7 +74,7 @@ export function ContextMenu({ state, onClose }: Props) {
       ref={ref}
       role="menu"
       className="fixed z-50 min-w-[200px] rounded border border-slate-200 bg-white py-1 text-sm shadow-lg"
-      style={{ top: state.y, left: state.x }}
+      style={{ top: pos.top, left: pos.left }}
     >
       {state.items.map((item) => (
         <button
