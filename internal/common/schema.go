@@ -1309,15 +1309,15 @@ func fetchEnums(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBu
 		return err
 	}
 
+	// The query orders by (nspname, typname) and rows are appended in order,
+	// so each namespace's Enums slice is already name-sorted (like
+	// fetchRoutines, no Go-side sort is needed).
 	for _, row := range results {
 		ns := b.namespace(row.SchemaName)
 		ns.Enums = append(ns.Enums, EnumSchema{
 			Name:   row.EnumName,
 			Values: row.EnumValues,
 		})
-	}
-	for _, ns := range b.namespaces {
-		sort.Slice(ns.Enums, func(i, j int) bool { return ns.Enums[i].Name < ns.Enums[j].Name })
 	}
 	return nil
 }
