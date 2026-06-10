@@ -44,10 +44,10 @@ func TestInit_NonInteractiveAllUnconfigured(t *testing.T) {
 		t.Fatalf("expected error, got nil\nstderr: %s", result.stderr)
 	}
 	expected := `ghost init requires an interactive terminal and cannot run here. To complete setup non-interactively, run these commands in order:
-  ghost init path        # add ghost to your PATH
-  ghost login            # authenticate (or use --api-key)
-  ghost mcp install all  # install MCP server in all detected clients (or pass a specific client name)
-  ghost init completion  # install shell completions in your shell rc file
+  ghost init path         # add ghost to your PATH
+  ghost login             # authenticate (or use --api-key)
+  ghost mcp install all   # install MCP server in all detected clients (or pass a specific client name)
+  ghost init completions  # install shell completions in your shell rc file
 Or pass --skip-if-configured to exit cleanly when everything is already set up`
 	assertOutput(t, result.err.Error(), expected)
 }
@@ -109,7 +109,7 @@ func TestInitCompletionSubcommandNonInteractive(t *testing.T) {
 		t.Fatalf("getGhostExecutablePath: %v", err)
 	}
 
-	result := runCommand(t, []string{"init", "completion"}, nil,
+	result := runCommand(t, []string{"init", "completions"}, nil,
 		withEnv("HOME", home),
 		withEnv("SHELL", "/bin/bash"),
 		withEnv("ZDOTDIR", ""),

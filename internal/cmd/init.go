@@ -87,7 +87,8 @@ func buildInitPathCmd() *cobra.Command {
 
 func buildInitCompletionCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:               "completion",
+		Use:               "completions",
+		Aliases:           []string{"completion"},
 		Short:             "Install shell completions",
 		Long:              `Install Ghost shell completions by appending a sourcing line to your shell rc file. This command does not prompt for confirmation, so it can be used from scripts.`,
 		Args:              cobra.NoArgs,
@@ -215,7 +216,7 @@ var nonInteractiveCommandHints = []struct {
 	{stepPATH, "ghost init path", "add ghost to your PATH"},
 	{stepLogin, "ghost login", "authenticate (or use --api-key)"},
 	{stepMCP, "ghost mcp install all", "install MCP server in all detected clients (or pass a specific client name)"},
-	{stepCompletions, "ghost init completion", "install shell completions in your shell rc file"},
+	{stepCompletions, "ghost init completions", "install shell completions in your shell rc file"},
 }
 
 // nonInteractiveError builds the error returned when `ghost init` is invoked

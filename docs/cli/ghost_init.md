@@ -35,5 +35,5 @@ ghost init [flags]
 ### SEE ALSO
 
 * [ghost](ghost.md)	 - CLI for managing Postgres databases
-* [ghost init completion](ghost_init_completion.md)	 - Install shell completions
+* [ghost init completions](ghost_init_completions.md)	 - Install shell completions
 * [ghost init path](ghost_init_path.md)	 - Add Ghost to your PATH

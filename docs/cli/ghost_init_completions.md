@@ -1,10 +1,10 @@
 ---
-title: "ghost init completion"
-slug: "ghost_init_completion"
-description: "CLI reference for ghost init completion"
+title: "ghost init completions"
+slug: "ghost_init_completions"
+description: "CLI reference for ghost init completions"
 ---
 
-## ghost init completion
+## ghost init completions
 
 Install shell completions
 
@@ -13,13 +13,13 @@ Install shell completions
 Install Ghost shell completions by appending a sourcing line to your shell rc file. This command does not prompt for confirmation, so it can be used from scripts.
 
 ```
-ghost init completion [flags]
+ghost init completions [flags]
 ```
 
 ### Options
 
 ```
-  -h, --help   help for completion
+  -h, --help   help for completions
 ```
 
 ### Options inherited from parent commands
