@@ -741,9 +741,15 @@ func buildTriggersQuery(f schemaFilter) string {
 	// one-row-per-manipulation shape the tree/format code expects (mirroring
 	// information_schema's layout), we expand each trigger across the possible
 	// events via a lateral VALUES join, keeping only the bits that are set.
-	// The action statement (e.g. "EXECUTE FUNCTION foo()") is sliced out of
+	// The action statement (e.g. "EXECUTE FUNCTION foo()") is extracted from
 	// pg_get_triggerdef, which is the only catalog source for the formatted
-	// call including its arguments.
+	// call including its arguments. The substring pattern prefixes a greedy
+	// .* and captures the trailing EXECUTE clause in a parenthesized group:
+	// substring returns the capture group, and the greedy prefix anchors it
+	// to the LAST occurrence of "EXECUTE FUNCTION/PROCEDURE". This matters
+	// because that literal text can also appear earlier in the definition
+	// (e.g. inside a WHEN (...) string literal or a trigger argument), and a
+	// leftmost match would wrongly include the intervening text.
 	return fmt.Sprintf(`
 SELECT
     n.nspname AS schema_name,
@@ -757,7 +763,7 @@ SELECT
     ev.manipulation AS manipulation,
     substring(
         pg_catalog.pg_get_triggerdef(tg.oid)
-        FROM 'EXECUTE (?:FUNCTION|PROCEDURE) .*$'
+        FROM '.*(EXECUTE (?:FUNCTION|PROCEDURE) .*)$'
     ) AS action_statement
 FROM pg_catalog.pg_trigger tg
 JOIN pg_catalog.pg_class c ON c.oid = tg.tgrelid
