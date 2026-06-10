@@ -889,8 +889,13 @@ func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*Da
 type SchemaNotFoundError struct {
 	// Schema is the requested namespace that was not found.
 	Schema string
-	// Available lists the schemas that would produce non-empty results. It is
-	// nil when enumeration failed (in which case ListErr is set).
+	// Available lists the schemas the connecting user can access (i.e. holds
+	// USAGE on), minus the internal namespaces a default browse hides unless
+	// --internal is set. It is a best-effort suggestion list, not a guarantee
+	// that each schema would produce non-empty results (a schema whose
+	// contents are entirely extension-owned still renders empty on a default
+	// browse). It is nil when enumeration failed (in which case ListErr is
+	// set).
 	Available []string
 	// ListErr is non-nil when listing the available schemas failed.
 	ListErr error
@@ -934,12 +939,19 @@ func checkSchemaExists(ctx context.Context, conn *pgx.Conn, schema string, inclu
 		return nil
 	}
 
-	// The exclusions mirror schemaFilter.onSchema's default-browse filtering.
-	// With --internal we drop them so internal namespaces are suggested too.
-	query := `SELECT nspname FROM pg_namespace ORDER BY nspname`
+	// Only suggest schemas the connecting user can actually access: a schema
+	// they have no USAGE privilege on would yield an empty browse, so
+	// pointing them at it is unhelpful. The name exclusions additionally
+	// mirror schemaFilter.onSchema's default-browse filtering; with --internal
+	// we drop them so internal namespaces are suggested too (but still gate on
+	// USAGE).
+	query := `SELECT nspname FROM pg_namespace
+	 WHERE pg_catalog.has_schema_privilege(current_user, oid, 'USAGE')
+	 ORDER BY nspname`
 	if !includeInternal {
 		query = `SELECT nspname FROM pg_namespace
-		 WHERE nspname !~ '^pg_'
+		 WHERE pg_catalog.has_schema_privilege(current_user, oid, 'USAGE')
+		   AND nspname !~ '^pg_'
 		   AND nspname <> 'information_schema'
 		   AND nspname !~ '^_?timescaledb_'
 		   AND nspname <> 'toolkit_experimental'
