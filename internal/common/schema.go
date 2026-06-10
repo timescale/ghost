@@ -230,23 +230,29 @@ func (f schemaFilter) definitionExpr(expr string) string {
 // (parent in tableIndex), so every leaf is shown exactly once: grouped
 // under its parent when the parent is in scope, or standalone otherwise.
 //
+// The relation's pg_class row is referenced via the relAlias argument so
+// this clause can be spliced into any query regardless of how it aliases
+// pg_class (e.g. "c" in the relations query, "t" in the indexes query).
+// Both query builders must use the same predicate so a cross-schema leaf
+// that is surfaced as a standalone table also has its indexes listed.
+//
 // The schema name is referenced as $1, the same parameter onSchema binds;
 // PostgreSQL allows a positional parameter to appear multiple times.
-func (f schemaFilter) leafPartitionExclusion() string {
+func (f schemaFilter) leafPartitionExclusion(relAlias string) string {
 	if f.schema == "" {
-		return ` AND NOT (c.relispartition AND c.relkind <> 'p')`
+		return fmt.Sprintf(` AND NOT (%[1]s.relispartition AND %[1]s.relkind <> 'p')`, relAlias)
 	}
-	return ` AND NOT (
-        c.relispartition AND c.relkind <> 'p'
+	return fmt.Sprintf(` AND NOT (
+        %[1]s.relispartition AND %[1]s.relkind <> 'p'
         AND EXISTS (
             SELECT 1
             FROM pg_catalog.pg_inherits inh
             JOIN pg_catalog.pg_class parent ON parent.oid = inh.inhparent
             JOIN pg_catalog.pg_namespace pn ON pn.oid = parent.relnamespace
-            WHERE inh.inhrelid = c.oid
+            WHERE inh.inhrelid = %[1]s.oid
               AND pn.nspname = $1
         )
-    )`
+    )`, relAlias)
 }
 
 // queryArgs returns the positional query arguments referenced by the SQL
@@ -486,7 +492,7 @@ WHERE c.relkind IN ('r', 'p', 'v', 'm')
   %s
 ORDER BY n.nspname, c.relname, a.attnum`,
 		f.definitionExpr("pg_get_viewdef(c.oid, true)"),
-		f.leafPartitionExclusion(),
+		f.leafPartitionExclusion("c"),
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_class'::regclass", "c.oid"),
 		f.onAccessible(relationObject, "c.oid"),
@@ -566,8 +572,11 @@ JOIN pg_class i ON i.oid = ix.indexrelid
 JOIN pg_namespace n ON n.oid = t.relnamespace
 WHERE t.relkind IN ('r', 'p', 'm')
   -- Mirror the relations query: hide leaf partitions but keep intermediate
-  -- partitioned tables so their indexes stay visible.
-  AND NOT (t.relispartition AND t.relkind <> 'p')
+  -- partitioned tables so their indexes stay visible. Use the same
+  -- schema-aware exclusion (leafPartitionExclusion) so a cross-schema leaf
+  -- that the relations query surfaces standalone also has its indexes
+  -- listed here, rather than being silently dropped.
+  %s
   -- Exclude indexes that back a constraint (PRIMARY KEY / UNIQUE /
   -- EXCLUDE). Those are surfaced via the constraints query, so listing
   -- them here as well would duplicate them.
@@ -580,6 +589,7 @@ WHERE t.relkind IN ('r', 'p', 'm')
   %s
   %s
 ORDER BY n.nspname, t.relname, i.relname`,
+		f.leafPartitionExclusion("t"),
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_class'::regclass", "t.oid"),
 		f.onAccessible(relationObject, "t.oid"),

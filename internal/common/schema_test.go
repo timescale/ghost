@@ -2159,14 +2159,35 @@ func TestSchemaNotFoundError(t *testing.T) {
 // so the suppression is gated on the parent being in the requested schema.
 func TestLeafPartitionExclusion(t *testing.T) {
 	t.Run("default browse suppresses every leaf unconditionally", func(t *testing.T) {
-		clause := schemaFilter{}.leafPartitionExclusion()
+		clause := schemaFilter{}.leafPartitionExclusion("c")
 		if want := ` AND NOT (c.relispartition AND c.relkind <> 'p')`; clause != want {
 			t.Errorf("clause = %q, want %q", clause, want)
 		}
 	})
 
+	t.Run("alias parameter is threaded through the predicate", func(t *testing.T) {
+		// The indexes query aliases pg_class as "t", so the clause must
+		// reference t.* rather than the relations query's "c".
+		default_ := schemaFilter{}.leafPartitionExclusion("t")
+		if want := ` AND NOT (t.relispartition AND t.relkind <> 'p')`; default_ != want {
+			t.Errorf("clause = %q, want %q", default_, want)
+		}
+		scoped := schemaFilter{schema: "archive"}.leafPartitionExclusion("t")
+		for _, want := range []string{
+			"t.relispartition AND t.relkind <> 'p'",
+			"inh.inhrelid = t.oid",
+		} {
+			if !strings.Contains(scoped, want) {
+				t.Errorf("aliased schema-scoped clause missing %q:\n%s", want, scoped)
+			}
+		}
+		if strings.Contains(scoped, "c.relispartition") || strings.Contains(scoped, "= c.oid") {
+			t.Errorf("aliased clause leaked the default \"c\" alias:\n%s", scoped)
+		}
+	})
+
 	t.Run("schema-scoped only suppresses leaves whose parent is in scope", func(t *testing.T) {
-		clause := schemaFilter{schema: "archive"}.leafPartitionExclusion()
+		clause := schemaFilter{schema: "archive"}.leafPartitionExclusion("c")
 		// Still gated on relispartition leaves, but now only when the
 		// immediate parent shares the requested schema ($1).
 		for _, want := range []string{
@@ -2182,10 +2203,10 @@ func TestLeafPartitionExclusion(t *testing.T) {
 	})
 
 	t.Run("includeInternal does not affect the clause; only schema does", func(t *testing.T) {
-		if got := (schemaFilter{includeInternal: true}).leafPartitionExclusion(); strings.Contains(got, "$1") {
+		if got := (schemaFilter{includeInternal: true}).leafPartitionExclusion("c"); strings.Contains(got, "$1") {
 			t.Errorf("default-browse clause unexpectedly references $1:\n%s", got)
 		}
-		if got := (schemaFilter{schema: "archive", includeInternal: true}).leafPartitionExclusion(); !strings.Contains(got, "$1") {
+		if got := (schemaFilter{schema: "archive", includeInternal: true}).leafPartitionExclusion("c"); !strings.Contains(got, "$1") {
 			t.Errorf("schema-scoped clause should reference $1:\n%s", got)
 		}
 	})
@@ -2206,6 +2227,32 @@ func TestLeafPartitionExclusion(t *testing.T) {
 		}
 		if strings.Contains(scoped, "%!") {
 			t.Errorf("schema-scoped query has a format error:\n%s", scoped)
+		}
+	})
+
+	t.Run("indexes query uses the same schema-aware leaf exclusion", func(t *testing.T) {
+		// Regression: a cross-schema leaf partition that the relations query
+		// surfaces as a standalone table must also have its indexes listed.
+		// The indexes query aliases pg_class as "t", so it must exclude
+		// leaves via the same schema-aware predicate (not the unconditional
+		// one) and reference t.* rather than c.*.
+		def := buildIndexesQuery(schemaFilter{})
+		if !strings.Contains(def, ` AND NOT (t.relispartition AND t.relkind <> 'p')`) {
+			t.Errorf("default indexes query missing terse leaf exclusion:\n%s", def)
+		}
+		if strings.Contains(def, "pg_catalog.pg_inherits") {
+			t.Errorf("default indexes query should not reference the cross-schema EXISTS:\n%s", def)
+		}
+
+		scoped := buildIndexesQuery(schemaFilter{schema: "archive"})
+		if !strings.Contains(scoped, "pg_catalog.pg_inherits") {
+			t.Errorf("schema-scoped indexes query missing cross-schema EXISTS:\n%s", scoped)
+		}
+		if !strings.Contains(scoped, "inh.inhrelid = t.oid") {
+			t.Errorf("schema-scoped indexes query should match on the t alias:\n%s", scoped)
+		}
+		if strings.Contains(scoped, "%!") {
+			t.Errorf("schema-scoped indexes query has a format error:\n%s", scoped)
 		}
 	})
 }
