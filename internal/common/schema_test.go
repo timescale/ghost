@@ -2224,6 +2224,7 @@ func TestLeafPartitionExclusion(t *testing.T) {
 		clause := schemaFilter{}.leafPartitionExclusion("c")
 		for _, want := range []string{
 			"dep.objid = parent.oid",
+			"pg_catalog.has_schema_privilege(current_user, pn.oid, 'USAGE')",
 			"pg_catalog.has_table_privilege(current_user, parent.oid",
 			"r.oid = parent.relowner",
 		} {
@@ -2237,7 +2238,7 @@ func TestLeafPartitionExclusion(t *testing.T) {
 		// With --internal there are no exclusions, so the EXISTS reduces to
 		// "the leaf has a parent partitioned table" and every leaf is hidden.
 		clause := schemaFilter{includeInternal: true}.leafPartitionExclusion("c")
-		for _, unwanted := range []string{"$1", "pn.nspname", "has_table_privilege", "rolsuper"} {
+		for _, unwanted := range []string{"$1", "pn.nspname", "has_schema_privilege", "has_table_privilege", "rolsuper"} {
 			if strings.Contains(clause, unwanted) {
 				t.Errorf("includeInternal clause should not reference %q:\n%s", unwanted, clause)
 			}
@@ -2248,6 +2249,11 @@ func TestLeafPartitionExclusion(t *testing.T) {
 		clause := schemaFilter{schema: "archive"}.leafPartitionExclusion("c")
 		if !strings.Contains(clause, "pn.nspname = $1") {
 			t.Errorf("schema-scoped clause should bind the parent schema to $1:\n%s", clause)
+		}
+		// Unlike onUserOwned, the schema-USAGE check still applies to an
+		// explicit --schema request, matching checkSchemaExists.
+		if !strings.Contains(clause, "pg_catalog.has_schema_privilege(current_user, pn.oid, 'USAGE')") {
+			t.Errorf("schema-scoped clause should gate the parent on schema USAGE:\n%s", clause)
 		}
 		// onUserOwned is dropped for an explicit --schema, like onSchema's
 		// name exclusions, so a leaf in a superuser-owned namespace stays

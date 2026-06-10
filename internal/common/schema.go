@@ -258,10 +258,12 @@ func (f schemaFilter) leafPartitionExclusion(relAlias string) string {
               %[3]s
               %[4]s
               %[5]s
+              %[6]s
         )
     )`,
 		relAlias,
 		f.onSchema("pn.nspname"),
+		f.onSchemaAccessible("pn.oid"),
 		f.onExtensionObject("'pg_class'::regclass", "parent.oid"),
 		f.onAccessible(relationObject, "parent.oid"),
 		f.onUserOwned("parent.relowner"),
@@ -368,6 +370,24 @@ func (f schemaFilter) onAccessible(kind objectKind, oidCol string) string {
 	default:
 		return fmt.Sprintf(" AND pg_catalog.has_table_privilege(current_user, %s, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')", oidCol)
 	}
+}
+
+// onSchemaAccessible returns a clause that keeps only objects whose
+// containing schema the current user has USAGE on. nsOidCol is the SQL
+// expression for the namespace's OID (e.g. `n.oid`, `pn.oid`). Object-level
+// grants alone are not enough to reference an object: without USAGE on the
+// schema every reference fails with "permission denied for schema", so such
+// objects are not accessible and must not be listed. This mirrors
+// checkSchemaExists, whose suggestion query gates on the same privilege.
+// Unlike onUserOwned, this still applies when an explicit --schema is
+// requested, keeping the two checks consistent. When IncludeInternal is
+// set, no clause is emitted so the full catalog is returned (matching
+// onAccessible).
+func (f schemaFilter) onSchemaAccessible(nsOidCol string) string {
+	if f.includeInternal {
+		return ""
+	}
+	return fmt.Sprintf(" AND pg_catalog.has_schema_privilege(current_user, %s, 'USAGE')", nsOidCol)
 }
 
 // onUserOwned returns a clause that excludes objects owned by a superuser
@@ -525,9 +545,11 @@ WHERE c.relkind IN ('r', 'p', 'v', 'm')
   %s
   %s
   %s
+  %s
 ORDER BY n.nspname, c.relname, a.attnum`,
 		f.leafPartitionExclusion("c"),
 		f.onSchema("n.nspname"),
+		f.onSchemaAccessible("n.oid"),
 		f.onExtensionObject("'pg_class'::regclass", "c.oid"),
 		f.onAccessible(relationObject, "c.oid"),
 		f.onUserOwned("c.relowner"),
@@ -554,8 +576,10 @@ WHERE c.relkind IN ('v', 'm')
   %s
   %s
   %s
+  %s
 ORDER BY n.nspname, c.relname`,
 		f.onSchema("n.nspname"),
+		f.onSchemaAccessible("n.oid"),
 		f.onExtensionObject("'pg_class'::regclass", "c.oid"),
 		f.onAccessible(relationObject, "c.oid"),
 		f.onUserOwned("c.relowner"),
@@ -599,6 +623,7 @@ WHERE con.contype IN ('p', 'u', 'f', 'c', 'x')
   %s
   %s
   %s
+  %s
 ORDER BY n.nspname, c.relname, con.contype, con.conname`,
 		// Skip constraints on leaf partitions whose parent is in scope: those
 		// constraints are clones of the parent's and would be discarded anyway
@@ -606,6 +631,7 @@ ORDER BY n.nspname, c.relname, con.contype, con.conname`,
 		// same predicate keeps a cross-schema standalone leaf's constraints.
 		f.leafPartitionExclusion("c"),
 		f.onSchema("n.nspname"),
+		f.onSchemaAccessible("n.oid"),
 		f.onExtensionObject("'pg_class'::regclass", "c.oid"),
 		f.onAccessible(relationObject, "c.oid"),
 		f.onUserOwned("c.relowner"),
@@ -656,6 +682,7 @@ WHERE t.relkind IN ('r', 'p', 'm')
   %s
   %s
   %s
+  %s
 ORDER BY n.nspname, t.relname, i.relname`,
 		// Gate the full CREATE INDEX text behind --definitions, like views and
 		// routines: it can embed expression/partial-index SQL the caller hasn't
@@ -664,6 +691,7 @@ ORDER BY n.nspname, t.relname, i.relname`,
 		f.definitionExpr("pg_get_indexdef(ix.indexrelid)"),
 		f.leafPartitionExclusion("t"),
 		f.onSchema("n.nspname"),
+		f.onSchemaAccessible("n.oid"),
 		f.onExtensionObject("'pg_class'::regclass", "t.oid"),
 		f.onAccessible(relationObject, "t.oid"),
 		f.onUserOwned("t.relowner"),
@@ -684,9 +712,11 @@ WHERE TRUE
   %s
   %s
   %s
+  %s
 GROUP BY n.nspname, t.typname
 ORDER BY n.nspname, t.typname`,
 		f.onSchema("n.nspname"),
+		f.onSchemaAccessible("n.oid"),
 		f.onExtensionObject("'pg_type'::regclass", "t.oid"),
 		f.onAccessible(typeObject, "t.oid"),
 		f.onUserOwned("t.typowner"),
@@ -742,6 +772,7 @@ WHERE NOT tg.tgisinternal
   %s
   %s
   %s
+  %s
 ORDER BY schema_name, table_name, trigger_name, manipulation`,
 		// Skip triggers on leaf partitions whose parent is in scope: those are
 		// clones of the parent's triggers and would be discarded anyway
@@ -749,6 +780,7 @@ ORDER BY schema_name, table_name, trigger_name, manipulation`,
 		// predicate keeps a cross-schema standalone leaf's triggers.
 		f.leafPartitionExclusion("c"),
 		f.onSchema("n.nspname"),
+		f.onSchemaAccessible("n.oid"),
 		f.onExtensionObject("'pg_trigger'::regclass", "tg.oid"),
 		f.onAccessible(relationObject, "c.oid"),
 		f.onUserOwned("c.relowner"),
@@ -775,9 +807,11 @@ WHERE p.prokind IN ('f', 'p')
   %s
   %s
   %s
+  %s
 ORDER BY n.nspname, p.proname, routine_args`,
 		f.definitionExpr("pg_get_functiondef(p.oid)"),
 		f.onSchema("n.nspname"),
+		f.onSchemaAccessible("n.oid"),
 		f.onExtensionObject("'pg_proc'::regclass", "p.oid"),
 		f.onAccessible(routineObject, "p.oid"),
 		f.onUserOwned("p.proowner"),
