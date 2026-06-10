@@ -12,8 +12,9 @@ interface SplitPaneProps {
 
 // SplitPane lays out two panes side-by-side with a draggable 4px divider.
 // The left pane width is controlled by the parent; the divider drag emits
-// onLeftWidthChange. Hiding the left pane collapses it (and the divider) out
-// of layout entirely without unmounting children.
+// onLeftWidthChange. Hiding the left pane unmounts it (and the divider) and
+// removes it from layout entirely; re-showing remounts the children, so any
+// transient state they hold (scroll position, search input) is not preserved.
 export function SplitPane({
   leftWidth,
   minLeftWidth,
