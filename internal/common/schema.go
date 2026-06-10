@@ -786,7 +786,7 @@ func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*Da
 	defer conn.Close(context.Background())
 
 	if args.Schema != "" {
-		if err := checkSchemaExists(ctx, conn, args.Schema); err != nil {
+		if err := checkSchemaExists(ctx, conn, args.Schema, args.IncludeInternal); err != nil {
 			return nil, err
 		}
 	}
@@ -867,7 +867,14 @@ func (e *SchemaNotFoundError) Unwrap() error { return e.ListErr }
 // *SchemaNotFoundError listing the available schemas if it does not. This
 // keeps an empty result for a mistyped --schema from looking like an empty
 // database.
-func checkSchemaExists(ctx context.Context, conn *pgx.Conn, schema string) error {
+//
+// includeInternal mirrors the caller's --internal flag: an explicit --schema
+// request can legitimately target a system/internal namespace (onSchema drops
+// the standard exclusions for explicit schemas), so when --internal is set the
+// suggestion list includes those schemas too. When it is unset we suggest only
+// the user-facing schemas that a default browse would surface, to avoid
+// drowning the hint in catalog/TimescaleDB-internal namespaces.
+func checkSchemaExists(ctx context.Context, conn *pgx.Conn, schema string, includeInternal bool) error {
 	var exists bool
 	if err := conn.QueryRow(ctx,
 		`SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1)`,
@@ -879,16 +886,18 @@ func checkSchemaExists(ctx context.Context, conn *pgx.Conn, schema string) error
 		return nil
 	}
 
-	// Keep these exclusions in sync with schemaFilter.onSchema so the
-	// suggested schemas are exactly those that produce non-empty results.
-	rows, err := conn.Query(ctx,
-		`SELECT nspname FROM pg_namespace
+	// The exclusions mirror schemaFilter.onSchema's default-browse filtering.
+	// With --internal we drop them so internal namespaces are suggested too.
+	query := `SELECT nspname FROM pg_namespace ORDER BY nspname`
+	if !includeInternal {
+		query = `SELECT nspname FROM pg_namespace
 		 WHERE nspname !~ '^pg_'
 		   AND nspname <> 'information_schema'
 		   AND nspname !~ '^_?timescaledb_'
 		   AND nspname <> 'toolkit_experimental'
-		 ORDER BY nspname`,
-	)
+		 ORDER BY nspname`
+	}
+	rows, err := conn.Query(ctx, query)
 	if err != nil {
 		return &SchemaNotFoundError{Schema: schema, ListErr: err}
 	}
