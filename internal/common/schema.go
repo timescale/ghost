@@ -374,6 +374,14 @@ func (f schemaFilter) onAccessible(kind objectKind, oidCol string) string {
 // exclusions, it is dropped when an explicit --schema is requested (so
 // `--schema pg_catalog`, whose objects are all superuser-owned, still
 // returns results) or when IncludeInternal is set.
+//
+// Objects owned by the connecting user are never excluded, even if that user
+// happens to be a superuser. On Tiger Cloud the connecting role is never a
+// superuser so this is a no-op, but on self-hosted/dev databases the user may
+// connect as a superuser; without this guard every object they created would
+// be treated as a platform-managed helper and a default browse would return
+// nothing. Helpers owned by *other* superusers (e.g. `postgres`) are still
+// excluded.
 func (f schemaFilter) onUserOwned(ownerCol string) string {
 	if f.includeInternal || f.schema != "" {
 		return ""
@@ -383,6 +391,7 @@ func (f schemaFilter) onUserOwned(ownerCol string) string {
             SELECT 1 FROM pg_catalog.pg_roles r
             WHERE r.oid = %s
               AND r.rolsuper
+              AND r.rolname <> current_user
         )`, ownerCol)
 }
 
