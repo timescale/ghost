@@ -216,32 +216,36 @@ func (f schemaFilter) definitionExpr(expr string) string {
 // would be redundant.
 //
 // That surfacing only works when the parent table is in scope to carry the
-// child. On the default browse every schema is in scope, so the parent is
-// always present and the leaf can always be suppressed. But when a single
-// schema is requested, a leaf whose immediate parent lives in a *different*
-// schema would otherwise vanish entirely: the parent is filtered out, so
-// nothing surfaces the child, and the child itself is suppressed here.
-// PostgreSQL allows a partition to live in a different schema than its
-// parent, so this is a real (if unusual) case.
+// child (i.e. the parent passes every filter and lands in tableIndex). A leaf
+// whose parent is filtered out would otherwise vanish entirely: the parent is
+// absent so nothing surfaces the child, and the child itself is suppressed
+// here. A parent can be filtered out for several reasons:
 //
-// To keep such a leaf visible, only suppress leaves whose immediate parent
-// is also in the requested schema. The predicate matches exactly the
+//   - it lives in a different schema than the leaf (PostgreSQL allows this),
+//     and that schema is excluded — either by an explicit --schema request or
+//     by the default-browse name exclusions (pg_*, information_schema,
+//     timescaledb internals, toolkit_experimental);
+//   - it is extension-owned, inaccessible to the current user, or
+//     superuser-owned (the same onExtensionObject/onAccessible/onUserOwned
+//     filters the relations query applies to the leaf).
+//
+// To keep such a leaf visible, suppress a leaf only when its immediate parent
+// would itself pass the relations query's filters. The EXISTS subquery below
+// applies exactly those filters to the parent, so the predicate matches the
 // condition under which fetchPartitions can attach the leaf to its parent
-// (parent in tableIndex), so every leaf is shown exactly once: grouped
+// (parent in tableIndex). Every leaf is therefore shown exactly once: grouped
 // under its parent when the parent is in scope, or standalone otherwise.
 //
 // The relation's pg_class row is referenced via the relAlias argument so
 // this clause can be spliced into any query regardless of how it aliases
 // pg_class (e.g. "c" in the relations query, "t" in the indexes query).
-// Both query builders must use the same predicate so a cross-schema leaf
-// that is surfaced as a standalone table also has its indexes listed.
+// Both query builders must use the same predicate so a leaf that is surfaced
+// as a standalone table also has its indexes listed.
 //
-// The schema name is referenced as $1, the same parameter onSchema binds;
-// PostgreSQL allows a positional parameter to appear multiple times.
+// When a single schema is requested the parent's schema is referenced as $1,
+// the same parameter onSchema binds; PostgreSQL allows a positional parameter
+// to appear multiple times.
 func (f schemaFilter) leafPartitionExclusion(relAlias string) string {
-	if f.schema == "" {
-		return fmt.Sprintf(` AND NOT (%[1]s.relispartition AND %[1]s.relkind <> 'p')`, relAlias)
-	}
 	return fmt.Sprintf(` AND NOT (
         %[1]s.relispartition AND %[1]s.relkind <> 'p'
         AND EXISTS (
@@ -250,9 +254,18 @@ func (f schemaFilter) leafPartitionExclusion(relAlias string) string {
             JOIN pg_catalog.pg_class parent ON parent.oid = inh.inhparent
             JOIN pg_catalog.pg_namespace pn ON pn.oid = parent.relnamespace
             WHERE inh.inhrelid = %[1]s.oid
-              AND pn.nspname = $1
+              %[2]s
+              %[3]s
+              %[4]s
+              %[5]s
         )
-    )`, relAlias)
+    )`,
+		relAlias,
+		f.onSchema("pn.nspname"),
+		f.onExtensionObject("'pg_class'::regclass", "parent.oid"),
+		f.onAccessible(relationObject, "parent.oid"),
+		f.onUserOwned("parent.relowner"),
+	)
 }
 
 // queryArgs returns the positional query arguments referenced by the SQL

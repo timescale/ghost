@@ -2153,106 +2153,138 @@ func TestSchemaNotFoundError(t *testing.T) {
 }
 
 // TestLeafPartitionExclusion verifies the leaf-partition suppression clause
-// adapts to whether a single schema is requested. This guards the
-// cross-schema partition regression: when --schema is set, a leaf whose
-// parent lives in another schema must remain visible (shown standalone),
-// so the suppression is gated on the parent being in the requested schema.
+// only hides a leaf when its immediate parent would itself pass the relations
+// query's filters (i.e. land in tableIndex to carry the child). This guards
+// the orphaning regression: a leaf whose parent is filtered out — because the
+// parent lives in an out-of-scope schema (explicit --schema or default-browse
+// name exclusions), or is extension-owned / inaccessible / superuser-owned —
+// must remain visible (shown standalone) rather than vanishing entirely.
 func TestLeafPartitionExclusion(t *testing.T) {
-	t.Run("default browse suppresses every leaf unconditionally", func(t *testing.T) {
-		clause := schemaFilter{}.leafPartitionExclusion("c")
-		if want := ` AND NOT (c.relispartition AND c.relkind <> 'p')`; clause != want {
-			t.Errorf("clause = %q, want %q", clause, want)
+	t.Run("every form gates suppression on the parent being visible", func(t *testing.T) {
+		for _, f := range []schemaFilter{
+			{},
+			{includeInternal: true},
+			{schema: "archive"},
+			{schema: "archive", includeInternal: true},
+		} {
+			clause := f.leafPartitionExclusion("c")
+			for _, want := range []string{
+				"c.relispartition AND c.relkind <> 'p'",
+				"pg_catalog.pg_inherits",
+				"inh.inhrelid = c.oid",
+			} {
+				if !strings.Contains(clause, want) {
+					t.Errorf("clause for %+v missing %q:\n%s", f, want, clause)
+				}
+			}
 		}
 	})
 
 	t.Run("alias parameter is threaded through the predicate", func(t *testing.T) {
 		// The indexes query aliases pg_class as "t", so the clause must
 		// reference t.* rather than the relations query's "c".
-		default_ := schemaFilter{}.leafPartitionExclusion("t")
-		if want := ` AND NOT (t.relispartition AND t.relkind <> 'p')`; default_ != want {
-			t.Errorf("clause = %q, want %q", default_, want)
-		}
-		scoped := schemaFilter{schema: "archive"}.leafPartitionExclusion("t")
+		clause := schemaFilter{schema: "archive"}.leafPartitionExclusion("t")
 		for _, want := range []string{
 			"t.relispartition AND t.relkind <> 'p'",
 			"inh.inhrelid = t.oid",
 		} {
-			if !strings.Contains(scoped, want) {
-				t.Errorf("aliased schema-scoped clause missing %q:\n%s", want, scoped)
+			if !strings.Contains(clause, want) {
+				t.Errorf("aliased clause missing %q:\n%s", want, clause)
 			}
 		}
-		if strings.Contains(scoped, "c.relispartition") || strings.Contains(scoped, "= c.oid") {
-			t.Errorf("aliased clause leaked the default \"c\" alias:\n%s", scoped)
+		if strings.Contains(clause, "c.relispartition") || strings.Contains(clause, "= c.oid") {
+			t.Errorf("aliased clause leaked the default \"c\" alias:\n%s", clause)
 		}
 	})
 
-	t.Run("schema-scoped only suppresses leaves whose parent is in scope", func(t *testing.T) {
-		clause := schemaFilter{schema: "archive"}.leafPartitionExclusion("c")
-		// Still gated on relispartition leaves, but now only when the
-		// immediate parent shares the requested schema ($1).
+	t.Run("default browse gates the parent on the name exclusions", func(t *testing.T) {
+		// A leaf whose parent lives in an excluded schema (pg_*, timescaledb
+		// internals, etc.) must stay visible: the parent fails the EXISTS, so
+		// the leaf is not suppressed. The clause therefore applies onSchema's
+		// name exclusions to the parent's namespace.
+		clause := schemaFilter{}.leafPartitionExclusion("c")
 		for _, want := range []string{
-			"c.relispartition AND c.relkind <> 'p'",
-			"pg_catalog.pg_inherits",
-			"inh.inhrelid = c.oid",
-			"pn.nspname = $1",
+			"pn.nspname !~ '^pg_'",
+			"pn.nspname <> 'information_schema'",
+			"pn.nspname !~ '^_?timescaledb_'",
 		} {
 			if !strings.Contains(clause, want) {
-				t.Errorf("schema-scoped clause missing %q:\n%s", want, clause)
+				t.Errorf("default-browse clause missing parent name exclusion %q:\n%s", want, clause)
+			}
+		}
+		if strings.Contains(clause, "$1") {
+			t.Errorf("default-browse clause unexpectedly references $1:\n%s", clause)
+		}
+	})
+
+	t.Run("default browse gates the parent on owner/extension/accessibility", func(t *testing.T) {
+		// A leaf whose parent is extension-owned, inaccessible, or
+		// superuser-owned must stay visible, so those filters are applied to
+		// the parent inside the EXISTS.
+		clause := schemaFilter{}.leafPartitionExclusion("c")
+		for _, want := range []string{
+			"dep.objid = parent.oid",
+			"pg_catalog.has_table_privilege(current_user, parent.oid",
+			"r.oid = parent.relowner",
+		} {
+			if !strings.Contains(clause, want) {
+				t.Errorf("default-browse clause missing parent filter %q:\n%s", want, clause)
 			}
 		}
 	})
 
-	t.Run("includeInternal does not affect the clause; only schema does", func(t *testing.T) {
-		if got := (schemaFilter{includeInternal: true}).leafPartitionExclusion("c"); strings.Contains(got, "$1") {
-			t.Errorf("default-browse clause unexpectedly references $1:\n%s", got)
-		}
-		if got := (schemaFilter{schema: "archive", includeInternal: true}).leafPartitionExclusion("c"); !strings.Contains(got, "$1") {
-			t.Errorf("schema-scoped clause should reference $1:\n%s", got)
-		}
-	})
-
-	t.Run("clause is spliced into the relations query, not the literal", func(t *testing.T) {
-		// The default-browse query keeps the terse literal form.
-		def := buildRelationsAndColumnsQuery(schemaFilter{})
-		if !strings.Contains(def, ` AND NOT (c.relispartition AND c.relkind <> 'p')`) {
-			t.Errorf("default query missing terse leaf exclusion:\n%s", def)
-		}
-		if strings.Contains(def, "pg_catalog.pg_inherits") {
-			t.Errorf("default query should not reference the cross-schema EXISTS:\n%s", def)
-		}
-		// The schema-scoped query uses the cross-schema-aware form.
-		scoped := buildRelationsAndColumnsQuery(schemaFilter{schema: "archive"})
-		if !strings.Contains(scoped, "pg_catalog.pg_inherits") {
-			t.Errorf("schema-scoped query missing cross-schema EXISTS:\n%s", scoped)
-		}
-		if strings.Contains(scoped, "%!") {
-			t.Errorf("schema-scoped query has a format error:\n%s", scoped)
+	t.Run("includeInternal drops the parent filters", func(t *testing.T) {
+		// With --internal there are no exclusions, so the EXISTS reduces to
+		// "the leaf has a parent partitioned table" and every leaf is hidden.
+		clause := schemaFilter{includeInternal: true}.leafPartitionExclusion("c")
+		for _, unwanted := range []string{"$1", "pn.nspname", "has_table_privilege", "rolsuper"} {
+			if strings.Contains(clause, unwanted) {
+				t.Errorf("includeInternal clause should not reference %q:\n%s", unwanted, clause)
+			}
 		}
 	})
 
-	t.Run("indexes query uses the same schema-aware leaf exclusion", func(t *testing.T) {
-		// Regression: a cross-schema leaf partition that the relations query
-		// surfaces as a standalone table must also have its indexes listed.
-		// The indexes query aliases pg_class as "t", so it must exclude
-		// leaves via the same schema-aware predicate (not the unconditional
-		// one) and reference t.* rather than c.*.
-		def := buildIndexesQuery(schemaFilter{})
-		if !strings.Contains(def, ` AND NOT (t.relispartition AND t.relkind <> 'p')`) {
-			t.Errorf("default indexes query missing terse leaf exclusion:\n%s", def)
+	t.Run("schema-scoped gates the parent on the requested schema", func(t *testing.T) {
+		clause := schemaFilter{schema: "archive"}.leafPartitionExclusion("c")
+		if !strings.Contains(clause, "pn.nspname = $1") {
+			t.Errorf("schema-scoped clause should bind the parent schema to $1:\n%s", clause)
 		}
-		if strings.Contains(def, "pg_catalog.pg_inherits") {
-			t.Errorf("default indexes query should not reference the cross-schema EXISTS:\n%s", def)
+		// onUserOwned is dropped for an explicit --schema, like onSchema's
+		// name exclusions, so a leaf in a superuser-owned namespace stays
+		// reachable.
+		if strings.Contains(clause, "rolsuper") {
+			t.Errorf("schema-scoped clause should not apply onUserOwned to the parent:\n%s", clause)
 		}
+	})
 
-		scoped := buildIndexesQuery(schemaFilter{schema: "archive"})
-		if !strings.Contains(scoped, "pg_catalog.pg_inherits") {
-			t.Errorf("schema-scoped indexes query missing cross-schema EXISTS:\n%s", scoped)
+	t.Run("clause is spliced into the relations query", func(t *testing.T) {
+		for _, f := range []schemaFilter{{}, {schema: "archive"}} {
+			q := buildRelationsAndColumnsQuery(f)
+			if !strings.Contains(q, "pg_catalog.pg_inherits") {
+				t.Errorf("relations query for %+v missing leaf EXISTS:\n%s", f, q)
+			}
+			if strings.Contains(q, "%!") {
+				t.Errorf("relations query for %+v has a format error:\n%s", f, q)
+			}
 		}
-		if !strings.Contains(scoped, "inh.inhrelid = t.oid") {
-			t.Errorf("schema-scoped indexes query should match on the t alias:\n%s", scoped)
-		}
-		if strings.Contains(scoped, "%!") {
-			t.Errorf("schema-scoped indexes query has a format error:\n%s", scoped)
+	})
+
+	t.Run("indexes query uses the same leaf exclusion", func(t *testing.T) {
+		// Regression: a leaf partition surfaced as a standalone table must
+		// also have its indexes listed. The indexes query aliases pg_class as
+		// "t", so it must exclude leaves via the same predicate, referencing
+		// t.* rather than c.*.
+		for _, f := range []schemaFilter{{}, {schema: "archive"}} {
+			q := buildIndexesQuery(f)
+			if !strings.Contains(q, "pg_catalog.pg_inherits") {
+				t.Errorf("indexes query for %+v missing leaf EXISTS:\n%s", f, q)
+			}
+			if !strings.Contains(q, "inh.inhrelid = t.oid") {
+				t.Errorf("indexes query for %+v should match on the t alias:\n%s", f, q)
+			}
+			if strings.Contains(q, "%!") {
+				t.Errorf("indexes query for %+v has a format error:\n%s", f, q)
+			}
 		}
 	})
 }
