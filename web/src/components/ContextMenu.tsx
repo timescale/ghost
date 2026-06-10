@@ -32,7 +32,11 @@ export function ContextMenu({ state, onClose }: Props) {
   // rendered menu. Without this, right-clicking near the bottom or right edge
   // would push menu items off-screen with no way to reach them. useLayoutEffect
   // runs before paint, so the clamped position is applied without a flicker.
+  // state.items is a dependency because reopening at the same coordinates with
+  // a taller/shorter item list changes the menu's measured height, so the
+  // clamp must recompute.
   const [pos, setPos] = useState({ top: state.y, left: state.x });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: state.items isn't read directly, but the menu's measured height depends on it, so the clamp must recompute when the item list changes (e.g. reopening at the same coordinates with a different number of items).
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -43,7 +47,7 @@ export function ContextMenu({ state, onClose }: Props) {
       left: Math.max(margin, Math.min(state.x, maxLeft)),
       top: Math.max(margin, Math.min(state.y, maxTop)),
     });
-  }, [state.x, state.y]);
+  }, [state.x, state.y, state.items]);
 
   useEffect(() => {
     const onDown = (e: globalThis.MouseEvent) => {
