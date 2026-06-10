@@ -376,17 +376,23 @@ func (f schemaFilter) onUserOwned(ownerCol string) string {
 // Row types for scanning query results
 
 type relationColumnRow struct {
-	SchemaName     string  `db:"schema_name"`
-	RelationName   string  `db:"relation_name"`
-	RelationType   string  `db:"relation_type"`
-	ColumnName     string  `db:"column_name"`
-	DataType       string  `db:"data_type"`
-	NotNull        bool    `db:"not_null"`
-	DefaultValue   *string `db:"default_value"`
-	ColumnOrder    int16   `db:"column_order"`
-	SequenceName   *string `db:"sequence_name"`
-	IdentityType   string  `db:"identity_type"`
-	ViewDefinition *string `db:"view_definition"`
+	SchemaName   string  `db:"schema_name"`
+	RelationName string  `db:"relation_name"`
+	RelationType string  `db:"relation_type"`
+	ColumnName   string  `db:"column_name"`
+	DataType     string  `db:"data_type"`
+	NotNull      bool    `db:"not_null"`
+	DefaultValue *string `db:"default_value"`
+	ColumnOrder  int16   `db:"column_order"`
+	SequenceName *string `db:"sequence_name"`
+	IdentityType string  `db:"identity_type"`
+}
+
+type viewDefinitionRow struct {
+	SchemaName     string `db:"schema_name"`
+	RelationName   string `db:"relation_name"`
+	RelationKind   string `db:"relation_kind"`
+	ViewDefinition string `db:"view_definition"`
 }
 
 type constraintRow struct {
@@ -469,8 +475,7 @@ SELECT
     pg_get_expr(d.adbin, d.adrelid) AS default_value,
     a.attnum AS column_order,
     pg_get_serial_sequence(format('%%I.%%I', n.nspname, c.relname), a.attname) AS sequence_name,
-    a.attidentity::text AS identity_type,
-    CASE WHEN c.relkind IN ('v', 'm') THEN %s END AS view_definition
+    a.attidentity::text AS identity_type
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 JOIN pg_attribute a ON a.attrelid = c.oid
@@ -491,8 +496,35 @@ WHERE c.relkind IN ('r', 'p', 'v', 'm')
   %s
   %s
 ORDER BY n.nspname, c.relname, a.attnum`,
-		f.definitionExpr("pg_get_viewdef(c.oid, true)"),
 		f.leafPartitionExclusion("c"),
+		f.onSchema("n.nspname"),
+		f.onExtensionObject("'pg_class'::regclass", "c.oid"),
+		f.onAccessible(relationObject, "c.oid"),
+		f.onUserOwned("c.relowner"),
+	)
+}
+
+// buildViewDefinitionsQuery fetches the defining SELECT for each view and
+// materialized view, one row per relation. It is kept separate from the
+// relations/columns query so pg_get_viewdef is evaluated once per view rather
+// than once per column (a wide view would otherwise deparse its definition
+// dozens of times, only for the duplicates to be discarded). It is only run
+// when definitions are requested.
+func buildViewDefinitionsQuery(f schemaFilter) string {
+	return fmt.Sprintf(`
+SELECT
+    n.nspname AS schema_name,
+    c.relname AS relation_name,
+    c.relkind::text AS relation_kind,
+    pg_get_viewdef(c.oid, true) AS view_definition
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relkind IN ('v', 'm')
+  %s
+  %s
+  %s
+  %s
+ORDER BY n.nspname, c.relname`,
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_class'::regclass", "c.oid"),
 		f.onAccessible(relationObject, "c.oid"),
@@ -805,6 +837,9 @@ func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*Da
 	if err := fetchRelationsAndColumns(ctx, conn, filter, bld); err != nil {
 		return nil, fmt.Errorf("failed to fetch relations: %w", err)
 	}
+	if err := fetchViewDefinitions(ctx, conn, filter, bld); err != nil {
+		return nil, fmt.Errorf("failed to fetch view definitions: %w", err)
+	}
 	if err := fetchConstraints(ctx, conn, filter, bld); err != nil {
 		return nil, fmt.Errorf("failed to fetch constraints: %w", err)
 	}
@@ -1033,14 +1068,14 @@ func fetchRelationsAndColumns(ctx context.Context, conn *pgx.Conn, f schemaFilte
 		case "view":
 			v, ok := buf.views[row.RelationName]
 			if !ok {
-				v = &ViewSchema{Name: row.RelationName, Definition: strings.TrimSpace(util.DerefStr(row.ViewDefinition))}
+				v = &ViewSchema{Name: row.RelationName}
 				buf.views[row.RelationName] = v
 			}
 			v.Columns = append(v.Columns, ViewColumnSchema{Name: row.ColumnName, Type: row.DataType})
 		case "materialized_view":
 			mv, ok := buf.matViews[row.RelationName]
 			if !ok {
-				mv = &ViewSchema{Name: row.RelationName, Definition: strings.TrimSpace(util.DerefStr(row.ViewDefinition))}
+				mv = &ViewSchema{Name: row.RelationName}
 				buf.matViews[row.RelationName] = mv
 			}
 			mv.Columns = append(mv.Columns, ViewColumnSchema{Name: row.ColumnName, Type: row.DataType})
@@ -1079,6 +1114,39 @@ func fetchRelationsAndColumns(ctx context.Context, conn *pgx.Conn, f schemaFilte
 		}
 	}
 
+	return nil
+}
+
+// fetchViewDefinitions attaches the defining SELECT to each view and
+// materialized view. It must run after fetchRelationsAndColumns, which
+// populates the viewIndex/matViewIndex pointer maps it attaches to. It is a
+// no-op unless definitions were requested, so the pg_get_viewdef work is
+// skipped entirely on the default browse.
+func fetchViewDefinitions(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBuilder) error {
+	if !f.includeDefinitions {
+		return nil
+	}
+	rows, err := conn.Query(ctx, buildViewDefinitionsQuery(f), f.queryArgs()...)
+	if err != nil {
+		return err
+	}
+	results, err := pgx.CollectRows(rows, pgx.RowToStructByName[viewDefinitionRow])
+	if err != nil {
+		return err
+	}
+
+	for _, row := range results {
+		qn := qualifiedName{Schema: row.SchemaName, Name: row.RelationName}
+		def := strings.TrimSpace(row.ViewDefinition)
+		// relkind 'v' is a plain view, 'm' is a materialized view.
+		if row.RelationKind == "m" {
+			if mv, ok := b.matViewIndex[qn]; ok {
+				mv.Definition = def
+			}
+		} else if v, ok := b.viewIndex[qn]; ok {
+			v.Definition = def
+		}
+	}
 	return nil
 }
 
