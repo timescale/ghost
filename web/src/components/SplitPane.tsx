@@ -83,7 +83,7 @@ export function SplitPane({
               minWidth: minLeftWidth,
               maxWidth: maxLeftWidth,
             }}
-            className="flex h-full flex-0 flex-col overflow-hidden border-r border-slate-200 bg-white"
+            className="flex h-full flex-none flex-col overflow-hidden border-r border-slate-200 bg-white"
           >
             {left}
           </div>
