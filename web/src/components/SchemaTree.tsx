@@ -1496,17 +1496,18 @@ function indexMenuItems(
   showModal: (title: string, text: string) => void,
 ): MenuItem[] {
   const items: MenuItem[] = [];
-  if (index.definition) {
+  const { definition } = index;
+  if (definition) {
     items.push(
       {
         key: 'view-def',
         label: iconLabel('eye', 'View definition'),
-        onClick: () => showModal(index.name, index.definition),
+        onClick: () => showModal(index.name, definition),
       },
       {
         key: 'copy-def',
         label: iconLabel('copy', 'Copy definition'),
-        onClick: () => copyText(index.definition),
+        onClick: () => copyText(definition),
       },
     );
   }

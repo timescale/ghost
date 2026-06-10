@@ -78,7 +78,9 @@ export interface TableConstraint {
 export interface IndexSchema {
   name: string;
   columns: string;
-  definition: string;
+  // The CREATE INDEX statement (from pg_get_indexdef). Absent unless
+  // definitions were requested (the Go field is `definition,omitempty`).
+  definition?: string;
   is_unique?: boolean;
   where_clause?: string;
 }
