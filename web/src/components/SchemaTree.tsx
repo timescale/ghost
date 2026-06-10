@@ -1292,7 +1292,6 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
     ): boolean => {
       const list = items ?? [];
       if (list.length === 0) return false;
-      const gKey = `${sKey}/${kind}`;
       let groupHit = false;
       for (const item of list) {
         const label = itemLabel(kind, item as never);
@@ -1312,7 +1311,6 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
           for (const sub of subs) {
             if (match(sub.name)) {
               visible.add(subItemKey(iKey, subKind, keyName(sub)));
-              visible.add(`${iKey}/${subKind}`);
               childHit = true;
             }
           }
@@ -1329,9 +1327,6 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
           visible.add(iKey);
           groupHit = true;
         }
-      }
-      if (groupHit) {
-        visible.add(gKey);
       }
       return groupHit;
     };
