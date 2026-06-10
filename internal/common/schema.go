@@ -598,7 +598,13 @@ WHERE con.contype IN ('p', 'u', 'f', 'c', 'x')
   %s
   %s
   %s
+  %s
 ORDER BY n.nspname, c.relname, con.contype, con.conname`,
+		// Skip constraints on leaf partitions whose parent is in scope: those
+		// constraints are clones of the parent's and would be discarded anyway
+		// (fetchConstraints drops rows whose table isn't in tableIndex). The
+		// same predicate keeps a cross-schema standalone leaf's constraints.
+		f.leafPartitionExclusion("c"),
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_class'::regclass", "c.oid"),
 		f.onAccessible(relationObject, "c.oid"),
@@ -735,7 +741,13 @@ WHERE NOT tg.tgisinternal
   %s
   %s
   %s
+  %s
 ORDER BY schema_name, table_name, trigger_name, manipulation`,
+		// Skip triggers on leaf partitions whose parent is in scope: those are
+		// clones of the parent's triggers and would be discarded anyway
+		// (fetchTriggers drops rows whose table isn't in tableIndex). The same
+		// predicate keeps a cross-schema standalone leaf's triggers.
+		f.leafPartitionExclusion("c"),
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_trigger'::regclass", "tg.oid"),
 		f.onAccessible(relationObject, "c.oid"),
