@@ -362,33 +362,17 @@ function TableNode({ ns, table, ctx }: TableNodeProps) {
   // When a search is active, only render the children that themselves match.
   // popsql does the same: searching for "plan" inside a multi-column table
   // collapses Columns down to just the matching ones.
-  const cols = ctx.searchActive
-    ? allCols.filter((c) =>
-        ctx.searchMatches?.has(subItemKey(key, 'columns', c.name)),
-      )
-    : allCols;
-  const partitions = ctx.searchActive
-    ? allPartitions.filter((p) =>
-        ctx.searchMatches?.has(
-          subItemKey(key, 'partitions', partitionNodeName(p)),
-        ),
-      )
-    : allPartitions;
-  const constraints = ctx.searchActive
-    ? allConstraints.filter((c) =>
-        ctx.searchMatches?.has(subItemKey(key, 'constraints', c.name)),
-      )
-    : allConstraints;
-  const indexes = ctx.searchActive
-    ? allIndexes.filter((i) =>
-        ctx.searchMatches?.has(subItemKey(key, 'indexes', i.name)),
-      )
-    : allIndexes;
-  const triggers = ctx.searchActive
-    ? allTriggers.filter((t) =>
-        ctx.searchMatches?.has(subItemKey(key, 'triggers', t.name)),
-      )
-    : allTriggers;
+  const cols = filterForSearch(ctx, key, 'columns', allCols);
+  const partitions = filterForSearch(
+    ctx,
+    key,
+    'partitions',
+    allPartitions,
+    partitionNodeName,
+  );
+  const constraints = filterForSearch(ctx, key, 'constraints', allConstraints);
+  const indexes = filterForSearch(ctx, key, 'indexes', allIndexes);
+  const triggers = filterForSearch(ctx, key, 'triggers', allTriggers);
   return (
     <TreeRow
       ctx={ctx}
@@ -670,21 +654,9 @@ function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
   const allTriggers = view.triggers ?? [];
   // When a search is active, only render the children that themselves match
   // (same behavior as TableNode).
-  const cols = ctx.searchActive
-    ? allCols.filter((c) =>
-        ctx.searchMatches?.has(subItemKey(key, 'columns', c.name)),
-      )
-    : allCols;
-  const indexes = ctx.searchActive
-    ? allIndexes.filter((i) =>
-        ctx.searchMatches?.has(subItemKey(key, 'indexes', i.name)),
-      )
-    : allIndexes;
-  const triggers = ctx.searchActive
-    ? allTriggers.filter((t) =>
-        ctx.searchMatches?.has(subItemKey(key, 'triggers', t.name)),
-      )
-    : allTriggers;
+  const cols = filterForSearch(ctx, key, 'columns', allCols);
+  const indexes = filterForSearch(ctx, key, 'indexes', allIndexes);
+  const triggers = filterForSearch(ctx, key, 'triggers', allTriggers);
   return (
     <TreeRow
       ctx={ctx}
@@ -1107,6 +1079,26 @@ function childKey(ns: string, group: GroupKind, name: string): string {
 // same reason as childKey's name segment.
 function subItemKey(itemKey: string, subKind: string, name: string): string {
   return `${itemKey}/${subKind}/${encodeKeySegment(name)}`;
+}
+
+// filterForSearch narrows a group item's sub-items (columns, indexes, etc.) to
+// those that matched the active search, mirroring popsql: searching collapses
+// a group down to just the matching rows. When no search is active it returns
+// the list unchanged. The key derivation must stay in lockstep with
+// computeSearch's, so getName defaults to the bare `name` but can be
+// overridden (e.g. partitionNodeName, which keys cross-schema partitions
+// uniquely).
+function filterForSearch<T extends { name: string }>(
+  ctx: TreeContext,
+  itemKey: string,
+  subKind: string,
+  items: T[],
+  getName: (item: T) => string = (item) => item.name,
+): T[] {
+  if (!ctx.searchActive) return items;
+  return items.filter((item) =>
+    ctx.searchMatches?.has(subItemKey(itemKey, subKind, getName(item))),
+  );
 }
 
 // partitionNodeName returns the identifier used to key a partition within its
