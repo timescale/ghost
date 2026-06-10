@@ -280,6 +280,21 @@ func (f schemaFilter) queryArgs() []any {
 	return nil
 }
 
+// systemSchemaExclusions returns the " AND <col> ..." clauses that drop the
+// catalog schemas, TimescaleDB internals, information_schema, and the toolkit
+// experimental schema from a default browse. col is the SQL expression naming
+// the schema's name column (e.g. `n.nspname`, `nspname`). Shared by onSchema
+// and checkSchemaExists so the default-browse exclusions stay in lockstep.
+// Matches what popsql uses for the same purpose.
+func systemSchemaExclusions(col string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, ` AND %s !~ '^pg_'`, col)
+	fmt.Fprintf(&b, ` AND %s <> 'information_schema'`, col)
+	fmt.Fprintf(&b, ` AND %s !~ '^_?timescaledb_'`, col)
+	fmt.Fprintf(&b, ` AND %s <> 'toolkit_experimental'`, col)
+	return b.String()
+}
+
 // onSchema returns " AND <col> = $1 AND <col> NOT LIKE 'pg_%' ..." type
 // clauses. The caller is responsible for placing this in a WHERE context
 // and passing queryArgs() to the query so `$1` is bound to the schema
@@ -294,14 +309,7 @@ func (f schemaFilter) onSchema(col string) string {
 	if f.includeInternal {
 		return ""
 	}
-	var b strings.Builder
-	// Standard exclusions: catalog schemas, TimescaleDB internals,
-	// information_schema. Matches what popsql uses for the same purpose.
-	fmt.Fprintf(&b, ` AND %s !~ '^pg_'`, col)
-	fmt.Fprintf(&b, ` AND %s <> 'information_schema'`, col)
-	fmt.Fprintf(&b, ` AND %s !~ '^_?timescaledb_'`, col)
-	fmt.Fprintf(&b, ` AND %s <> 'toolkit_experimental'`, col)
-	return b.String()
+	return systemSchemaExclusions(col)
 }
 
 // onExtensionObject returns a clause that excludes objects whose OID is
@@ -959,11 +967,8 @@ func checkSchemaExists(ctx context.Context, conn *pgx.Conn, schema string, inclu
 	 ORDER BY nspname`
 	if !includeInternal {
 		query = `SELECT nspname FROM pg_namespace
-		 WHERE pg_catalog.has_schema_privilege(current_user, oid, 'USAGE')
-		   AND nspname !~ '^pg_'
-		   AND nspname <> 'information_schema'
-		   AND nspname !~ '^_?timescaledb_'
-		   AND nspname <> 'toolkit_experimental'
+		 WHERE pg_catalog.has_schema_privilege(current_user, oid, 'USAGE')` +
+			systemSchemaExclusions("nspname") + `
 		 ORDER BY nspname`
 	}
 	rows, err := conn.Query(ctx, query)
