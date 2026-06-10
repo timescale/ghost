@@ -369,7 +369,9 @@ function TableNode({ ns, table, ctx }: TableNodeProps) {
     : allCols;
   const partitions = ctx.searchActive
     ? allPartitions.filter((p) =>
-        ctx.searchMatches?.has(subItemKey(key, 'partitions', p.name)),
+        ctx.searchMatches?.has(
+          subItemKey(key, 'partitions', partitionNodeName(p)),
+        ),
       )
     : allPartitions;
   const constraints = ctx.searchActive
@@ -437,7 +439,12 @@ function TableNode({ ns, table, ctx }: TableNodeProps) {
           count={ctx.searchActive ? partitions.length : allPartitions.length}
         >
           {partitions.map((part) => (
-            <PartitionRow key={part.name} ns={ns} partition={part} ctx={ctx} />
+            <PartitionRow
+              key={partitionNodeName(part)}
+              ns={ns}
+              partition={part}
+              ctx={ctx}
+            />
           ))}
         </TreeRow>
       ) : null}
@@ -1102,6 +1109,16 @@ function subItemKey(itemKey: string, subKind: string, name: string): string {
   return `${itemKey}/${subKind}/${encodeKeySegment(name)}`;
 }
 
+// partitionNodeName returns the identifier used to key a partition within its
+// parent's Partitions list. PostgreSQL allows a partition to live in a
+// different schema than its parent, so two partitions of the same parent can
+// share a name as long as their schemas differ. Qualifying such partitions
+// with their schema keeps their React keys and search-visibility keys unique;
+// same-schema partitions (the common case) keep their bare name.
+function partitionNodeName(p: { name: string; schema?: string }): string {
+  return p.schema ? `${p.schema}.${p.name}` : p.name;
+}
+
 // itemLabel returns the display/key label for a group item. Routines use
 // their signature (name + identity arguments) so overloaded routines that
 // share a name remain distinct in both the rendered tree and the keys/state
@@ -1269,7 +1286,7 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
             exclusions?: { name: string }[];
             indexes?: { name: string }[];
             triggers?: { name: string }[];
-            partitions?: { name: string }[];
+            partitions?: { name: string; schema?: string }[];
           }[]
         | undefined,
     ): boolean => {
@@ -1282,11 +1299,19 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
         const iKey = childKey(ns.name, kind, label);
         const itemHit = match(label);
         let childHit = false;
-        const considerSub = (subKind: string, subs?: { name: string }[]) => {
+        const considerSub = (
+          subKind: string,
+          subs?: { name: string; schema?: string }[],
+          // keyName derives the node-key segment from a sub-item; it can
+          // differ from the searched name (e.g. partitions are keyed by their
+          // schema-qualified name to stay unique, but matched on bare name).
+          keyName: (sub: { name: string; schema?: string }) => string = (s) =>
+            s.name,
+        ) => {
           if (!subs) return;
           for (const sub of subs) {
             if (match(sub.name)) {
-              visible.add(subItemKey(iKey, subKind, sub.name));
+              visible.add(subItemKey(iKey, subKind, keyName(sub)));
               visible.add(`${iKey}/${subKind}`);
               childHit = true;
             }
@@ -1299,7 +1324,7 @@ function computeSearch(schemas: NamespacedSchema[], term: string): SearchInfo {
         );
         considerSub('indexes', item.indexes);
         considerSub('triggers', item.triggers);
-        considerSub('partitions', item.partitions);
+        considerSub('partitions', item.partitions, partitionNodeName);
         if (itemHit || childHit) {
           visible.add(iKey);
           groupHit = true;
