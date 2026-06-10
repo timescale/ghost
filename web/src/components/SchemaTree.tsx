@@ -1396,9 +1396,14 @@ function schemaMenuItems(name: string): MenuItem[] {
   ];
 }
 
+// tableMenuItems builds the query/copy actions shared by tables and views. It
+// only needs the relation's name and column names, so its parameter is
+// narrowed to that shape (rather than the full TableSchema) — this lets
+// viewMenuItems reuse it without an unsafe cast, and surfaces a compile error
+// if a future edit reaches for a table-only field.
 function tableMenuItems(
   ns: string,
-  table: TableSchema,
+  table: { name: string; columns?: { name: string }[] },
   kind: 'table' | 'view' | 'materialized view',
 ): MenuItem[] {
   const append = useServeStore.getState().appendEditorSql;
@@ -1446,7 +1451,7 @@ function viewMenuItems(
     );
   }
   // Reuse the table query/copy actions (SELECT *, copy name, etc.).
-  items.push(...tableMenuItems(ns, view as unknown as TableSchema, kind));
+  items.push(...tableMenuItems(ns, view, kind));
   return items;
 }
 
