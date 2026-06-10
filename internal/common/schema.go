@@ -406,7 +406,7 @@ type indexRow struct {
 	IndexName   string  `db:"index_name"`
 	IsUnique    bool    `db:"is_unique"`
 	ColumnsDef  string  `db:"columns_def"`
-	Definition  string  `db:"definition"`
+	Definition  *string `db:"definition"`
 	WhereClause *string `db:"where_clause"`
 }
 
@@ -564,7 +564,7 @@ SELECT
         )
         FROM generate_series(1, ix.indnkeyatts) AS k(n)
     ) AS columns_def,
-    pg_get_indexdef(ix.indexrelid) AS definition,
+    %s AS definition,
     pg_get_expr(ix.indpred, ix.indrelid) AS where_clause
 FROM pg_index ix
 JOIN pg_class t ON t.oid = ix.indrelid
@@ -589,6 +589,11 @@ WHERE t.relkind IN ('r', 'p', 'm')
   %s
   %s
 ORDER BY n.nspname, t.relname, i.relname`,
+		// Gate the full CREATE INDEX text behind --definitions, like views and
+		// routines: it can embed expression/partial-index SQL the caller hasn't
+		// asked for. The columns_def list above is always emitted because it's
+		// the core display info for the index.
+		f.definitionExpr("pg_get_indexdef(ix.indexrelid)"),
 		f.leafPartitionExclusion("t"),
 		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_class'::regclass", "t.oid"),
@@ -1143,7 +1148,7 @@ func fetchIndexes(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schema
 		idx := IndexSchema{
 			Name:        row.IndexName,
 			Columns:     row.ColumnsDef,
-			Definition:  row.Definition,
+			Definition:  util.DerefStr(row.Definition),
 			IsUnique:    row.IsUnique,
 			WhereClause: util.DerefStr(row.WhereClause),
 		}
