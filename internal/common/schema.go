@@ -621,34 +621,55 @@ ORDER BY n.nspname, t.typname`,
 }
 
 func buildTriggersQuery(f schemaFilter) string {
-	// information_schema.triggers gives us the user-friendly, SQL-standard
-	// columns (timing, one row per event_manipulation, and a formatted
-	// action_statement), which the popsql tree also flattens into separate
-	// entries. We join it to pg_trigger/pg_class/pg_namespace so we can apply
-	// the same OID-based filters used for every other object kind: excluding
-	// extension-owned triggers (onExtensionObject), triggers on tables the
-	// user can't access (onAccessible), and internally generated triggers
-	// (tgisinternal). The join is on the trigger's identity (schema, table,
-	// name), so it preserves information_schema's per-manipulation rows.
+	// We read triggers straight from pg_catalog.pg_trigger rather than
+	// information_schema.triggers. information_schema omits statement-level
+	// TRUNCATE triggers entirely and only surfaces triggers on tables the
+	// current user has a privilege *other than* SELECT on — so a trigger on a
+	// SELECT-only table the rest of the schema output happily shows would be
+	// silently dropped. Reading the catalog directly avoids both gaps and lets
+	// us apply the same OID-based filters used for every other object kind:
+	// excluding extension-owned triggers (onExtensionObject), triggers on
+	// tables the user can't access (onAccessible), and internally generated
+	// triggers (tgisinternal).
+	//
+	// pg_trigger.tgtype is a bitmask encoding both the timing and the set of
+	// firing events for a single trigger, so a trigger that fires on multiple
+	// events (e.g. INSERT OR UPDATE) is one catalog row. To preserve the
+	// one-row-per-manipulation shape the tree/format code expects (mirroring
+	// information_schema's layout), we expand each trigger across the possible
+	// events via a lateral VALUES join, keeping only the bits that are set.
+	// The action statement (e.g. "EXECUTE FUNCTION foo()") is sliced out of
+	// pg_get_triggerdef, which is the only catalog source for the formatted
+	// call including its arguments.
 	return fmt.Sprintf(`
 SELECT
-    ist.trigger_schema AS schema_name,
-    ist.event_object_table AS table_name,
-    ist.trigger_name AS trigger_name,
-    ist.action_timing AS timing,
-    ist.event_manipulation AS manipulation,
-    ist.action_statement AS action_statement
-FROM information_schema.triggers ist
-JOIN pg_catalog.pg_namespace n ON n.nspname = ist.event_object_schema
-JOIN pg_catalog.pg_class c ON c.relname = ist.event_object_table AND c.relnamespace = n.oid
-JOIN pg_catalog.pg_trigger tg ON tg.tgrelid = c.oid AND tg.tgname = ist.trigger_name
+    n.nspname AS schema_name,
+    c.relname AS table_name,
+    tg.tgname AS trigger_name,
+    CASE
+        WHEN (tg.tgtype::int & 64) <> 0 THEN 'INSTEAD OF'
+        WHEN (tg.tgtype::int & 2) <> 0 THEN 'BEFORE'
+        ELSE 'AFTER'
+    END AS timing,
+    ev.manipulation AS manipulation,
+    substring(
+        pg_catalog.pg_get_triggerdef(tg.oid)
+        FROM 'EXECUTE (?:FUNCTION|PROCEDURE) .*$'
+    ) AS action_statement
+FROM pg_catalog.pg_trigger tg
+JOIN pg_catalog.pg_class c ON c.oid = tg.tgrelid
+JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+CROSS JOIN LATERAL (
+    VALUES (4, 'INSERT'), (8, 'DELETE'), (16, 'UPDATE'), (32, 'TRUNCATE')
+) AS ev(bit, manipulation)
 WHERE NOT tg.tgisinternal
+  AND (tg.tgtype::int & ev.bit) <> 0
   %s
   %s
   %s
   %s
 ORDER BY schema_name, table_name, trigger_name, manipulation`,
-		f.onSchema("ist.trigger_schema"),
+		f.onSchema("n.nspname"),
 		f.onExtensionObject("'pg_trigger'::regclass", "tg.oid"),
 		f.onAccessible(relationObject, "c.oid"),
 		f.onUserOwned("c.relowner"),
