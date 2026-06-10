@@ -53,6 +53,12 @@ export function computeSearch(
         const iKey = childKey(ns.name, kind, label);
         const itemHit = match(label);
         let childHit = false;
+        // considerSub is the single place that enumerates a sub-list and
+        // derives its node keys, so the two visibility modes stay in
+        // lockstep: when the item itself matched by name, every sub-item key
+        // is added (the user searched for the table; show the whole table,
+        // not an empty shell); otherwise only matching sub-items are added
+        // (searching collapses the group down to the matches, like popsql).
         const considerSub = (
           subKind: string,
           subs?: { name: string; schema?: string }[],
@@ -64,9 +70,12 @@ export function computeSearch(
         ) => {
           if (!subs) return;
           for (const sub of subs) {
-            if (match(sub.name)) {
-              visible.add(subItemKey(iKey, subKind, keyName(sub)));
+            const subHit = match(sub.name);
+            if (subHit) {
               childHit = true;
+            }
+            if (itemHit || subHit) {
+              visible.add(subItemKey(iKey, subKind, keyName(sub)));
             }
           }
         };
