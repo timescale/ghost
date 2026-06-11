@@ -35,7 +35,7 @@ type NamespacedSchema struct {
 type TableSchema struct {
 	Name        string                `json:"name"`
 	Columns     []TableColumnSchema   `json:"columns,omitempty"`
-	Constraints []TableConstraint     `json:"constraints,omitempty"`
+	Constraints []TableConstraint     `json:"constraints,omitempty"` // PK, UK, FK constraints (single and multi-column)
 	Indexes     []IndexSchema         `json:"indexes,omitempty"`
 	Checks      []CheckConstraint     `json:"checks,omitempty"`
 	Exclusions  []ExclusionConstraint `json:"exclusions,omitempty"`
@@ -88,9 +88,9 @@ type TableColumnSchema struct {
 	Name         string `json:"name"`
 	Type         string `json:"type"`
 	NotNull      bool   `json:"not_null,omitempty"`
-	Default      string `json:"default,omitempty"`
-	IsSerial     bool   `json:"is_serial,omitempty"`
-	IdentityType string `json:"identity_type,omitempty"`
+	Default      string `json:"default,omitempty"`       // empty if no default
+	IsSerial     bool   `json:"is_serial,omitempty"`     // true if SERIAL/BIGSERIAL/SMALLSERIAL (has sequence, not identity)
+	IdentityType string `json:"identity_type,omitempty"` // 'a' = ALWAYS, 'd' = BY DEFAULT, '' = not identity
 }
 
 // TableConstraint describes a constraint (single or multi-column).
@@ -98,8 +98,8 @@ type TableConstraint struct {
 	Type       ConstraintType `json:"type"`
 	Name       string         `json:"name"`
 	Columns    []string       `json:"columns,omitempty"`
-	RefTable   string         `json:"ref_table,omitempty"`
-	RefColumns []string       `json:"ref_columns,omitempty"`
+	RefTable   string         `json:"ref_table,omitempty"`   // for FK
+	RefColumns []string       `json:"ref_columns,omitempty"` // for FK
 }
 
 // ConstraintType represents the type of a table constraint.
@@ -114,23 +114,23 @@ const (
 // IndexSchema describes an index.
 type IndexSchema struct {
 	Name        string `json:"name"`
-	Columns     string `json:"columns"`
+	Columns     string `json:"columns"` // column expressions, e.g. "status" or "created_at DESC"
 	Definition  string `json:"definition,omitempty"`
 	IsUnique    bool   `json:"is_unique,omitempty"`
-	WhereClause string `json:"where_clause,omitempty"`
+	WhereClause string `json:"where_clause,omitempty"` // for partial indexes, empty if not partial
 }
 
 // CheckConstraint describes a check constraint.
 type CheckConstraint struct {
 	Name       string   `json:"name"`
-	Columns    []string `json:"columns,omitempty"`
-	Expression string   `json:"expression"`
+	Columns    []string `json:"columns,omitempty"` // columns involved in the check (from conkey)
+	Expression string   `json:"expression"`        // full constraint def from pg_get_constraintdef, e.g. "CHECK ((age > 0))"
 }
 
 // ExclusionConstraint describes an exclusion constraint.
 type ExclusionConstraint struct {
 	Name       string `json:"name"`
-	Definition string `json:"definition"`
+	Definition string `json:"definition"` // full constraint def from pg_get_constraintdef, e.g. "EXCLUDE USING gist (circle WITH &&)"
 }
 
 // EnumSchema describes an enum type.
@@ -648,13 +648,18 @@ SELECT
     i.relname AS index_name,
     ix.indisunique AS is_unique,
     (
+        -- Build column expressions with sort direction from indoption
+        -- indoption is an int2vector with bit flags per column:
+        -- bit 0 (1) = DESC, bit 1 (2) = NULLS FIRST
+        -- Default: ASC NULLS LAST, DESC NULLS FIRST
+        -- Show non-default nulls ordering explicitly
         SELECT string_agg(
             pg_get_indexdef(ix.indexrelid, k.n, false) ||
             CASE (ix.indoption[k.n - 1] & 3)
-                WHEN 0 THEN ''
-                WHEN 1 THEN ' DESC NULLS LAST'
-                WHEN 2 THEN ' NULLS FIRST'
-                WHEN 3 THEN ' DESC'
+                WHEN 0 THEN ''                      -- ASC NULLS LAST (default)
+                WHEN 1 THEN ' DESC NULLS LAST'      -- DESC with non-default nulls
+                WHEN 2 THEN ' NULLS FIRST'          -- ASC with non-default nulls
+                WHEN 3 THEN ' DESC'                 -- DESC NULLS FIRST (default nulls)
             END,
             ', ' ORDER BY k.n
         )
@@ -1282,19 +1287,19 @@ func fetchConstraints(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *sc
 			continue
 		}
 		switch row.ConstraintType {
-		case "p":
+		case "p": // primary key
 			t.Constraints = append(t.Constraints, TableConstraint{
 				Type:    ConstraintPrimaryKey,
 				Name:    row.ConstraintName,
 				Columns: row.Columns,
 			})
-		case "u":
+		case "u": // unique
 			t.Constraints = append(t.Constraints, TableConstraint{
 				Type:    ConstraintUnique,
 				Name:    row.ConstraintName,
 				Columns: row.Columns,
 			})
-		case "f":
+		case "f": // foreign key
 			t.Constraints = append(t.Constraints, TableConstraint{
 				Type:       ConstraintForeignKey,
 				Name:       row.ConstraintName,
@@ -1302,13 +1307,13 @@ func fetchConstraints(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *sc
 				RefTable:   util.DerefStr(row.RefTable),
 				RefColumns: row.RefColumns,
 			})
-		case "c":
+		case "c": // check
 			t.Checks = append(t.Checks, CheckConstraint{
 				Name:       row.ConstraintName,
 				Columns:    row.Columns,
 				Expression: row.ConstraintDef,
 			})
-		case "x":
+		case "x": // exclusion
 			t.Exclusions = append(t.Exclusions, ExclusionConstraint{
 				Name:       row.ConstraintName,
 				Definition: row.ConstraintDef,
