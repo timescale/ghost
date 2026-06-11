@@ -1,8 +1,8 @@
 #!/bin/sh
 set -ex
 
+(cd web && ./bun run check)
 ./scripts/build-web.sh
-(cd web && ./bun run lint)
 
 go mod tidy
 go install ./...
