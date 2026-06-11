@@ -16,9 +16,9 @@ func buildSchemaCmd(app *common.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "schema <name-or-id>",
 		Short: "Display database schema information",
-		Long: `Display database schema information including tables, views, materialized views,
-enum types, functions, and procedures with their columns, constraints, indexes,
-and triggers. Only objects the connecting user can access are listed. By default
+		Long: `Display database schema information including tables (regular, partitioned, and
+foreign), views, materialized views, enum types, functions, and procedures with
+their columns, constraints, indexes, and triggers. Only objects the connecting user can access are listed. By default
 system schemas (information_schema, pg_*, _timescaledb_*) and extension-owned
 objects are excluded; use --schema to target a specific schema (including a
 system schema such as pg_catalog) or --internal to include everything.

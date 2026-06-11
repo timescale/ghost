@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react';
 
 import {
+  type ForeignTableInfo,
+  foreignTableDetails,
+  type HypertableInfo,
+  hypertableDetails,
   type IndexSchema,
   type PartitionInfo,
   qualifiedName,
@@ -81,6 +85,60 @@ export function schemaMenuItems(
       key: 'copy-name',
       label: iconLabel('copy', 'Copy schema name'),
       onClick: () => copyText(quoteIdent(name)),
+    },
+  ];
+}
+
+// hypertableMenuItems builds the View/Copy pair for a hypertable's metadata
+// (chunk count, compression). Returns no items when the table is not a
+// hypertable, so callers can unconditionally splice the result into their
+// menus (like commentMenuItems).
+export function hypertableMenuItems(
+  title: string,
+  hypertable: HypertableInfo | undefined,
+  showModal: ShowModal,
+): MenuItem[] {
+  if (!hypertable) return [];
+  const details = hypertableDetails(hypertable);
+  return [
+    {
+      key: 'view-hypertable',
+      label: iconLabel('eye', 'View hypertable details'),
+      // The details are key/value prose, not SQL — render without syntax
+      // highlighting.
+      onClick: () => showModal(title, details, 'text'),
+    },
+    {
+      key: 'copy-hypertable',
+      label: iconLabel('copy', 'Copy hypertable details'),
+      onClick: () => copyText(details),
+    },
+  ];
+}
+
+// foreignTableMenuItems builds the View/Copy pair for a foreign table's FDW
+// binding (server, wrapper, table-level options). Returns no items when the
+// table is not foreign, so callers can unconditionally splice the result
+// into their menus (like commentMenuItems).
+export function foreignTableMenuItems(
+  title: string,
+  foreign: ForeignTableInfo | undefined,
+  showModal: ShowModal,
+): MenuItem[] {
+  if (!foreign) return [];
+  const details = foreignTableDetails(foreign);
+  return [
+    {
+      key: 'view-fdw',
+      label: iconLabel('eye', 'View FDW details'),
+      // The details are key/value prose, not SQL — render without syntax
+      // highlighting.
+      onClick: () => showModal(title, details, 'text'),
+    },
+    {
+      key: 'copy-fdw',
+      label: iconLabel('copy', 'Copy FDW details'),
+      onClick: () => copyText(details),
     },
   ];
 }

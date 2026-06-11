@@ -1290,6 +1290,119 @@ TABLE: events
   PARTITION archive.events_archive FOR VALUES FROM ('2023-01-01') TO ('2024-01-01')
 `,
 		},
+
+		// ==================== Foreign Table Tests ====================
+		{
+			name: "foreign table with server, wrapper, and options",
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						Tables: []TableSchema{
+							{
+								Name: "remote_orders",
+								Columns: []TableColumnSchema{
+									{Name: "id", Type: "bigint", NotNull: true},
+									{Name: "total", Type: "numeric(10,2)"},
+								},
+								Checks: []CheckConstraint{
+									{Name: "remote_orders_total_check", Columns: []string{"total"}, Expression: "CHECK ((total >= (0)::numeric))"},
+								},
+								Triggers: []TriggerSchema{
+									{Name: "audit_remote", Timing: "AFTER", Manipulation: "INSERT", Statement: "EXECUTE FUNCTION audit()"},
+								},
+								Foreign: &ForeignTableInfo{
+									Server:  "shard1",
+									Wrapper: "postgres_fdw",
+									Options: []string{"schema_name=public", "table_name=orders"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+TABLE: remote_orders
+  -- FOREIGN TABLE (server=shard1, wrapper=postgres_fdw, schema_name=public, table_name=orders)
+  id     BIGINT NOT NULL
+  total  NUMERIC(10,2) CHECK ((total >= (0)::numeric))
+
+  TRIGGER audit_remote AFTER INSERT EXECUTE FUNCTION audit()
+`,
+		},
+		{
+			name: "foreign table without options",
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						Tables: []TableSchema{
+							{
+								Name: "remote_log",
+								Columns: []TableColumnSchema{
+									{Name: "line", Type: "text"},
+								},
+								Foreign: &ForeignTableInfo{
+									Server:  "logsrv",
+									Wrapper: "file_fdw",
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+TABLE: remote_log
+  -- FOREIGN TABLE (server=logsrv, wrapper=file_fdw)
+  line  TEXT
+`,
+		},
+		{
+			name:            "foreign table comment renders before FDW annotation",
+			includeComments: true,
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						Tables: []TableSchema{
+							{
+								Name:    "remote_orders",
+								Comment: "orders mirrored from shard1",
+								Columns: []TableColumnSchema{
+									{Name: "id", Type: "bigint"},
+								},
+								Foreign: &ForeignTableInfo{
+									Server:  "shard1",
+									Wrapper: "postgres_fdw",
+									Options: []string{"table_name=orders"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+TABLE: remote_orders
+  -- orders mirrored from shard1
+  -- FOREIGN TABLE (server=shard1, wrapper=postgres_fdw, table_name=orders)
+  id  BIGINT
+`,
+		},
 		{
 			name:               "materialized view with definition",
 			includeDefinitions: true,
@@ -2394,6 +2507,24 @@ func TestLeafPartitionExclusion(t *testing.T) {
 			}
 			if strings.Contains(q, "%!") {
 				t.Errorf("relations query for %+v has a format error:\n%s", f, q)
+			}
+		}
+	})
+
+	t.Run("foreign tables query uses the same leaf exclusion", func(t *testing.T) {
+		// A foreign leaf partition whose parent is in scope is hidden by the
+		// relations query, so its FDW metadata row would be discarded anyway;
+		// the same predicate keeps a cross-schema standalone leaf's metadata.
+		for _, f := range []schemaFilter{{}, {schema: "archive"}} {
+			q := buildForeignTablesQuery(f)
+			if !strings.Contains(q, "pg_catalog.pg_inherits") {
+				t.Errorf("foreign tables query for %+v missing leaf EXISTS:\n%s", f, q)
+			}
+			if !strings.Contains(q, "inh.inhrelid = c.oid") {
+				t.Errorf("foreign tables query for %+v should match on the c alias:\n%s", f, q)
+			}
+			if strings.Contains(q, "%!") {
+				t.Errorf("foreign tables query for %+v has a format error:\n%s", f, q)
 			}
 		}
 	})

@@ -56,6 +56,11 @@ type TableSchema struct {
 	// schema is shown as a standalone table instead (see leafPartitionExclusion).
 	Partitions []PartitionInfo `json:"partitions,omitempty"`
 	Hypertable *HypertableInfo `json:"hypertable,omitempty"`
+	// Foreign is the FDW binding of a foreign table (relkind 'f'). Nil for
+	// regular tables. Foreign tables are modeled as tables because they
+	// behave like them (columns, CHECK constraints, triggers, partition
+	// membership); this field is what distinguishes them.
+	Foreign *ForeignTableInfo `json:"foreign,omitempty"`
 }
 
 // PartitionInfo describes a single child partition of a partitioned table.
@@ -192,6 +197,16 @@ type Routine struct {
 type HypertableInfo struct {
 	CompressionEnabled bool `json:"compression_enabled"`
 	NumChunks          int  `json:"num_chunks"`
+}
+
+// ForeignTableInfo describes the FDW binding of a foreign table. Only
+// table-level options (pg_foreign_table.ftoptions, e.g. schema_name /
+// table_name for postgres_fdw) are exposed; server-level options and user
+// mappings, which can carry credentials, are never fetched.
+type ForeignTableInfo struct {
+	Server  string   `json:"server"`            // pg_foreign_server.srvname
+	Wrapper string   `json:"wrapper"`           // pg_foreign_data_wrapper.fdwname
+	Options []string `json:"options,omitempty"` // ftoptions as "key=value" strings
 }
 
 // FetchDatabaseSchemaArgs are the arguments to FetchDatabaseSchema.
@@ -554,6 +569,14 @@ type partitionRow struct {
 	PartitionBound  string `db:"partition_bound"`
 }
 
+type foreignTableRow struct {
+	SchemaName  string   `db:"schema_name"`
+	TableName   string   `db:"table_name"`
+	ServerName  string   `db:"server_name"`
+	WrapperName string   `db:"wrapper_name"`
+	Options     []string `db:"options"`
+}
+
 // SQL queries are built dynamically because they need to splice in
 // per-call filter clauses (schema-name restriction, internal filtering).
 // Each builder returns a fully-formed query string ready for the driver.
@@ -566,6 +589,7 @@ SELECT
     CASE c.relkind
         WHEN 'r' THEN 'table'
         WHEN 'p' THEN 'table'
+        WHEN 'f' THEN 'table'
         WHEN 'v' THEN 'view'
         WHEN 'm' THEN 'materialized_view'
     END AS relation_type,
@@ -589,7 +613,11 @@ LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
 -- Intermediate partitioned tables in a multi-level hierarchy (relispartition
 -- children that are themselves partitioned, relkind 'p') ARE kept, so their
 -- own sub-partitions remain reachable.
-WHERE c.relkind IN ('r', 'p', 'v', 'm')
+-- Foreign tables (relkind 'f') are surfaced as tables; their FDW binding
+-- (server/wrapper/options) attaches later in fetchForeignTables. A foreign
+-- table that is a leaf partition is hidden like any other leaf (relkind 'f'
+-- is not 'p', so leafPartitionExclusion applies).
+WHERE c.relkind IN ('r', 'p', 'f', 'v', 'm')
   %s
   AND a.attnum > 0
   AND NOT a.attisdropped
@@ -982,6 +1010,47 @@ ORDER BY pn.nspname, parent.relname, child.relname`,
 	)
 }
 
+// buildForeignTablesQuery returns the FDW binding (server, wrapper, and
+// table-level options) for each foreign table, one row per table.
+// fetchForeignTables attaches the result to the tables collected by the
+// relations query (which includes relkind 'f'), mirroring how hypertable
+// metadata attaches. Only pg_foreign_table.ftoptions is read — server-level
+// options and user mappings (pg_user_mapping), which can carry credentials,
+// are deliberately never fetched.
+func buildForeignTablesQuery(f schemaFilter) string {
+	return fmt.Sprintf(`
+SELECT
+    n.nspname AS schema_name,
+    c.relname AS table_name,
+    s.srvname AS server_name,
+    fdw.fdwname AS wrapper_name,
+    ft.ftoptions AS options
+FROM pg_foreign_table ft
+JOIN pg_class c ON c.oid = ft.ftrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_foreign_server s ON s.oid = ft.ftserver
+JOIN pg_foreign_data_wrapper fdw ON fdw.oid = s.srvfdw
+WHERE TRUE
+  %s
+  %s
+  %s
+  %s
+  %s
+  %s
+ORDER BY n.nspname, c.relname`,
+		// Skip foreign leaf partitions whose parent is in scope: the relations
+		// query hides them as standalone tables, so their rows here would be
+		// discarded anyway (fetchForeignTables drops rows whose table isn't in
+		// tableIndex). The same predicate keeps a cross-schema standalone leaf.
+		f.leafPartitionExclusion("c"),
+		f.onSchema("n.nspname"),
+		f.onSchemaAccessible("n.oid"),
+		f.onExtensionObject("'pg_class'::regclass", "c.oid"),
+		f.onAccessible(relationObject, "c.oid"),
+		f.onUserOwned("c.relowner"),
+	)
+}
+
 // FetchDatabaseSchema fetches the complete schema information for a
 // database. By default only user-visible schemas and objects are returned;
 // pass IncludeInternal=true to include catalog, TimescaleDB internals, and
@@ -1049,6 +1118,9 @@ func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*Da
 	}
 	if err := fetchPartitions(ctx, conn, filter, bld); err != nil {
 		return nil, fmt.Errorf("failed to fetch partitions: %w", err)
+	}
+	if err := fetchForeignTables(ctx, conn, filter, bld); err != nil {
+		return nil, fmt.Errorf("failed to fetch foreign tables: %w", err)
 	}
 	// Must run after every namespace-creating fetch above: schema comments
 	// attach only to namespaces that already hold visible objects.
@@ -1611,6 +1683,34 @@ func fetchHypertables(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *sc
 		t.Hypertable = &HypertableInfo{
 			CompressionEnabled: row.CompressionEnabled,
 			NumChunks:          row.NumChunks,
+		}
+	}
+	return nil
+}
+
+// fetchForeignTables attaches FDW binding metadata (server, wrapper, and
+// table-level options) to each foreign table collected by the relations
+// query. It must run after fetchRelationsAndColumns, which populates the
+// tableIndex it attaches to.
+func fetchForeignTables(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBuilder) error {
+	rows, err := conn.Query(ctx, buildForeignTablesQuery(f), f.queryArgs()...)
+	if err != nil {
+		return err
+	}
+	results, err := pgx.CollectRows(rows, pgx.RowToStructByName[foreignTableRow])
+	if err != nil {
+		return err
+	}
+
+	for _, row := range results {
+		t, ok := b.tableIndex[qualifiedName{Schema: row.SchemaName, Name: row.TableName}]
+		if !ok {
+			continue
+		}
+		t.Foreign = &ForeignTableInfo{
+			Server:  row.ServerName,
+			Wrapper: row.WrapperName,
+			Options: row.Options,
 		}
 	}
 	return nil

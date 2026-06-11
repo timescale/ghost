@@ -38,7 +38,7 @@ func newSchemaTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "ghost_schema",
 		Title:       "Show Database Schema",
-		Description: "Display database schema including tables, views, materialized views, enum types, functions, procedures, indexes, triggers, and TimescaleDB hypertable metadata. Only objects the connecting user can access are returned.",
+		Description: "Display database schema including tables (regular, partitioned, and foreign), views, materialized views, enum types, functions, procedures, indexes, triggers, and TimescaleDB hypertable metadata. Only objects the connecting user can access are returned.",
 		InputSchema: SchemaInput{}.Schema(),
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,

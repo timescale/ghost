@@ -34,6 +34,10 @@ export interface TableSchema {
   // tables; the children are hidden as standalone tables.
   partitions?: PartitionInfo[];
   hypertable?: HypertableInfo;
+  // FDW binding of a foreign table (relkind 'f'). Absent for regular
+  // tables. Foreign tables are modeled as tables; this field is what
+  // distinguishes them.
+  foreign?: ForeignTableInfo;
 }
 
 export interface PartitionInfo {
@@ -144,6 +148,36 @@ export function routineSignature(routine: Routine): string {
 export interface HypertableInfo {
   compression_enabled: boolean;
   num_chunks: number;
+}
+
+// hypertableDetails renders hypertable metadata as readable plain text, used
+// by both the hypertable pill tooltip and the "View hypertable details"
+// modal.
+export function hypertableDetails(info: HypertableInfo): string {
+  return [
+    `Chunks:      ${info.num_chunks}`,
+    `Compression: ${info.compression_enabled ? 'enabled' : 'disabled'}`,
+  ].join('\n');
+}
+
+export interface ForeignTableInfo {
+  // pg_foreign_server.srvname
+  server: string;
+  // pg_foreign_data_wrapper.fdwname
+  wrapper: string;
+  // Table-level ftoptions as "key=value" strings (e.g. "table_name=orders").
+  // Server-level options and user mappings are never exposed.
+  options?: string[];
+}
+
+// foreignTableDetails renders an FDW binding as readable plain text, used by
+// both the FDW pill tooltip and the "View FDW details" modal.
+export function foreignTableDetails(info: ForeignTableInfo): string {
+  const lines = [`Server:  ${info.server}`, `Wrapper: ${info.wrapper}`];
+  if (info.options && info.options.length > 0) {
+    lines.push('Options:', ...info.options.map((opt) => `  ${opt}`));
+  }
+  return lines.join('\n');
 }
 
 // quoteIdent wraps a Postgres identifier with double-quotes, escaping any

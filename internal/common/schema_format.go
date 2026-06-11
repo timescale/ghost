@@ -82,6 +82,13 @@ func formatTableContents(buf *strings.Builder, table TableSchema, includeComment
 			boolWord(table.Hypertable.CompressionEnabled, "enabled", "disabled"),
 		)
 	}
+	if table.Foreign != nil {
+		parts := append([]string{
+			"server=" + table.Foreign.Server,
+			"wrapper=" + table.Foreign.Wrapper,
+		}, table.Foreign.Options...)
+		fmt.Fprintf(buf, "  -- FOREIGN TABLE (%s)\n", strings.Join(parts, ", "))
+	}
 
 	singlePK := ""
 	singleUnique := make(map[string]bool)
