@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface SplitPaneProps {
   leftWidth: number;
-  minLeftWidth: number;
-  maxLeftWidth: number;
+  minLeftWidth?: number;
+  maxLeftWidth?: number;
+  minRightWidth?: number;
   showLeft: boolean;
-  onLeftWidthChange: (width: number) => void;
+  onLeftWidthChange: (width: number | ((prevWidth: number) => number)) => void;
   left: React.ReactNode;
   right: React.ReactNode;
 }
@@ -17,14 +18,15 @@ interface SplitPaneProps {
 // transient state they hold (scroll position, search input) is not preserved.
 export function SplitPane({
   leftWidth,
-  minLeftWidth,
+  minLeftWidth = 0,
   maxLeftWidth,
+  minRightWidth = 0,
   showLeft,
   onLeftWidthChange,
   left,
   right,
 }: SplitPaneProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   const draggingRef = useRef(false);
   const onLeftWidthChangeRef = useRef(onLeftWidthChange);
@@ -36,30 +38,44 @@ export function SplitPane({
     setDragging(true);
   }, []);
 
+  const clampedSetLeftWidth = useCallback(
+    (passedWidth?: number) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      onLeftWidthChangeRef.current((prevWidth) =>
+        Math.min(
+          maxLeftWidth ?? Infinity,
+          rect.width - minRightWidth,
+          Math.max(minLeftWidth, passedWidth ?? prevWidth),
+        ),
+      );
+    },
+    [minLeftWidth, maxLeftWidth, minRightWidth],
+  );
+
   // Keyboard resize for accessibility: the divider exposes a separator role
   // with aria-valuemin/max/now, so arrow keys must adjust the width. Shift
   // takes larger steps.
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       const step = e.shiftKey ? 32 : 8;
-      const clamp = (width: number) =>
-        Math.min(maxLeftWidth, Math.max(minLeftWidth, width));
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        onLeftWidthChangeRef.current(clamp(leftWidth - step));
+        clampedSetLeftWidth(leftWidth - step);
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        onLeftWidthChangeRef.current(clamp(leftWidth + step));
+        clampedSetLeftWidth(leftWidth + step);
       }
     },
-    [leftWidth, minLeftWidth, maxLeftWidth],
+    [leftWidth, clampedSetLeftWidth],
   );
 
   useEffect(() => {
+    if (!containerRef.current) return;
     const onMouseMove = (e: MouseEvent) => {
       if (!draggingRef.current || !containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      onLeftWidthChangeRef.current(e.clientX - rect.left);
+      clampedSetLeftWidth(e.clientX - rect.left);
     };
     const onMouseUp = () => {
       if (!draggingRef.current) return;
@@ -68,11 +84,16 @@ export function SplitPane({
     };
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
+    const observer = new ResizeObserver(() => {
+      if (!draggingRef.current) clampedSetLeftWidth();
+    });
+    observer.observe(containerRef.current);
     return () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
+      observer.disconnect();
     };
-  }, []);
+  }, [clampedSetLeftWidth]);
 
   return (
     <div ref={containerRef} className="flex relative h-full w-full flex-auto">
@@ -102,7 +123,10 @@ export function SplitPane({
           />
         </>
       ) : null}
-      <div className="flex h-full flex-auto flex-col overflow-hidden">
+      <div
+        className="flex h-full flex-auto flex-col overflow-hidden"
+        style={{ minWidth: minRightWidth }}
+      >
         {right}
       </div>
       {dragging && <div className="absolute inset-0 cursor-col-resize" />}

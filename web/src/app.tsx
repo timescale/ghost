@@ -4,12 +4,7 @@ import '@timescale/popsql-query-widget-cdn/index.css';
 import { QueryPanel } from './components/QueryPanel';
 import { SchemaPane } from './components/SchemaPane';
 import { SplitPane } from './components/SplitPane';
-import {
-  MAX_SCHEMA_PANE_WIDTH,
-  MIN_SCHEMA_PANE_WIDTH,
-  type PersistedState,
-  useServeStore,
-} from './store';
+import { type PersistedState, useServeStore } from './store';
 
 interface Bootstrap {
   projectId: string;
@@ -157,8 +152,8 @@ function ReadyApp({ bootstrap }: ReadyAppProps) {
         <SplitPane
           showLeft={schemaPaneVisible && !!selectedIsReady}
           leftWidth={schemaPaneWidth}
-          minLeftWidth={MIN_SCHEMA_PANE_WIDTH}
-          maxLeftWidth={MAX_SCHEMA_PANE_WIDTH}
+          minLeftWidth={200}
+          minRightWidth={500}
           onLeftWidthChange={setSchemaPaneWidth}
           left={
             selectedIsReady ? <SchemaPane databaseId={selected.id} /> : null

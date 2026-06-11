@@ -25,7 +25,7 @@ interface ServeStore {
   setEditorSql: (sql: string) => void;
   appendEditorSql: (sql: string) => void;
   setEditorHeight: (height: number) => void;
-  setSchemaPaneWidth: (width: number) => void;
+  setSchemaPaneWidth: (width: number | ((prevWidth: number) => number)) => void;
   setSchemaPaneVisible: (visible: boolean) => void;
   setShowInternalObjects: (show: boolean) => void;
   toggleSchemaNode: (databaseId: string, key: string) => void;
@@ -33,8 +33,6 @@ interface ServeStore {
 
 export const DEFAULT_EDITOR_HEIGHT = 240;
 export const DEFAULT_SCHEMA_PANE_WIDTH = 280;
-export const MIN_SCHEMA_PANE_WIDTH = 200;
-export const MAX_SCHEMA_PANE_WIDTH = 600;
 
 function getUrlDbId(): string | null {
   return new URLSearchParams(window.location.search).get('db');
@@ -67,10 +65,6 @@ function snapshotFor(store: ServeStore): PersistedState {
   };
 }
 
-function clamp(value: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, value));
-}
-
 export const useServeStore = create<ServeStore>((set, get) => ({
   hydrated: false,
   selectedDatabaseId: null,
@@ -88,11 +82,7 @@ export const useServeStore = create<ServeStore>((set, get) => ({
       selectedDatabaseId,
       editorSql: saved.editorSql ?? '',
       editorHeight: saved.editorHeight ?? DEFAULT_EDITOR_HEIGHT,
-      schemaPaneWidth: clamp(
-        saved.schemaPaneWidth ?? DEFAULT_SCHEMA_PANE_WIDTH,
-        MIN_SCHEMA_PANE_WIDTH,
-        MAX_SCHEMA_PANE_WIDTH,
-      ),
+      schemaPaneWidth: saved.schemaPaneWidth ?? DEFAULT_SCHEMA_PANE_WIDTH,
       schemaPaneVisible: saved.schemaPaneVisible ?? true,
       schemaTreeExpanded: saved.schemaTreeExpanded ?? {},
       showInternalObjects: saved.showInternalObjects ?? false,
@@ -119,10 +109,8 @@ export const useServeStore = create<ServeStore>((set, get) => ({
   },
   setSchemaPaneWidth: (width) => {
     set({
-      schemaPaneWidth: clamp(
-        Math.round(width),
-        MIN_SCHEMA_PANE_WIDTH,
-        MAX_SCHEMA_PANE_WIDTH,
+      schemaPaneWidth: Math.round(
+        typeof width === 'function' ? width(get().schemaPaneWidth) : width,
       ),
     });
     persist(snapshotFor(get()));
