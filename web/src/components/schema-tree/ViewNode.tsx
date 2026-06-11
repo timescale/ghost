@@ -3,7 +3,7 @@ import { highlight } from '../../util/highlight';
 import { childKey } from './keys';
 import { ColumnRow, IndexRow, TriggerRow } from './leafRows';
 import { viewMenuItems } from './menus';
-import { TreeRow } from './rows';
+import { CommentBadge, TreeRow } from './rows';
 import { SubItemGroup } from './SubItemGroup';
 import { filterForSearch } from './search';
 import { contextMenuHandler, type TreeContext } from './TreeContext';
@@ -30,6 +30,13 @@ export function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
       label={highlight(view.name, ctx.searchTerm)}
       depth={2}
       hasChildren
+      rightDetail={
+        <CommentBadge
+          title={view.name}
+          comment={view.comment}
+          showModal={ctx.showModal}
+        />
+      }
       onContextMenu={contextMenuHandler(ctx, () =>
         viewMenuItems(
           ns,

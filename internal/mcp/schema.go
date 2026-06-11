@@ -17,6 +17,7 @@ type SchemaInput struct {
 	SchemaName  string `json:"schema,omitempty"`
 	Internal    bool   `json:"internal,omitempty"`
 	Definitions bool   `json:"definitions,omitempty"`
+	Comments    bool   `json:"comments,omitempty"`
 }
 
 func (SchemaInput) Schema() *jsonschema.Schema {
@@ -28,6 +29,8 @@ func (SchemaInput) Schema() *jsonschema.Schema {
 	schema.Properties["internal"].Default = json.RawMessage("false")
 	schema.Properties["definitions"].Description = "Include full object definitions (view SELECT statements and function/procedure bodies). Omitted by default to keep the output concise. Defaults to false."
 	schema.Properties["definitions"].Default = json.RawMessage("false")
+	schema.Properties["comments"].Description = "Include object comments (COMMENT ON text for schemas, tables, views, columns, enums, functions, and procedures). Omitted by default to keep the output concise. Defaults to false."
+	schema.Properties["comments"].Default = json.RawMessage("false")
 	return schema
 }
 
@@ -58,6 +61,7 @@ func (s *Server) handleSchema(ctx context.Context, req *mcp.CallToolRequest, inp
 		Schema:             input.SchemaName,
 		IncludeInternal:    input.Internal,
 		IncludeDefinitions: input.Definitions,
+		IncludeComments:    input.Comments,
 	})
 	if err != nil {
 		return nil, nil, handleDatabaseError(err)
@@ -65,7 +69,7 @@ func (s *Server) handleSchema(ctx context.Context, req *mcp.CallToolRequest, inp
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
-			&mcp.TextContent{Text: common.FormatSchema(schema, input.Definitions)},
+			&mcp.TextContent{Text: common.FormatSchema(schema, input.Definitions, input.Comments)},
 		},
 	}, nil, nil
 }

@@ -21,6 +21,7 @@ const icons = Object.fromEntries(
 export type IconName =
   | 'chevron-down'
   | 'check'
+  | 'comment'
   | 'copy'
   | 'eye'
   | 'eye-off'

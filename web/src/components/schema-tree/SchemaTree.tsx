@@ -6,7 +6,7 @@ import { DefinitionModal } from './DefinitionModal';
 import { schemaKey } from './keys';
 import { SchemaNode } from './SchemaNode';
 import { computeSearch } from './search';
-import type { TreeContext } from './TreeContext';
+import type { ModalFormat, TreeContext } from './TreeContext';
 import { useSchemaTreeExpansion } from './useSchemaTreeExpansion';
 
 interface SchemaTreeProps {
@@ -32,6 +32,7 @@ export function SchemaTree({
   const [definitionModal, setDefinitionModal] = useState<{
     title: string;
     text: string;
+    format: ModalFormat;
   } | null>(null);
 
   const ctx = useMemo<TreeContext>(
@@ -43,7 +44,8 @@ export function SchemaTree({
       searchTerm,
       toggle: toggleNode,
       setContextMenu,
-      showModal: (title, text) => setDefinitionModal({ title, text }),
+      showModal: (title, text, format = 'sql') =>
+        setDefinitionModal({ title, text, format }),
     }),
     [
       expanded,
@@ -69,6 +71,7 @@ export function SchemaTree({
         <DefinitionModal
           title={definitionModal.title}
           text={definitionModal.text}
+          format={definitionModal.format}
           onClose={() => setDefinitionModal(null)}
         />
       ) : null}

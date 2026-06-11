@@ -13,6 +13,7 @@ func TestFormatSchema(t *testing.T) {
 		name               string
 		schema             *DatabaseSchema
 		includeDefinitions bool
+		includeComments    bool
 		expected           string
 	}{
 		// ==================== Database Header Tests ====================
@@ -2104,11 +2105,133 @@ TABLE: config
   CHECK (true)
 `,
 		},
+
+		// ==================== Comment Tests ====================
+		{
+			name: "comments render under headers and inline on columns",
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name:    "public",
+						Comment: "app schema",
+						Tables: []TableSchema{
+							{
+								Name:    "users",
+								Comment: "registered users",
+								Columns: []TableColumnSchema{
+									{Name: "name", Type: "text", Comment: "display name"},
+									{Name: "age", Type: "integer"},
+								},
+							},
+						},
+						Views: []ViewSchema{
+							{
+								Name:    "active_users",
+								Comment: "users active in the last 30 days",
+								Columns: []ViewColumnSchema{
+									{Name: "name", Type: "text", Comment: "display name"},
+								},
+							},
+						},
+						Enums: []EnumSchema{
+							{Name: "mood", Comment: "user mood", Values: []string{"happy", "sad"}},
+						},
+						Functions: []Routine{
+							{Name: "add", Arguments: "integer, integer", Type: RoutineFunction, Comment: "adds two numbers"},
+						},
+					},
+				},
+			},
+			includeComments: true,
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+  -- app schema
+
+TABLE: users
+  -- registered users
+  name  TEXT  -- display name
+  age   INTEGER
+
+VIEW: active_users
+  -- users active in the last 30 days
+  name  TEXT  -- display name
+
+ENUM: mood
+  -- user mood
+  'happy', 'sad'
+
+FUNCTION: add(integer, integer)
+  -- adds two numbers
+`,
+		},
+		{
+			name: "multi-line object comments get a prefix per line",
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						Tables: []TableSchema{
+							{
+								Name:    "users",
+								Comment: "line one\nline two",
+								Columns: []TableColumnSchema{
+									{Name: "name", Type: "text", Comment: "inline one\ninline two"},
+								},
+							},
+						},
+					},
+				},
+			},
+			includeComments: true,
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+TABLE: users
+  -- line one
+  -- line two
+  name  TEXT  -- inline one inline two
+`,
+		},
+		{
+			name: "comments hidden when not requested",
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name:    "public",
+						Comment: "app schema",
+						Tables: []TableSchema{
+							{
+								Name:    "users",
+								Comment: "registered users",
+								Columns: []TableColumnSchema{
+									{Name: "name", Type: "text", Comment: "display name"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+TABLE: users
+  name  TEXT
+`,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := FormatSchema(tt.schema, tt.includeDefinitions)
+			result := FormatSchema(tt.schema, tt.includeDefinitions, tt.includeComments)
 			if diff := cmp.Diff(tt.expected, result); diff != "" {
 				t.Errorf("FormatSchema() mismatch (-expected +got):\n%s", diff)
 			}

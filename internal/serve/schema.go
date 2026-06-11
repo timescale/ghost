@@ -25,7 +25,7 @@ func parseBoolQueryParam(r *http.Request, name string, defaultValue bool) (bool,
 	return parsed, nil
 }
 
-// schemaHandler serves GET /api/schema?databaseId=…&schema=…&internal=true&definitions=true.
+// schemaHandler serves GET /api/schema?databaseId=…&schema=…&internal=true&definitions=true&comments=true.
 // Returns the database schema as JSON. Opens a short-lived pgx connection
 // per request via common.FetchDatabaseSchema — same path used by the CLI's
 // `ghost schema` command, so the two stay in sync automatically.
@@ -53,6 +53,12 @@ func (h *Handler) schemaHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	includeComments, err := parseBoolQueryParam(r, "comments", false)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err, logger)
+		return
+	}
+
 	client, projectID, err := h.loadClient(ctx)
 	if err != nil {
 		logger.Warn("Error loading client", slog.Any("error", err))
@@ -67,6 +73,7 @@ func (h *Handler) schemaHandler(w http.ResponseWriter, r *http.Request) {
 		Schema:             schemaName,
 		IncludeInternal:    includeInternal,
 		IncludeDefinitions: includeDefinitions,
+		IncludeComments:    includeComments,
 	})
 	if err != nil {
 		status := httpStatusForFetchError(err)

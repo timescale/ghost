@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import type {
+  EnumSchema,
   NamespacedSchema,
   Routine,
   TableSchema,
@@ -17,7 +18,7 @@ import {
 } from './keys';
 import { EnumRow, RoutineRow } from './leafRows';
 import { schemaMenuItems } from './menus';
-import { SchemaRootRow, TreeRow } from './rows';
+import { CommentBadge, SchemaRootRow, TreeRow } from './rows';
 import { TableNode } from './TableNode';
 import { contextMenuHandler, type TreeContext } from './TreeContext';
 import { ViewNode } from './ViewNode';
@@ -37,7 +38,16 @@ export function SchemaNode({ ns, ctx }: SchemaNodeProps) {
       nodeKey={key}
       label={highlight(ns.name, ctx.searchTerm)}
       hasChildren
-      onContextMenu={contextMenuHandler(ctx, () => schemaMenuItems(ns.name))}
+      rightDetail={
+        <CommentBadge
+          title={ns.name}
+          comment={ns.comment}
+          showModal={ctx.showModal}
+        />
+      }
+      onContextMenu={contextMenuHandler(ctx, () =>
+        schemaMenuItems(ns, ctx.showModal),
+      )}
     >
       {groups.map((g) => (
         <GroupNode key={g.kind} ns={ns.name} group={g} ctx={ctx} />
@@ -158,12 +168,7 @@ function renderGroupItem(
       );
     case 'enums':
       return (
-        <EnumRow
-          key={itemKey}
-          ns={ns}
-          enum_={item as { name: string; values?: string[] }}
-          ctx={ctx}
-        />
+        <EnumRow key={itemKey} ns={ns} enum_={item as EnumSchema} ctx={ctx} />
       );
   }
 }

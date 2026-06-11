@@ -9,6 +9,9 @@ export interface DatabaseSchema {
 
 export interface NamespacedSchema {
   name: string;
+  // COMMENT ON SCHEMA text. Absent unless comments were requested (the Go
+  // field is `comment,omitempty`); the schema pane always requests them.
+  comment?: string;
   tables?: TableSchema[];
   views?: ViewSchema[];
   materialized_views?: ViewSchema[];
@@ -19,6 +22,8 @@ export interface NamespacedSchema {
 
 export interface TableSchema {
   name: string;
+  // COMMENT ON TABLE text. Absent unless comments were requested.
+  comment?: string;
   columns?: TableColumn[];
   constraints?: TableConstraint[];
   indexes?: IndexSchema[];
@@ -45,6 +50,8 @@ export interface PartitionInfo {
 export interface TableColumn {
   name: string;
   type: string;
+  // COMMENT ON COLUMN text. Absent unless comments were requested.
+  comment?: string;
   not_null?: boolean;
   default?: string;
   is_serial?: boolean;
@@ -53,6 +60,9 @@ export interface TableColumn {
 
 export interface ViewSchema {
   name: string;
+  // COMMENT ON (MATERIALIZED) VIEW text. Absent unless comments were
+  // requested.
+  comment?: string;
   columns?: ViewColumn[];
   // The view's defining SELECT (from pg_get_viewdef). Absent for tables.
   definition?: string;
@@ -65,6 +75,8 @@ export interface ViewSchema {
 export interface ViewColumn {
   name: string;
   type: string;
+  // COMMENT ON COLUMN text. Absent unless comments were requested.
+  comment?: string;
 }
 
 export interface TableConstraint {
@@ -98,6 +110,8 @@ export interface ExclusionConstraint {
 
 export interface EnumSchema {
   name: string;
+  // COMMENT ON TYPE text. Absent unless comments were requested.
+  comment?: string;
   values?: string[];
 }
 
@@ -114,6 +128,9 @@ export interface Routine {
   // overloaded routines sharing a name. Absent for zero-argument routines.
   arguments?: string;
   type: 'FUNCTION' | 'PROCEDURE';
+  // COMMENT ON FUNCTION/PROCEDURE text. Absent unless comments were
+  // requested.
+  comment?: string;
   definition?: string;
 }
 

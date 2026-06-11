@@ -13,6 +13,10 @@ import { CopyButton } from './CopyButton';
 
 interface Props {
   query: string;
+  // Monaco language for the read-only editor. Defaults to the widget's SQL
+  // language; pass 'plaintext' for prose content (e.g. object comments) that
+  // shouldn't be SQL-highlighted.
+  language?: string;
 }
 
 // SqlCodeView renders read-only, syntax-highlighted SQL using the PopSQL
@@ -20,7 +24,7 @@ interface Props {
 // only the code editor and a copy button (in the toolbar) are visible. Used to
 // display object definitions (indexes, functions, procedures) with the same
 // highlighting as the main query editor.
-export function SqlCodeView({ query }: Props) {
+export function SqlCodeView({ query, language }: Props) {
   // Required by QueryWidget, but never invoked here: the editor is read-only
   // and the run button is hidden/disabled, so no query is ever executed.
   const getExecuteQueryData = useCallback(
@@ -52,9 +56,13 @@ export function SqlCodeView({ query }: Props) {
             hideSearchInput
             resizeHandles="none"
             renderToolbarAppendRight={renderToolbarAppendRight}
+            editorLanguage={language}
             editorOptions={{
               minimap: { enabled: false },
               scrollBeyondLastLine: false,
+              // Prose wraps to the modal width; SQL keeps Monaco's default
+              // no-wrap + horizontal scroll.
+              ...(language === 'plaintext' ? { wordWrap: 'on' as const } : {}),
             }}
           />
           <ContextMenuContext.Consumer>

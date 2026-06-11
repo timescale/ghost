@@ -10,7 +10,7 @@ import {
   TriggerRow,
 } from './leafRows';
 import { tableMenuItems } from './menus';
-import { TreeRow } from './rows';
+import { CommentBadge, TreeRow } from './rows';
 import { SubItemGroup } from './SubItemGroup';
 import { contextMenuHandler, type TreeContext } from './TreeContext';
 
@@ -30,10 +30,19 @@ export function TableNode({ ns, table, ctx }: TableNodeProps) {
       depth={2}
       hasChildren
       rightDetail={
-        table.hypertable ? <HypertableBadge info={table.hypertable} /> : null
+        <>
+          {table.hypertable ? (
+            <HypertableBadge info={table.hypertable} />
+          ) : null}
+          <CommentBadge
+            title={table.name}
+            comment={table.comment}
+            showModal={ctx.showModal}
+          />
+        </>
       }
       onContextMenu={contextMenuHandler(ctx, () =>
-        tableMenuItems(ns, table, 'table'),
+        tableMenuItems(ns, table, 'table', ctx.showModal),
       )}
     >
       <SubItemGroup

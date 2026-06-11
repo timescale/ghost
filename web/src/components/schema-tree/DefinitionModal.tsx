@@ -1,17 +1,22 @@
 import { Modal } from '../Modal';
 import { SqlCodeView } from '../SqlCodeView';
+import type { ModalFormat } from './TreeContext';
 
 interface DefinitionModalProps {
   title: string;
   text: string;
+  format: ModalFormat;
   onClose: () => void;
 }
 
 // DefinitionModal shows a SQL definition (view/routine definition, trigger
-// statement, partition bound, …) in a syntax-highlighted modal.
+// statement, partition bound, …) in a syntax-highlighted modal, or — with
+// format 'text' — plain prose (object comments) in the same editor view
+// without SQL highlighting.
 export function DefinitionModal({
   title,
   text,
+  format,
   onClose,
 }: DefinitionModalProps) {
   return (
@@ -28,7 +33,10 @@ export function DefinitionModal({
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-2">
-        <SqlCodeView query={text} />
+        <SqlCodeView
+          query={text}
+          language={format === 'text' ? 'plaintext' : undefined}
+        />
       </div>
     </Modal>
   );

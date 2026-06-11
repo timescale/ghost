@@ -36,9 +36,39 @@ export function copyQualifiedNameItem(ns: string, name: string): MenuItem {
   };
 }
 
-export function schemaMenuItems(name: string): MenuItem[] {
-  const append = useServeStore.getState().appendEditorSql;
+// commentMenuItems builds the View/Copy comment pair for an object's
+// COMMENT ON text. Returns no items when the object has no comment, so
+// callers can unconditionally splice the result into their menus.
+export function commentMenuItems(
+  title: string,
+  comment: string | undefined,
+  showModal: ShowModal,
+): MenuItem[] {
+  if (!comment) return [];
   return [
+    {
+      key: 'view-comment',
+      label: iconLabel('eye', 'View comment'),
+      // Comments are prose, not SQL — render them without syntax
+      // highlighting.
+      onClick: () => showModal(title, comment, 'text'),
+    },
+    {
+      key: 'copy-comment',
+      label: iconLabel('copy', 'Copy comment'),
+      onClick: () => copyText(comment),
+    },
+  ];
+}
+
+export function schemaMenuItems(
+  schema: { name: string; comment?: string },
+  showModal: ShowModal,
+): MenuItem[] {
+  const append = useServeStore.getState().appendEditorSql;
+  const { name } = schema;
+  return [
+    ...commentMenuItems(name, schema.comment, showModal),
     {
       key: 'new-query',
       label: iconLabel(
@@ -55,20 +85,22 @@ export function schemaMenuItems(name: string): MenuItem[] {
   ];
 }
 
-// tableMenuItems builds the query/copy actions shared by tables and views. It
-// only needs the relation's name and column names, so its parameter is
-// narrowed to that shape (rather than the full TableSchema) — this lets
-// viewMenuItems reuse it without an unsafe cast, and surfaces a compile error
-// if a future edit reaches for a table-only field.
+// tableMenuItems builds the comment/query/copy actions shared by tables and
+// views. It only needs the relation's name, comment, and column names, so its
+// parameter is narrowed to that shape (rather than the full TableSchema) —
+// this lets viewMenuItems reuse it without an unsafe cast, and surfaces a
+// compile error if a future edit reaches for a table-only field.
 export function tableMenuItems(
   ns: string,
-  table: { name: string; columns?: { name: string }[] },
+  table: { name: string; comment?: string; columns?: { name: string }[] },
   kind: 'table' | 'view' | 'materialized view',
+  showModal: ShowModal,
 ): MenuItem[] {
   const append = useServeStore.getState().appendEditorSql;
   const cols = table.columns ?? [];
   const sql = selectAllSql(ns, table.name, cols);
   return [
+    ...commentMenuItems(table.name, table.comment, showModal),
     {
       key: 'new-query',
       label: iconLabel('new-query', `New query from ${kind}`),
@@ -109,19 +141,23 @@ export function viewMenuItems(
       },
     );
   }
-  // Reuse the table query/copy actions (SELECT *, copy name, etc.).
-  items.push(...tableMenuItems(ns, view, kind));
+  // Reuse the table comment/query/copy actions (View comment, SELECT *,
+  // copy name, etc.).
+  items.push(...tableMenuItems(ns, view, kind, showModal));
   return items;
 }
 
 export function columnMenuItems(
   ns: string,
   table: string,
-  col: string,
+  col: { name: string; comment?: string },
+  showModal: ShowModal,
 ): MenuItem[] {
   const append = useServeStore.getState().appendEditorSql;
-  const sql = `SELECT ${quoteIdent(col)} FROM ${qualifiedName(ns, table)} LIMIT 100;`;
+  const colName = col.name;
+  const sql = `SELECT ${quoteIdent(colName)} FROM ${qualifiedName(ns, table)} LIMIT 100;`;
   return [
+    ...commentMenuItems(colName, col.comment, showModal),
     {
       key: 'new-query',
       label: iconLabel('new-query', 'New query with column'),
@@ -135,13 +171,25 @@ export function columnMenuItems(
     {
       key: 'copy-name',
       label: iconLabel('copy', 'Copy column name'),
-      onClick: () => copyText(quoteIdent(col)),
+      onClick: () => copyText(quoteIdent(colName)),
     },
     {
       key: 'copy-qualified',
       label: iconLabel('copy', 'Copy qualified column name'),
-      onClick: () => copyText(`${qualifiedName(ns, table)}.${quoteIdent(col)}`),
+      onClick: () =>
+        copyText(`${qualifiedName(ns, table)}.${quoteIdent(colName)}`),
     },
+  ];
+}
+
+export function enumMenuItems(
+  ns: string,
+  enum_: { name: string; comment?: string },
+  showModal: ShowModal,
+): MenuItem[] {
+  return [
+    ...commentMenuItems(enum_.name, enum_.comment, showModal),
+    copyQualifiedNameItem(ns, enum_.name),
   ];
 }
 
@@ -244,6 +292,9 @@ export function routineMenuItems(
       },
     );
   }
-  items.push(copyQualifiedNameItem(ns, routine.name));
+  items.push(
+    ...commentMenuItems(routineSignature(routine), routine.comment, showModal),
+    copyQualifiedNameItem(ns, routine.name),
+  );
   return items;
 }

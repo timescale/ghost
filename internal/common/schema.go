@@ -22,7 +22,11 @@ type DatabaseSchema struct {
 
 // NamespacedSchema groups the objects belonging to a single Postgres schema.
 type NamespacedSchema struct {
-	Name              string        `json:"name"`
+	Name string `json:"name"`
+	// Comment is the schema's COMMENT ON SCHEMA text. Only populated when
+	// comments are requested. A schema with a comment but no visible objects
+	// is not surfaced just for its comment.
+	Comment           string        `json:"comment,omitempty"`
 	Tables            []TableSchema `json:"tables,omitempty"`
 	Views             []ViewSchema  `json:"views,omitempty"`
 	MaterializedViews []ViewSchema  `json:"materialized_views,omitempty"`
@@ -33,7 +37,10 @@ type NamespacedSchema struct {
 
 // TableSchema holds schema information for a table.
 type TableSchema struct {
-	Name        string                `json:"name"`
+	Name string `json:"name"`
+	// Comment is the table's COMMENT ON TABLE text. Only populated when
+	// comments are requested.
+	Comment     string                `json:"comment,omitempty"`
 	Columns     []TableColumnSchema   `json:"columns,omitempty"`
 	Constraints []TableConstraint     `json:"constraints,omitempty"` // PK, UK, FK constraints (single and multi-column)
 	Indexes     []IndexSchema         `json:"indexes,omitempty"`
@@ -66,7 +73,10 @@ type PartitionInfo struct {
 
 // ViewSchema holds schema information for a view or materialized view.
 type ViewSchema struct {
-	Name    string             `json:"name"`
+	Name string `json:"name"`
+	// Comment is the view's COMMENT ON (MATERIALIZED) VIEW text. Only
+	// populated when comments are requested.
+	Comment string             `json:"comment,omitempty"`
 	Columns []ViewColumnSchema `json:"columns,omitempty"`
 	// Definition is the view's defining SELECT (from pg_get_viewdef).
 	Definition string `json:"definition,omitempty"`
@@ -81,12 +91,18 @@ type ViewSchema struct {
 type ViewColumnSchema struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
+	// Comment is the column's COMMENT ON COLUMN text. Only populated when
+	// comments are requested.
+	Comment string `json:"comment,omitempty"`
 }
 
 // TableColumnSchema holds schema information for a table column.
 type TableColumnSchema struct {
-	Name         string `json:"name"`
-	Type         string `json:"type"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+	// Comment is the column's COMMENT ON COLUMN text. Only populated when
+	// comments are requested.
+	Comment      string `json:"comment,omitempty"`
 	NotNull      bool   `json:"not_null,omitempty"`
 	Default      string `json:"default,omitempty"`       // empty if no default
 	IsSerial     bool   `json:"is_serial,omitempty"`     // true if SERIAL/BIGSERIAL/SMALLSERIAL (has sequence, not identity)
@@ -135,8 +151,11 @@ type ExclusionConstraint struct {
 
 // EnumSchema describes an enum type.
 type EnumSchema struct {
-	Name   string   `json:"name"`
-	Values []string `json:"values,omitempty"`
+	Name string `json:"name"`
+	// Comment is the type's COMMENT ON TYPE text. Only populated when
+	// comments are requested.
+	Comment string   `json:"comment,omitempty"`
+	Values  []string `json:"values,omitempty"`
 }
 
 // TriggerSchema describes a single trigger on a table.
@@ -161,9 +180,12 @@ type Routine struct {
 	// Arguments is the identity argument list (e.g. "integer, text"),
 	// which distinguishes overloaded routines that share a name. Empty for
 	// a routine that takes no arguments.
-	Arguments  string      `json:"arguments,omitempty"`
-	Type       RoutineType `json:"type"`
-	Definition string      `json:"definition,omitempty"`
+	Arguments string      `json:"arguments,omitempty"`
+	Type      RoutineType `json:"type"`
+	// Comment is the routine's COMMENT ON FUNCTION/PROCEDURE text. Only
+	// populated when comments are requested.
+	Comment    string `json:"comment,omitempty"`
+	Definition string `json:"definition,omitempty"`
 }
 
 // HypertableInfo describes TimescaleDB hypertable metadata for a table.
@@ -187,6 +209,11 @@ type FetchDatabaseSchemaArgs struct {
 	// default because they can be large and may embed implementation details
 	// or secrets; only fetch them when the caller will actually use them.
 	IncludeDefinitions bool
+	// IncludeComments, when true, fetches object comments (COMMENT ON text
+	// from pg_description) for schemas, tables, views, materialized views,
+	// columns, enums, functions, and procedures. Omitted by default to keep
+	// the output concise.
+	IncludeComments bool
 }
 
 // schemaFilter holds the SQL fragments needed to scope a query to the
@@ -194,6 +221,7 @@ type FetchDatabaseSchemaArgs struct {
 type schemaFilter struct {
 	includeInternal    bool
 	includeDefinitions bool
+	includeComments    bool
 	schema             string
 }
 
@@ -204,6 +232,17 @@ type schemaFilter struct {
 // embed implementation details or secrets) is never returned.
 func (f schemaFilter) definitionExpr(expr string) string {
 	if f.includeDefinitions {
+		return expr
+	}
+	return "NULL"
+}
+
+// commentExpr returns the SQL expression to select for an object's COMMENT
+// (obj_description/col_description text from pg_description). When comments
+// are not requested it returns NULL, so the description lookups are skipped
+// and no comment text is returned.
+func (f schemaFilter) commentExpr(expr string) string {
+	if f.includeComments {
 		return expr
 	}
 	return "NULL"
@@ -428,16 +467,18 @@ func (f schemaFilter) onUserOwned(ownerCol string) string {
 // Row types for scanning query results
 
 type relationColumnRow struct {
-	SchemaName   string  `db:"schema_name"`
-	RelationName string  `db:"relation_name"`
-	RelationType string  `db:"relation_type"`
-	ColumnName   string  `db:"column_name"`
-	DataType     string  `db:"data_type"`
-	NotNull      bool    `db:"not_null"`
-	DefaultValue *string `db:"default_value"`
-	ColumnOrder  int16   `db:"column_order"`
-	SequenceName *string `db:"sequence_name"`
-	IdentityType string  `db:"identity_type"`
+	SchemaName      string  `db:"schema_name"`
+	RelationName    string  `db:"relation_name"`
+	RelationType    string  `db:"relation_type"`
+	RelationComment *string `db:"relation_comment"`
+	ColumnName      string  `db:"column_name"`
+	DataType        string  `db:"data_type"`
+	NotNull         bool    `db:"not_null"`
+	DefaultValue    *string `db:"default_value"`
+	ColumnOrder     int16   `db:"column_order"`
+	SequenceName    *string `db:"sequence_name"`
+	IdentityType    string  `db:"identity_type"`
+	ColumnComment   *string `db:"column_comment"`
 }
 
 type viewDefinitionRow struct {
@@ -469,9 +510,10 @@ type indexRow struct {
 }
 
 type enumRow struct {
-	SchemaName string   `db:"schema_name"`
-	EnumName   string   `db:"enum_name"`
-	EnumValues []string `db:"enum_values"`
+	SchemaName  string   `db:"schema_name"`
+	EnumName    string   `db:"enum_name"`
+	EnumComment *string  `db:"enum_comment"`
+	EnumValues  []string `db:"enum_values"`
 }
 
 type triggerRow struct {
@@ -484,11 +526,17 @@ type triggerRow struct {
 }
 
 type routineRow struct {
-	SchemaName  string  `db:"schema_name"`
-	RoutineName string  `db:"routine_name"`
-	RoutineArgs string  `db:"routine_args"`
-	RoutineType string  `db:"routine_type"`
-	Definition  *string `db:"routine_definition"`
+	SchemaName     string  `db:"schema_name"`
+	RoutineName    string  `db:"routine_name"`
+	RoutineArgs    string  `db:"routine_args"`
+	RoutineType    string  `db:"routine_type"`
+	RoutineComment *string `db:"routine_comment"`
+	Definition     *string `db:"routine_definition"`
+}
+
+type schemaCommentRow struct {
+	SchemaName    string `db:"schema_name"`
+	SchemaComment string `db:"schema_comment"`
 }
 
 type hypertableRow struct {
@@ -521,13 +569,15 @@ SELECT
         WHEN 'v' THEN 'view'
         WHEN 'm' THEN 'materialized_view'
     END AS relation_type,
+    %s AS relation_comment,
     a.attname AS column_name,
     pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type,
     a.attnotnull AS not_null,
     pg_get_expr(d.adbin, d.adrelid) AS default_value,
     a.attnum AS column_order,
     pg_get_serial_sequence(format('%%I.%%I', n.nspname, c.relname), a.attname) AS sequence_name,
-    a.attidentity::text AS identity_type
+    a.attidentity::text AS identity_type,
+    %s AS column_comment
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 JOIN pg_attribute a ON a.attrelid = c.oid
@@ -549,6 +599,11 @@ WHERE c.relkind IN ('r', 'p', 'v', 'm')
   %s
   %s
 ORDER BY n.nspname, c.relname, a.attnum`,
+		// The relation comment repeats on every column row of the relation;
+		// fetchRelationsAndColumns reads it once when it first sees the
+		// relation. Both lookups are gated behind --comments (NULL otherwise).
+		f.commentExpr("obj_description(c.oid, 'pg_class')"),
+		f.commentExpr("col_description(c.oid, a.attnum)"),
 		f.leafPartitionExclusion("c"),
 		f.onSchema("n.nspname"),
 		f.onSchemaAccessible("n.oid"),
@@ -710,6 +765,7 @@ func buildEnumsQuery(f schemaFilter) string {
 SELECT
     n.nspname AS schema_name,
     t.typname AS enum_name,
+    %s AS enum_comment,
     array_agg(e.enumlabel ORDER BY e.enumsortorder) AS enum_values
 FROM pg_type t
 JOIN pg_namespace n ON n.oid = t.typnamespace
@@ -720,8 +776,11 @@ WHERE TRUE
   %s
   %s
   %s
-GROUP BY n.nspname, t.typname
+-- t.oid is grouped so the enum_comment expression (a function of t.oid) is
+-- valid; it doesn't change the grouping since (nspname, typname) is unique.
+GROUP BY n.nspname, t.typname, t.oid
 ORDER BY n.nspname, t.typname`,
+		f.commentExpr("obj_description(t.oid, 'pg_type')"),
 		f.onSchema("n.nspname"),
 		f.onSchemaAccessible("n.oid"),
 		f.onExtensionObject("'pg_type'::regclass", "t.oid"),
@@ -826,6 +885,7 @@ SELECT
         WHEN 'f' THEN 'FUNCTION'
         WHEN 'p' THEN 'PROCEDURE'
     END AS routine_type,
+    %s AS routine_comment,
     %s AS routine_definition
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -836,6 +896,7 @@ WHERE p.prokind IN ('f', 'p')
   %s
   %s
 ORDER BY n.nspname, p.proname, routine_args`,
+		f.commentExpr("obj_description(p.oid, 'pg_proc')"),
 		f.definitionExpr("pg_get_functiondef(p.oid)"),
 		f.onSchema("n.nspname"),
 		f.onSchemaAccessible("n.oid"),
@@ -860,6 +921,29 @@ WHERE TRUE
   %s
 ORDER BY h.hypertable_schema, h.hypertable_name`,
 		f.onSchema("h.hypertable_schema"),
+	)
+}
+
+// buildSchemaCommentsQuery returns the COMMENT ON SCHEMA text for each
+// commented namespace. Only run when comments are requested. The user-owned
+// and extension-object filters are deliberately not applied: a namespace's
+// comment is shown whenever the namespace itself is in scope (it passes the
+// name exclusions and the user has USAGE on it), matching checkSchemaExists.
+// fetchSchemaComments additionally attaches comments only to namespaces that
+// already contain visible objects, so a commented-but-empty schema does not
+// appear just for its comment.
+func buildSchemaCommentsQuery(f schemaFilter) string {
+	return fmt.Sprintf(`
+SELECT
+    n.nspname AS schema_name,
+    obj_description(n.oid, 'pg_namespace') AS schema_comment
+FROM pg_namespace n
+WHERE obj_description(n.oid, 'pg_namespace') IS NOT NULL
+  %s
+  %s
+ORDER BY n.nspname`,
+		f.onSchema("n.nspname"),
+		f.onSchemaAccessible("n.oid"),
 	)
 }
 
@@ -903,7 +987,8 @@ ORDER BY pn.nspname, parent.relname, child.relname`,
 // pass IncludeInternal=true to include catalog, TimescaleDB internals, and
 // extension-owned objects. Pass Schema to limit results to a single
 // namespace. View/routine definitions are omitted unless
-// IncludeDefinitions=true.
+// IncludeDefinitions=true, and object comments are omitted unless
+// IncludeComments=true.
 func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*DatabaseSchema, error) {
 	database, err := fetchDatabase(ctx, args.Client, args.ProjectID, args.DatabaseRef)
 	if err != nil {
@@ -929,6 +1014,7 @@ func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*Da
 	filter := schemaFilter{
 		includeInternal:    args.IncludeInternal,
 		includeDefinitions: args.IncludeDefinitions,
+		includeComments:    args.IncludeComments,
 		schema:             args.Schema,
 	}
 
@@ -963,6 +1049,11 @@ func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*Da
 	}
 	if err := fetchPartitions(ctx, conn, filter, bld); err != nil {
 		return nil, fmt.Errorf("failed to fetch partitions: %w", err)
+	}
+	// Must run after every namespace-creating fetch above: schema comments
+	// attach only to namespaces that already hold visible objects.
+	if err := fetchSchemaComments(ctx, conn, filter, bld); err != nil {
+		return nil, fmt.Errorf("failed to fetch schema comments: %w", err)
 	}
 
 	return &DatabaseSchema{
@@ -1166,12 +1257,13 @@ func fetchRelationsAndColumns(ctx context.Context, conn *pgx.Conn, f schemaFilte
 		case "table":
 			t, ok := buf.tables[row.RelationName]
 			if !ok {
-				t = &TableSchema{Name: row.RelationName}
+				t = &TableSchema{Name: row.RelationName, Comment: util.DerefStr(row.RelationComment)}
 				buf.tables[row.RelationName] = t
 			}
 			t.Columns = append(t.Columns, TableColumnSchema{
 				Name:         row.ColumnName,
 				Type:         row.DataType,
+				Comment:      util.DerefStr(row.ColumnComment),
 				NotNull:      row.NotNull,
 				Default:      util.DerefStr(row.DefaultValue),
 				IsSerial:     row.SequenceName != nil && row.IdentityType == "",
@@ -1180,17 +1272,17 @@ func fetchRelationsAndColumns(ctx context.Context, conn *pgx.Conn, f schemaFilte
 		case "view":
 			v, ok := buf.views[row.RelationName]
 			if !ok {
-				v = &ViewSchema{Name: row.RelationName}
+				v = &ViewSchema{Name: row.RelationName, Comment: util.DerefStr(row.RelationComment)}
 				buf.views[row.RelationName] = v
 			}
-			v.Columns = append(v.Columns, ViewColumnSchema{Name: row.ColumnName, Type: row.DataType})
+			v.Columns = append(v.Columns, ViewColumnSchema{Name: row.ColumnName, Type: row.DataType, Comment: util.DerefStr(row.ColumnComment)})
 		case "materialized_view":
 			mv, ok := buf.matViews[row.RelationName]
 			if !ok {
-				mv = &ViewSchema{Name: row.RelationName}
+				mv = &ViewSchema{Name: row.RelationName, Comment: util.DerefStr(row.RelationComment)}
 				buf.matViews[row.RelationName] = mv
 			}
-			mv.Columns = append(mv.Columns, ViewColumnSchema{Name: row.ColumnName, Type: row.DataType})
+			mv.Columns = append(mv.Columns, ViewColumnSchema{Name: row.ColumnName, Type: row.DataType, Comment: util.DerefStr(row.ColumnComment)})
 		}
 	}
 
@@ -1427,8 +1519,9 @@ func fetchEnums(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBu
 	for _, row := range results {
 		ns := b.namespace(row.SchemaName)
 		ns.Enums = append(ns.Enums, EnumSchema{
-			Name:   row.EnumName,
-			Values: row.EnumValues,
+			Name:    row.EnumName,
+			Comment: util.DerefStr(row.EnumComment),
+			Values:  row.EnumValues,
 		})
 	}
 	return nil
@@ -1450,6 +1543,7 @@ func fetchRoutines(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schem
 			Name:       row.RoutineName,
 			Arguments:  row.RoutineArgs,
 			Type:       RoutineType(row.RoutineType),
+			Comment:    util.DerefStr(row.RoutineComment),
 			Definition: strings.TrimSpace(util.DerefStr(row.Definition)),
 		}
 		switch r.Type {
@@ -1457,6 +1551,32 @@ func fetchRoutines(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schem
 			ns.Functions = append(ns.Functions, r)
 		case RoutineProcedure:
 			ns.Procedures = append(ns.Procedures, r)
+		}
+	}
+	return nil
+}
+
+// fetchSchemaComments attaches COMMENT ON SCHEMA text to each namespace the
+// builder already knows about. It must run after every fetch step that can
+// create a namespace, and it never creates namespaces itself — a schema with
+// a comment but no visible objects stays hidden, matching the no-comments
+// behavior. It is a no-op unless comments were requested.
+func fetchSchemaComments(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBuilder) error {
+	if !f.includeComments {
+		return nil
+	}
+	rows, err := conn.Query(ctx, buildSchemaCommentsQuery(f), f.queryArgs()...)
+	if err != nil {
+		return err
+	}
+	results, err := pgx.CollectRows(rows, pgx.RowToStructByName[schemaCommentRow])
+	if err != nil {
+		return err
+	}
+
+	for _, row := range results {
+		if ns, ok := b.namespaces[row.SchemaName]; ok {
+			ns.Comment = row.SchemaComment
 		}
 	}
 	return nil

@@ -19,7 +19,9 @@ system schema such as pg_catalog) or --internal to include everything.
 
 Object definitions (view SELECT statements and function/procedure bodies) are
 omitted by default to keep the output concise; pass --definitions to include
-them.
+them. Object comments (COMMENT ON text for schemas, tables, views, columns,
+enums, functions, and procedures) are likewise omitted by default; pass
+--comments to include them.
 
 ```
 ghost schema <name-or-id> [flags]
@@ -36,6 +38,7 @@ ghost schema <name-or-id> [flags]
 ### Options
 
 ```
+      --comments        Include object comments (COMMENT ON text for schemas, tables, views, columns, enums, functions, and procedures)
       --definitions     Include full object definitions (view SELECT statements and function/procedure bodies)
   -h, --help            help for schema
       --internal        Include system schemas (information_schema, pg_*, _timescaledb_*) and extension-owned objects

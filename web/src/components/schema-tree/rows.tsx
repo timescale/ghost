@@ -1,7 +1,7 @@
 import type { MouseEvent, ReactNode } from 'react';
 
 import { Icon } from '../Icon';
-import { nodeExpanded, type TreeContext } from './TreeContext';
+import { nodeExpanded, type ShowModal, type TreeContext } from './TreeContext';
 
 // Indent layout matches popsql: each indent column is a fixed-width span
 // carrying the vertical guide line on its right edge. The guide line sits at
@@ -16,6 +16,7 @@ interface SchemaRootRowProps {
   nodeKey: string;
   label: ReactNode;
   hasChildren: boolean;
+  rightDetail?: ReactNode;
   onContextMenu?: (e: MouseEvent<HTMLDivElement>) => void;
   children?: ReactNode;
 }
@@ -26,6 +27,7 @@ export function SchemaRootRow({
   nodeKey,
   label,
   hasChildren,
+  rightDetail,
   onContextMenu,
   children,
   ctx,
@@ -60,6 +62,7 @@ export function SchemaRootRow({
             size={CARET_PX}
           />
         ) : null}
+        {rightDetail ? <RightDetail>{rightDetail}</RightDetail> : null}
       </div>
       {isExpanded ? children : null}
     </>
@@ -245,5 +248,38 @@ export function Pill({ children }: { children: ReactNode }) {
     <span className="inline-flex flex-none items-center whitespace-nowrap rounded bg-[rgba(0,0,0,0.1)] px-1 py-px text-[11px] leading-tight text-slate-600">
       {children}
     </span>
+  );
+}
+
+interface CommentBadgeProps {
+  // Title for the comment modal (the object's name/signature).
+  title: string;
+  comment?: string;
+  showModal: ShowModal;
+}
+
+// CommentBadge renders a small Pill-styled speech-bubble icon when the object
+// has a COMMENT. The full comment text is readable on hover (native title
+// tooltip), and clicking opens the plain-text comment modal. Renders nothing
+// when the object has no comment, so callers can include it unconditionally.
+export function CommentBadge({ title, comment, showModal }: CommentBadgeProps) {
+  if (!comment) return null;
+  return (
+    <button
+      type="button"
+      title={comment}
+      aria-label={`View comment for ${title}`}
+      // Stop propagation so opening the comment doesn't also toggle the
+      // row's expansion (click) — and likewise for Enter/Space when the
+      // badge has keyboard focus inside a clickable row (keydown).
+      onClick={(e) => {
+        e.stopPropagation();
+        showModal(title, comment, 'text');
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      className="inline-flex flex-none cursor-pointer items-center whitespace-nowrap rounded bg-[rgba(0,0,0,0.1)] px-1 py-px text-[11px] leading-tight text-slate-600 hover:bg-[rgba(0,0,0,0.18)] hover:text-slate-900"
+    >
+      <Icon name="comment" size={12} />
+    </button>
   );
 }

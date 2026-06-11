@@ -2,8 +2,18 @@ import type { MouseEvent } from 'react';
 
 import type { ContextMenuState, MenuItem } from '../ContextMenu';
 
-// ShowModal opens the shared definition modal with a title and SQL text.
-export type ShowModal = (title: string, text: string) => void;
+// ModalFormat selects how the shared modal renders its text: as
+// syntax-highlighted SQL (definitions, trigger statements, partition bounds)
+// or as plain prose (object comments).
+export type ModalFormat = 'sql' | 'text';
+
+// ShowModal opens the shared definition modal with a title and text.
+// format defaults to 'sql'.
+export type ShowModal = (
+  title: string,
+  text: string,
+  format?: ModalFormat,
+) => void;
 
 // TreeContext carries the shared tree state and callbacks down through the
 // node renderers, so each node component doesn't need a dozen props.
