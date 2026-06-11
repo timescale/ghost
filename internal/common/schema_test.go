@@ -1470,6 +1470,81 @@ VIEW: active_users
 `,
 		},
 
+		// ==================== Continuous Aggregate Tests ====================
+		{
+			name: "continuous aggregate annotation on view",
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						Views: []ViewSchema{
+							{
+								Name: "metrics_hourly",
+								Columns: []ViewColumnSchema{
+									{Name: "bucket", Type: "timestamp with time zone"},
+									{Name: "avg_value", Type: "double precision"},
+								},
+								ContinuousAggregate: &ContinuousAggregateInfo{
+									CompressionEnabled: true,
+									MaterializedOnly:   false,
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+VIEW: metrics_hourly
+  -- CONTINUOUS AGGREGATE (materialized_only=false, compression=enabled)
+  bucket     TIMESTAMP WITH TIME ZONE
+  avg_value  DOUBLE PRECISION
+`,
+		},
+		{
+			name:               "continuous aggregate with definition",
+			includeDefinitions: true,
+			schema: &DatabaseSchema{
+				ID:   "test123",
+				Name: "testdb",
+				Schemas: []NamespacedSchema{
+					{
+						Name: "public",
+						Views: []ViewSchema{
+							{
+								Name: "metrics_hourly",
+								Columns: []ViewColumnSchema{
+									{Name: "bucket", Type: "timestamp with time zone"},
+								},
+								Definition: "SELECT time_bucket('01:00:00'::interval, \"time\") AS bucket\n   FROM metrics\n  GROUP BY 1;",
+								ContinuousAggregate: &ContinuousAggregateInfo{
+									CompressionEnabled: false,
+									MaterializedOnly:   true,
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: `DATABASE: testdb (test123)
+
+SCHEMA: public
+
+VIEW: metrics_hourly
+  -- CONTINUOUS AGGREGATE (materialized_only=true, compression=disabled)
+  bucket  TIMESTAMP WITH TIME ZONE
+
+  AS
+    SELECT time_bucket('01:00:00'::interval, "time") AS bucket
+       FROM metrics
+      GROUP BY 1;
+`,
+		},
+
 		// ==================== Routine (Function/Procedure) Tests ====================
 		{
 			name:               "function with body included",

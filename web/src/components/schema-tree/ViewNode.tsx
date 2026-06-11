@@ -1,8 +1,12 @@
-import type { ViewSchema } from '../../schema';
+import {
+  type ContinuousAggregateInfo,
+  continuousAggregateDetails,
+  type ViewSchema,
+} from '../../schema';
 import { highlight } from '../../util/highlight';
 import { childKey } from './keys';
 import { ColumnRow, IndexRow, TriggerRow } from './leafRows';
-import { viewMenuItems } from './menus';
+import { continuousAggregateMenuItems, viewMenuItems } from './menus';
 import { CommentBadge, TreeRow } from './rows';
 import { SubItemGroup } from './SubItemGroup';
 import { filterForSearch } from './search';
@@ -31,20 +35,30 @@ export function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
       depth={2}
       hasChildren
       rightDetail={
-        <CommentBadge
-          title={view.name}
-          comment={view.comment}
-          showModal={ctx.showModal}
-        />
+        <>
+          {view.continuous_aggregate ? (
+            <ContinuousAggregateBadge info={view.continuous_aggregate} />
+          ) : null}
+          <CommentBadge
+            title={view.name}
+            comment={view.comment}
+            showModal={ctx.showModal}
+          />
+        </>
       }
-      onContextMenu={contextMenuHandler(ctx, () =>
-        viewMenuItems(
+      onContextMenu={contextMenuHandler(ctx, () => [
+        ...continuousAggregateMenuItems(
+          view.name,
+          view.continuous_aggregate,
+          ctx.showModal,
+        ),
+        ...viewMenuItems(
           ns,
           view,
           kind === 'view' ? 'view' : 'materialized view',
           ctx.showModal,
         ),
-      )}
+      ])}
     >
       {/*
         Regular views can only have columns, so we render them directly
@@ -109,5 +123,20 @@ export function ViewNode({ ns, view, kind, ctx }: ViewNodeProps) {
         )}
       />
     </TreeRow>
+  );
+}
+
+// ContinuousAggregateBadge marks a TimescaleDB continuous aggregate (a view
+// backed by an internal materialization hypertable). The full metadata
+// (materialized-only, compression) is readable on hover; the row's context
+// menu offers "View continuous aggregate details" for the modal version.
+function ContinuousAggregateBadge({ info }: { info: ContinuousAggregateInfo }) {
+  return (
+    <span
+      title={continuousAggregateDetails(info)}
+      className="inline-flex items-center whitespace-nowrap rounded bg-emerald-100 px-1 py-px text-[11px] leading-tight text-emerald-700"
+    >
+      cagg{info.compression_enabled ? ' · zip' : ''}
+    </span>
   );
 }

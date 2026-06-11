@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 
 import {
+  type ContinuousAggregateInfo,
+  continuousAggregateDetails,
   type ForeignTableInfo,
   foreignTableDetails,
   type HypertableInfo,
@@ -111,6 +113,34 @@ export function hypertableMenuItems(
     {
       key: 'copy-hypertable',
       label: iconLabel('copy', 'Copy hypertable details'),
+      onClick: () => copyText(details),
+    },
+  ];
+}
+
+// continuousAggregateMenuItems builds the View/Copy pair for a continuous
+// aggregate's metadata (materialized-only, compression). Returns no items
+// when the view is not a continuous aggregate, so callers can
+// unconditionally splice the result into their menus (like
+// commentMenuItems).
+export function continuousAggregateMenuItems(
+  title: string,
+  cagg: ContinuousAggregateInfo | undefined,
+  showModal: ShowModal,
+): MenuItem[] {
+  if (!cagg) return [];
+  const details = continuousAggregateDetails(cagg);
+  return [
+    {
+      key: 'view-cagg',
+      label: iconLabel('eye', 'View continuous aggregate details'),
+      // The details are key/value prose, not SQL — render without syntax
+      // highlighting.
+      onClick: () => showModal(title, details, 'text'),
+    },
+    {
+      key: 'copy-cagg',
+      label: iconLabel('copy', 'Copy continuous aggregate details'),
       onClick: () => copyText(details),
     },
   ];

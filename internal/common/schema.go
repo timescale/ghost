@@ -90,6 +90,14 @@ type ViewSchema struct {
 	// Triggers lists triggers defined on the view (e.g. INSTEAD OF
 	// triggers on a regular view). Not applicable to materialized views.
 	Triggers []TriggerSchema `json:"triggers,omitempty"`
+	// ContinuousAggregate is TimescaleDB continuous aggregate metadata. Nil
+	// for ordinary views. A continuous aggregate is a regular view (relkind
+	// 'v') over an internal materialization hypertable, so it appears under
+	// Views; this field is what distinguishes it. When set and definitions
+	// were requested, Definition holds the user's original defining query
+	// rather than the rewritten SELECT over the internal materialization
+	// hypertable that pg_get_viewdef returns.
+	ContinuousAggregate *ContinuousAggregateInfo `json:"continuous_aggregate,omitempty"`
 }
 
 // ViewColumnSchema holds column info for views (simpler than table columns).
@@ -197,6 +205,16 @@ type Routine struct {
 type HypertableInfo struct {
 	CompressionEnabled bool `json:"compression_enabled"`
 	NumChunks          int  `json:"num_chunks"`
+}
+
+// ContinuousAggregateInfo describes TimescaleDB continuous aggregate
+// metadata for a view (see ViewSchema.ContinuousAggregate).
+type ContinuousAggregateInfo struct {
+	CompressionEnabled bool `json:"compression_enabled"`
+	// MaterializedOnly reports whether queries against the view return only
+	// already-materialized data (true) or also combine the not-yet-
+	// materialized recent data in real time (false).
+	MaterializedOnly bool `json:"materialized_only"`
 }
 
 // ForeignTableInfo describes the FDW binding of a foreign table. Only
@@ -559,6 +577,14 @@ type hypertableRow struct {
 	TableName          string `db:"table_name"`
 	CompressionEnabled bool   `db:"compression_enabled"`
 	NumChunks          int    `db:"num_chunks"`
+}
+
+type continuousAggregateRow struct {
+	SchemaName         string  `db:"schema_name"`
+	ViewName           string  `db:"view_name"`
+	CompressionEnabled bool    `db:"compression_enabled"`
+	MaterializedOnly   bool    `db:"materialized_only"`
+	ViewDefinition     *string `db:"view_definition"`
 }
 
 type partitionRow struct {
@@ -934,9 +960,10 @@ ORDER BY n.nspname, p.proname, routine_args`,
 	)
 }
 
-// hypertablesQuery returns hypertable metadata for the requested schemas.
-// Caller must verify the timescaledb extension is installed before
-// running this; otherwise the query errors with "relation does not exist".
+// buildHypertablesQuery returns hypertable metadata for the requested
+// schemas. Caller must verify the timescaledb extension is installed before
+// running this (see hasTimescaleDB); otherwise the query errors with
+// "relation does not exist".
 func buildHypertablesQuery(f schemaFilter) string {
 	return fmt.Sprintf(`
 SELECT
@@ -949,6 +976,31 @@ WHERE TRUE
   %s
 ORDER BY h.hypertable_schema, h.hypertable_name`,
 		f.onSchema("h.hypertable_schema"),
+	)
+}
+
+// buildContinuousAggregatesQuery returns continuous aggregate metadata for
+// the requested schemas, one row per cagg. Caller must verify the
+// timescaledb extension is installed before running this (see
+// hasTimescaleDB); otherwise the query errors with "relation does not
+// exist". No privilege/owner filters are needed here: the metadata only
+// attaches to views the relations query already surfaced (and filtered), so
+// rows for out-of-scope caggs are simply discarded. The user-facing defining
+// query is gated behind --definitions like every other definition text.
+func buildContinuousAggregatesQuery(f schemaFilter) string {
+	return fmt.Sprintf(`
+SELECT
+    ca.view_schema AS schema_name,
+    ca.view_name,
+    ca.compression_enabled,
+    ca.materialized_only,
+    %s AS view_definition
+FROM timescaledb_information.continuous_aggregates ca
+WHERE TRUE
+  %s
+ORDER BY ca.view_schema, ca.view_name`,
+		f.definitionExpr("ca.view_definition"),
+		f.onSchema("ca.view_schema"),
 	)
 }
 
@@ -1113,8 +1165,22 @@ func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*Da
 	if err := fetchRoutines(ctx, conn, filter, bld); err != nil {
 		return nil, fmt.Errorf("failed to fetch routines: %w", err)
 	}
-	if err := fetchHypertables(ctx, conn, filter, bld); err != nil {
-		return nil, fmt.Errorf("failed to fetch hypertables: %w", err)
+	// The TimescaleDB stages query timescaledb_information views, which only
+	// exist when the extension is installed.
+	hasTSDB, err := hasTimescaleDB(ctx, conn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check for the timescaledb extension: %w", err)
+	}
+	if hasTSDB {
+		if err := fetchHypertables(ctx, conn, filter, bld); err != nil {
+			return nil, fmt.Errorf("failed to fetch hypertables: %w", err)
+		}
+		// Must run after fetchViewDefinitions: when definitions are
+		// requested it replaces each cagg's pg_get_viewdef text with the
+		// user's original defining query.
+		if err := fetchContinuousAggregates(ctx, conn, filter, bld); err != nil {
+			return nil, fmt.Errorf("failed to fetch continuous aggregates: %w", err)
+		}
 	}
 	if err := fetchPartitions(ctx, conn, filter, bld); err != nil {
 		return nil, fmt.Errorf("failed to fetch partitions: %w", err)
@@ -1654,18 +1720,21 @@ func fetchSchemaComments(ctx context.Context, conn *pgx.Conn, f schemaFilter, b 
 	return nil
 }
 
-func fetchHypertables(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBuilder) error {
-	// Skip the query entirely if the timescaledb extension isn't installed.
-	var hasExt bool
-	if err := conn.QueryRow(ctx,
+// hasTimescaleDB reports whether the timescaledb extension is installed.
+// The TimescaleDB-specific fetch stages (hypertables, continuous
+// aggregates) must be skipped when it is not.
+func hasTimescaleDB(ctx context.Context, conn *pgx.Conn) (bool, error) {
+	var installed bool
+	err := conn.QueryRow(ctx,
 		`SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb')`,
-	).Scan(&hasExt); err != nil {
-		return err
-	}
-	if !hasExt {
-		return nil
-	}
+	).Scan(&installed)
+	return installed, err
+}
 
+// fetchHypertables attaches TimescaleDB hypertable metadata to the tables
+// collected by the relations query. Caller must verify the timescaledb
+// extension is installed first (see hasTimescaleDB).
+func fetchHypertables(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBuilder) error {
 	rows, err := conn.Query(ctx, buildHypertablesQuery(f), f.queryArgs()...)
 	if err != nil {
 		return err
@@ -1683,6 +1752,40 @@ func fetchHypertables(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *sc
 		t.Hypertable = &HypertableInfo{
 			CompressionEnabled: row.CompressionEnabled,
 			NumChunks:          row.NumChunks,
+		}
+	}
+	return nil
+}
+
+// fetchContinuousAggregates attaches TimescaleDB continuous aggregate
+// metadata to the views collected by the relations query (caggs are relkind
+// 'v', so they live in viewIndex). It must run after fetchViewDefinitions:
+// when definitions are requested it replaces the pg_get_viewdef text — the
+// rewritten SELECT over the internal materialization hypertable — with the
+// user's original defining query from
+// timescaledb_information.continuous_aggregates. Caller must verify the
+// timescaledb extension is installed first (see hasTimescaleDB).
+func fetchContinuousAggregates(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBuilder) error {
+	rows, err := conn.Query(ctx, buildContinuousAggregatesQuery(f), f.queryArgs()...)
+	if err != nil {
+		return err
+	}
+	results, err := pgx.CollectRows(rows, pgx.RowToStructByName[continuousAggregateRow])
+	if err != nil {
+		return err
+	}
+
+	for _, row := range results {
+		v, ok := b.viewIndex[qualifiedName{Schema: row.SchemaName, Name: row.ViewName}]
+		if !ok {
+			continue
+		}
+		v.ContinuousAggregate = &ContinuousAggregateInfo{
+			CompressionEnabled: row.CompressionEnabled,
+			MaterializedOnly:   row.MaterializedOnly,
+		}
+		if def := strings.TrimSpace(util.DerefStr(row.ViewDefinition)); def != "" {
+			v.Definition = def
 		}
 	}
 	return nil

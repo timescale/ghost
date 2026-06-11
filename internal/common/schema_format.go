@@ -292,6 +292,12 @@ func formatConstraint(con TableConstraint) string {
 }
 
 func formatViewContents(buf *strings.Builder, view ViewSchema, includeDefinitions, includeComments bool) {
+	if view.ContinuousAggregate != nil {
+		fmt.Fprintf(buf, "  -- CONTINUOUS AGGREGATE (materialized_only=%t, compression=%s)\n",
+			view.ContinuousAggregate.MaterializedOnly,
+			boolWord(view.ContinuousAggregate.CompressionEnabled, "enabled", "disabled"),
+		)
+	}
 	maxNameLen := 0
 	for _, col := range view.Columns {
 		if len(col.Name) > maxNameLen {

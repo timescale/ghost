@@ -74,6 +74,13 @@ export interface ViewSchema {
   // Triggers defined on the view (e.g. INSTEAD OF triggers). Not
   // applicable to materialized views.
   triggers?: TriggerSchema[];
+  // TimescaleDB continuous aggregate metadata. Absent for ordinary views.
+  // A continuous aggregate is a regular view over an internal
+  // materialization hypertable, so it appears under `views`; this field is
+  // what distinguishes it. When present, `definition` holds the user's
+  // original defining query rather than the rewritten SELECT over the
+  // internal materialization hypertable.
+  continuous_aggregate?: ContinuousAggregateInfo;
 }
 
 export interface ViewColumn {
@@ -157,6 +164,26 @@ export function hypertableDetails(info: HypertableInfo): string {
   return [
     `Chunks:      ${info.num_chunks}`,
     `Compression: ${info.compression_enabled ? 'enabled' : 'disabled'}`,
+  ].join('\n');
+}
+
+export interface ContinuousAggregateInfo {
+  compression_enabled: boolean;
+  // Whether queries against the view return only already-materialized data
+  // (true) or also combine the not-yet-materialized recent data in real
+  // time (false).
+  materialized_only: boolean;
+}
+
+// continuousAggregateDetails renders continuous aggregate metadata as
+// readable plain text, used by both the cagg pill tooltip and the "View
+// continuous aggregate details" modal.
+export function continuousAggregateDetails(
+  info: ContinuousAggregateInfo,
+): string {
+  return [
+    `Materialized only: ${info.materialized_only ? 'yes' : 'no'}`,
+    `Compression:       ${info.compression_enabled ? 'enabled' : 'disabled'}`,
   ].join('\n');
 }
 
