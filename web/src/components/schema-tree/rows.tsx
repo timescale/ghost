@@ -14,7 +14,7 @@ const INDENT_GAP = INDENT_STEP_PX - INDENT_PAD;
 interface SchemaRootRowProps {
   ctx: TreeContext;
   nodeKey: string;
-  label: string;
+  label: ReactNode;
   hasChildren: boolean;
   onContextMenu?: (e: MouseEvent<HTMLDivElement>) => void;
   children?: ReactNode;

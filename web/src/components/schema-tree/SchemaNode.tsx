@@ -6,6 +6,7 @@ import type {
   TableSchema,
   ViewSchema,
 } from '../../schema';
+import { highlight } from '../../util/highlight';
 import { Icon } from '../Icon';
 import {
   childKey,
@@ -34,7 +35,7 @@ export function SchemaNode({ ns, ctx }: SchemaNodeProps) {
     <SchemaRootRow
       ctx={ctx}
       nodeKey={key}
-      label={ns.name}
+      label={highlight(ns.name, ctx.searchTerm)}
       hasChildren
       onContextMenu={contextMenuHandler(ctx, () => schemaMenuItems(ns.name))}
     >

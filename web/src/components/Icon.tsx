@@ -27,7 +27,8 @@ export type IconName =
   | 'function'
   | 'new-query'
   | 'refresh'
-  | 'table';
+  | 'table'
+  | 'x';
 
 export type IconColor =
   | 'current'

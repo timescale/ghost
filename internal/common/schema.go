@@ -273,8 +273,10 @@ func (f schemaFilter) leafPartitionExclusion(relAlias string) string {
 // queryArgs returns the positional query arguments referenced by the SQL
 // fragments this filter emits. When a single schema is requested, the
 // schema name is bound as `$1` (see onSchema) rather than interpolated, so
-// arbitrary schema names are safe. Every buildXxxQuery uses onSchema at
-// most once, so this is either empty or a single-element slice.
+// arbitrary schema names are safe. A query may reference `$1` more than once
+// (e.g. onSchema plus leafPartitionExclusion both emit it) — PostgreSQL allows
+// reusing a positional parameter — so only a single argument is ever needed.
+// This is therefore either empty or a single-element slice.
 func (f schemaFilter) queryArgs() []any {
 	if f.schema != "" {
 		return []any{f.schema}
@@ -741,15 +743,19 @@ func buildTriggersQuery(f schemaFilter) string {
 	// one-row-per-manipulation shape the tree/format code expects (mirroring
 	// information_schema's layout), we expand each trigger across the possible
 	// events via a lateral VALUES join, keeping only the bits that are set.
-	// The action statement (e.g. "EXECUTE FUNCTION foo()") is extracted from
-	// pg_get_triggerdef, which is the only catalog source for the formatted
-	// call including its arguments. The substring pattern prefixes a greedy
-	// .* and captures the trailing EXECUTE clause in a parenthesized group:
-	// substring returns the capture group, and the greedy prefix anchors it
-	// to the LAST occurrence of "EXECUTE FUNCTION/PROCEDURE". This matters
-	// because that literal text can also appear earlier in the definition
-	// (e.g. inside a WHEN (...) string literal or a trigger argument), and a
-	// leftmost match would wrongly include the intervening text.
+	// The action statement (e.g. "EXECUTE FUNCTION foo('a', 'b')") is
+	// reconstructed directly from the catalog rather than scraped out of
+	// pg_get_triggerdef. The function name comes from tg.tgfoid (rendered via
+	// ::regproc, which schema-qualifies it only when it isn't visible on the
+	// search_path, matching pg_get_triggerdef). The arguments come from
+	// tg.tgargs, a bytea holding tgnargs NUL-terminated C strings: encoding it
+	// with 'escape' turns each NUL separator into the literal sequence \000, so
+	// splitting on \000 and quoting each element reproduces the argument list.
+	// We bound the split to tgnargs to drop the trailing empty element left by
+	// the final NUL terminator. Reconstructing from the catalog avoids the
+	// fragility of regexing the deparsed text, where the literal "EXECUTE
+	// FUNCTION" can also appear inside a WHEN (...) literal or a trigger
+	// argument and confuse a text-based extraction.
 	return fmt.Sprintf(`
 SELECT
     n.nspname AS schema_name,
@@ -761,10 +767,20 @@ SELECT
         ELSE 'AFTER'
     END AS timing,
     ev.manipulation AS manipulation,
-    substring(
-        pg_catalog.pg_get_triggerdef(tg.oid)
-        FROM '.*(EXECUTE (?:FUNCTION|PROCEDURE) .*)$'
-    ) AS action_statement
+    'EXECUTE FUNCTION '
+        || tg.tgfoid::regproc::text
+        || '('
+        || COALESCE(
+            (
+                SELECT string_agg(quote_literal(arg), ', ' ORDER BY ord)
+                FROM unnest(
+                    string_to_array(encode(tg.tgargs, 'escape'), '\000')
+                ) WITH ORDINALITY AS args(arg, ord)
+                WHERE ord <= tg.tgnargs
+            ),
+            ''
+        )
+        || ')' AS action_statement
 FROM pg_catalog.pg_trigger tg
 JOIN pg_catalog.pg_class c ON c.oid = tg.tgrelid
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace

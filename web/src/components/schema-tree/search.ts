@@ -28,7 +28,12 @@ export function computeSearch(
 
   for (const ns of schemas) {
     const sKey = schemaKey(ns);
-    let anyHit = match(ns.name);
+    // When the schema's own name matches, show the entire schema (every group,
+    // item, and sub-item) rather than an empty header — mirroring the
+    // item-name behavior below, where matching a table reveals the whole
+    // table. schemaHit forces every descendant visible.
+    const schemaHit = match(ns.name);
+    let anyHit = schemaHit;
 
     const considerGroup = (
       kind: GroupKind,
@@ -51,14 +56,17 @@ export function computeSearch(
       for (const item of list) {
         const label = itemLabel(kind, item as never);
         const iKey = childKey(ns.name, kind, label);
-        const itemHit = match(label);
+        // A schema-name hit makes every item a full match, so the whole
+        // schema is revealed; otherwise an item matches on its own label.
+        const itemHit = schemaHit || match(label);
         let childHit = false;
         // considerSub is the single place that enumerates a sub-list and
         // derives its node keys, so the two visibility modes stay in
-        // lockstep: when the item itself matched by name, every sub-item key
-        // is added (the user searched for the table; show the whole table,
-        // not an empty shell); otherwise only matching sub-items are added
-        // (searching collapses the group down to the matches, like popsql).
+        // lockstep: when the item itself matched by name (or the schema name
+        // matched), every sub-item key is added (the user searched for the
+        // table/schema; show the whole thing, not an empty shell); otherwise
+        // only matching sub-items are added (searching collapses the group
+        // down to the matches, like popsql).
         const considerSub = (
           subKind: string,
           subs?: { name: string; schema?: string }[],

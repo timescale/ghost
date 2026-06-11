@@ -22,7 +22,8 @@ type SchemaInput struct {
 func (SchemaInput) Schema() *jsonschema.Schema {
 	schema := util.Must(jsonschema.For[SchemaInput](nil))
 	databaseRefInputProperties(schema)
-	schema.Properties["schema"].Description = "Restrict output to a single Postgres schema (e.g. 'public', 'reporting'). May target a system schema such as 'pg_catalog'. Only objects the connecting user can access are returned. If omitted, all accessible non-system schemas are returned."
+	schema.Properties["schema"].Description = "Restrict output to a single Postgres schema. Only objects the connecting user can access are returned."
+	schema.Properties["schema"].Examples = []any{"public", "reporting", "pg_catalog"}
 	schema.Properties["internal"].Description = "Include system schemas (information_schema, pg_*, _timescaledb_*) and extension-owned objects. Defaults to false."
 	schema.Properties["internal"].Default = json.RawMessage("false")
 	schema.Properties["definitions"].Description = "Include full object definitions (view SELECT statements and function/procedure bodies). Omitted by default to keep the output concise. Defaults to false."
