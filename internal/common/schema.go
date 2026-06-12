@@ -1314,8 +1314,11 @@ func connectToDatabase(ctx context.Context, database api.Database) (*pgx.Conn, e
 type schemaBuilder struct {
 	// schemaName -> namespace contents
 	namespaces map[string]*NamespacedSchema
-	// (schema, name) -> table pointer (so subsequent queries can attach
-	// constraints/indexes/triggers/hypertable info to the right object)
+	// (schema, name) -> relation. These maps are the primary store for
+	// tables/views/matviews: fetchRelationsAndColumns creates the objects
+	// here, subsequent queries attach constraints/indexes/triggers/
+	// hypertable info through them, and build() copies them into each
+	// namespace's sorted slices at the end.
 	tableIndex   map[qualifiedName]*TableSchema
 	viewIndex    map[qualifiedName]*ViewSchema
 	matViewIndex map[qualifiedName]*ViewSchema
@@ -1348,8 +1351,26 @@ func (b *schemaBuilder) build() []NamespacedSchema {
 	if len(b.namespaces) == 0 {
 		return nil
 	}
+	// Flatten the relation maps into each namespace's slices. This must
+	// happen only now, after every fetch step has finished mutating the
+	// objects through the index maps.
+	for qn, t := range b.tableIndex {
+		ns := b.namespace(qn.Schema)
+		ns.Tables = append(ns.Tables, *t)
+	}
+	for qn, v := range b.viewIndex {
+		ns := b.namespace(qn.Schema)
+		ns.Views = append(ns.Views, *v)
+	}
+	for qn, mv := range b.matViewIndex {
+		ns := b.namespace(qn.Schema)
+		ns.MaterializedViews = append(ns.MaterializedViews, *mv)
+	}
 	out := make([]NamespacedSchema, 0, len(b.namespaces))
 	for _, ns := range b.namespaces {
+		sort.Slice(ns.Tables, func(i, j int) bool { return ns.Tables[i].Name < ns.Tables[j].Name })
+		sort.Slice(ns.Views, func(i, j int) bool { return ns.Views[i].Name < ns.Views[j].Name })
+		sort.Slice(ns.MaterializedViews, func(i, j int) bool { return ns.MaterializedViews[i].Name < ns.MaterializedViews[j].Name })
 		out = append(out, *ns)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -1366,37 +1387,18 @@ func fetchRelationsAndColumns(ctx context.Context, conn *pgx.Conn, f schemaFilte
 		return err
 	}
 
-	// Collect into per-namespace maps keyed by relation name; we'll flatten
-	// to sorted slices below. Buffering avoids the slice-pointer
-	// invalidation hazard from appending to a NamespacedSchema field while
-	// also keeping a pointer into it.
-	type relBuf struct {
-		tables   map[string]*TableSchema
-		views    map[string]*ViewSchema
-		matViews map[string]*ViewSchema
-	}
-	perNS := make(map[string]*relBuf)
-	getBuf := func(schema string) *relBuf {
-		buf, ok := perNS[schema]
-		if !ok {
-			buf = &relBuf{
-				tables:   make(map[string]*TableSchema),
-				views:    make(map[string]*ViewSchema),
-				matViews: make(map[string]*ViewSchema),
-			}
-			perNS[schema] = buf
-		}
-		return buf
-	}
-
 	for _, row := range results {
-		buf := getBuf(row.SchemaName)
+		// Ensure the namespace exists even before build() flattens the
+		// relations into it, so namespace-level steps (e.g. schema
+		// comments) can see it.
+		b.namespace(row.SchemaName)
+		qn := qualifiedName{Schema: row.SchemaName, Name: row.RelationName}
 		switch row.RelationType {
 		case "table":
-			t, ok := buf.tables[row.RelationName]
+			t, ok := b.tableIndex[qn]
 			if !ok {
 				t = &TableSchema{Name: row.RelationName, Comment: util.DerefStr(row.RelationComment)}
-				buf.tables[row.RelationName] = t
+				b.tableIndex[qn] = t
 			}
 			t.Columns = append(t.Columns, TableColumnSchema{
 				Name:         row.ColumnName,
@@ -1408,51 +1410,19 @@ func fetchRelationsAndColumns(ctx context.Context, conn *pgx.Conn, f schemaFilte
 				IdentityType: row.IdentityType,
 			})
 		case "view":
-			v, ok := buf.views[row.RelationName]
+			v, ok := b.viewIndex[qn]
 			if !ok {
 				v = &ViewSchema{Name: row.RelationName, Comment: util.DerefStr(row.RelationComment)}
-				buf.views[row.RelationName] = v
+				b.viewIndex[qn] = v
 			}
 			v.Columns = append(v.Columns, ViewColumnSchema{Name: row.ColumnName, Type: row.DataType, Comment: util.DerefStr(row.ColumnComment)})
 		case "materialized_view":
-			mv, ok := buf.matViews[row.RelationName]
+			mv, ok := b.matViewIndex[qn]
 			if !ok {
 				mv = &ViewSchema{Name: row.RelationName, Comment: util.DerefStr(row.RelationComment)}
-				buf.matViews[row.RelationName] = mv
+				b.matViewIndex[qn] = mv
 			}
 			mv.Columns = append(mv.Columns, ViewColumnSchema{Name: row.ColumnName, Type: row.DataType, Comment: util.DerefStr(row.ColumnComment)})
-		}
-	}
-
-	// Flatten into sorted slices on each NamespacedSchema. The pointer-index
-	// step at the bottom captures stable addresses into the final slices.
-	for schemaName, buf := range perNS {
-		ns := b.namespace(schemaName)
-		tableNames := sortedKeys(buf.tables)
-		for _, name := range tableNames {
-			ns.Tables = append(ns.Tables, *buf.tables[name])
-		}
-		viewNames := sortedKeys(buf.views)
-		for _, name := range viewNames {
-			ns.Views = append(ns.Views, *buf.views[name])
-		}
-		mvNames := sortedKeys(buf.matViews)
-		for _, name := range mvNames {
-			ns.MaterializedViews = append(ns.MaterializedViews, *buf.matViews[name])
-		}
-	}
-
-	// Capture pointers into the final slices so later fetch steps (indexes,
-	// constraints, triggers, hypertables) can attach to the right object.
-	for _, ns := range b.namespaces {
-		for i := range ns.Tables {
-			b.tableIndex[qualifiedName{Schema: ns.Name, Name: ns.Tables[i].Name}] = &ns.Tables[i]
-		}
-		for i := range ns.Views {
-			b.viewIndex[qualifiedName{Schema: ns.Name, Name: ns.Views[i].Name}] = &ns.Views[i]
-		}
-		for i := range ns.MaterializedViews {
-			b.matViewIndex[qualifiedName{Schema: ns.Name, Name: ns.MaterializedViews[i].Name}] = &ns.MaterializedViews[i]
 		}
 	}
 
@@ -1490,15 +1460,6 @@ func fetchViewDefinitions(ctx context.Context, conn *pgx.Conn, f schemaFilter, b
 		}
 	}
 	return nil
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func fetchConstraints(ctx context.Context, conn *pgx.Conn, f schemaFilter, b *schemaBuilder) error {
