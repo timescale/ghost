@@ -17,20 +17,20 @@ import (
 // code) to surface an accurate 4xx/5xx. Anything unrecognized is treated as
 // a bad-gateway failure talking to the upstream API.
 func httpStatusForFetchError(err error) int {
-	var schemaNotFound *common.SchemaNotFoundError
 	switch {
 	case errors.Is(err, common.ErrPaused), errors.Is(err, common.ErrNotReady):
 		return http.StatusConflict
 	case errors.Is(err, common.ErrPasswordNotFound):
 		return http.StatusPreconditionFailed
-	case errors.As(err, &schemaNotFound):
+	}
+
+	if _, ok := errors.AsType[*common.SchemaNotFoundError](err); ok {
 		// A mistyped ?schema= query param is a client input error, not an
 		// upstream API failure.
 		return http.StatusBadRequest
 	}
 
-	var exitErr common.ExitCodeError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[common.ExitCodeError](err); ok {
 		switch exitErr.ExitCode() {
 		case common.ExitInvalidParameters:
 			return http.StatusBadRequest
