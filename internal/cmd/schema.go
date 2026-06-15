@@ -55,7 +55,7 @@ enums, functions, and procedures) are likewise omitted by default; pass
 				return handleDatabaseError(err, databaseRef)
 			}
 
-			cmd.Print(common.FormatSchema(schema, includeDefinitions, includeComments))
+			cmd.Print(common.FormatSchema(schema))
 			return nil
 		},
 	}

@@ -10,11 +10,9 @@ import (
 
 func TestFormatSchema(t *testing.T) {
 	tests := []struct {
-		name               string
-		schema             *DatabaseSchema
-		includeDefinitions bool
-		includeComments    bool
-		expected           string
+		name     string
+		schema   *DatabaseSchema
+		expected string
 	}{
 		// ==================== Database Header Tests ====================
 		{
@@ -1112,8 +1110,7 @@ VIEW: user_view
 `,
 		},
 		{
-			name:               "view with definition",
-			includeDefinitions: true,
+			name: "view with definition",
 			schema: &DatabaseSchema{
 				ID:   "test123",
 				Name: "testdb",
@@ -1146,8 +1143,7 @@ VIEW: active_users
 `,
 		},
 		{
-			name:               "view with instead-of trigger",
-			includeDefinitions: true,
+			name: "view with instead-of trigger",
 			schema: &DatabaseSchema{
 				ID:   "test123",
 				Name: "testdb",
@@ -1368,8 +1364,7 @@ TABLE: remote_log
 `,
 		},
 		{
-			name:            "foreign table comment renders before FDW annotation",
-			includeComments: true,
+			name: "foreign table comment renders before FDW annotation",
 			schema: &DatabaseSchema{
 				ID:   "test123",
 				Name: "testdb",
@@ -1404,8 +1399,7 @@ TABLE: remote_orders
 `,
 		},
 		{
-			name:               "materialized view with definition",
-			includeDefinitions: true,
+			name: "materialized view with definition",
 			schema: &DatabaseSchema{
 				ID:   "test123",
 				Name: "testdb",
@@ -1442,7 +1436,7 @@ MATERIALIZED VIEW: user_stats
 `,
 		},
 		{
-			name: "view definition omitted by default",
+			name: "view without definition",
 			schema: &DatabaseSchema{
 				ID:   "test123",
 				Name: "testdb",
@@ -1455,7 +1449,6 @@ MATERIALIZED VIEW: user_stats
 								Columns: []ViewColumnSchema{
 									{Name: "id", Type: "integer"},
 								},
-								Definition: "SELECT id\n   FROM users\n  WHERE active;",
 							},
 						},
 					},
@@ -1506,8 +1499,7 @@ VIEW: metrics_hourly
 `,
 		},
 		{
-			name:               "continuous aggregate with definition",
-			includeDefinitions: true,
+			name: "continuous aggregate with definition",
 			schema: &DatabaseSchema{
 				ID:   "test123",
 				Name: "testdb",
@@ -1547,8 +1539,7 @@ VIEW: metrics_hourly
 
 		// ==================== Routine (Function/Procedure) Tests ====================
 		{
-			name:               "function with body included",
-			includeDefinitions: true,
+			name: "function with body included",
 			schema: &DatabaseSchema{
 				ID:   "test123",
 				Name: "testdb",
@@ -1576,7 +1567,7 @@ FUNCTION: add(integer, integer)
 `,
 		},
 		{
-			name: "function body omitted by default",
+			name: "function and procedure without bodies",
 			schema: &DatabaseSchema{
 				ID:   "test123",
 				Name: "testdb",
@@ -1585,16 +1576,14 @@ FUNCTION: add(integer, integer)
 						Name: "public",
 						Functions: []Routine{
 							{
-								Name:       "add",
-								Arguments:  "integer, integer",
-								Definition: "CREATE OR REPLACE FUNCTION public.add(a integer, b integer)\n RETURNS integer\nAS $function$ SELECT a + b $function$;",
+								Name:      "add",
+								Arguments: "integer, integer",
 							},
 						},
 						Procedures: []Routine{
 							{
-								Name:       "do_thing",
-								Arguments:  "text",
-								Definition: "CREATE OR REPLACE PROCEDURE public.do_thing(t text)\nAS $procedure$ BEGIN END $procedure$;",
+								Name:      "do_thing",
+								Arguments: "text",
 							},
 						},
 					},
@@ -2332,7 +2321,6 @@ TABLE: config
 					},
 				},
 			},
-			includeComments: true,
 			expected: `DATABASE: testdb (test123)
 
 SCHEMA: public
@@ -2375,7 +2363,6 @@ FUNCTION: add(integer, integer)
 					},
 				},
 			},
-			includeComments: true,
 			expected: `DATABASE: testdb (test123)
 
 SCHEMA: public
@@ -2387,20 +2374,18 @@ TABLE: users
 `,
 		},
 		{
-			name: "comments hidden when not requested",
+			name: "schema without comments",
 			schema: &DatabaseSchema{
 				ID:   "test123",
 				Name: "testdb",
 				Schemas: []NamespacedSchema{
 					{
-						Name:    "public",
-						Comment: "app schema",
+						Name: "public",
 						Tables: []TableSchema{
 							{
-								Name:    "users",
-								Comment: "registered users",
+								Name: "users",
 								Columns: []TableColumnSchema{
-									{Name: "name", Type: "text", Comment: "display name"},
+									{Name: "name", Type: "text"},
 								},
 							},
 						},
@@ -2419,7 +2404,7 @@ TABLE: users
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := FormatSchema(tt.schema, tt.includeDefinitions, tt.includeComments)
+			result := FormatSchema(tt.schema)
 			if diff := cmp.Diff(tt.expected, result); diff != "" {
 				t.Errorf("FormatSchema() mismatch (-expected +got):\n%s", diff)
 			}

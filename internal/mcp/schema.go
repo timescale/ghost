@@ -69,7 +69,7 @@ func (s *Server) handleSchema(ctx context.Context, req *mcp.CallToolRequest, inp
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
-			&mcp.TextContent{Text: common.FormatSchema(schema, input.Definitions, input.Comments)},
+			&mcp.TextContent{Text: common.FormatSchema(schema)},
 		},
 	}, nil, nil
 }

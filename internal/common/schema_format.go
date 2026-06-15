@@ -12,43 +12,43 @@ import (
 // the structural summary (columns, constraints, indexes, signatures, etc.).
 // When includeComments is true, object comments (COMMENT ON text) render as
 // "-- " annotation lines under each object header and inline after columns.
-func FormatSchema(schema *DatabaseSchema, includeDefinitions, includeComments bool) string {
+func FormatSchema(schema *DatabaseSchema) string {
 	var buf strings.Builder
 
 	fmt.Fprintf(&buf, "DATABASE: %s (%s)\n", schema.Name, schema.ID)
 
 	for _, ns := range schema.Schemas {
 		fmt.Fprintf(&buf, "\nSCHEMA: %s\n", ns.Name)
-		writeComment(&buf, ns.Comment, includeComments)
+		writeComment(&buf, ns.Comment)
 		for _, table := range ns.Tables {
 			fmt.Fprintf(&buf, "\nTABLE: %s\n", table.Name)
-			writeComment(&buf, table.Comment, includeComments)
-			formatTableContents(&buf, table, includeComments)
+			writeComment(&buf, table.Comment)
+			formatTableContents(&buf, table)
 		}
 		for _, view := range ns.Views {
 			fmt.Fprintf(&buf, "\nVIEW: %s\n", view.Name)
-			writeComment(&buf, view.Comment, includeComments)
-			formatViewContents(&buf, view, includeDefinitions, includeComments)
+			writeComment(&buf, view.Comment)
+			formatViewContents(&buf, view)
 		}
 		for _, mv := range ns.MaterializedViews {
 			fmt.Fprintf(&buf, "\nMATERIALIZED VIEW: %s\n", mv.Name)
-			writeComment(&buf, mv.Comment, includeComments)
-			formatViewContents(&buf, mv, includeDefinitions, includeComments)
+			writeComment(&buf, mv.Comment)
+			formatViewContents(&buf, mv)
 		}
 		for _, enum := range ns.Enums {
 			fmt.Fprintf(&buf, "\nENUM: %s\n", enum.Name)
-			writeComment(&buf, enum.Comment, includeComments)
+			writeComment(&buf, enum.Comment)
 			formatEnumContents(&buf, enum)
 		}
 		for _, fn := range ns.Functions {
 			fmt.Fprintf(&buf, "\nFUNCTION: %s\n", routineSignature(fn))
-			writeComment(&buf, fn.Comment, includeComments)
-			formatRoutineContents(&buf, fn, includeDefinitions)
+			writeComment(&buf, fn.Comment)
+			formatRoutineContents(&buf, fn)
 		}
 		for _, proc := range ns.Procedures {
 			fmt.Fprintf(&buf, "\nPROCEDURE: %s\n", routineSignature(proc))
-			writeComment(&buf, proc.Comment, includeComments)
-			formatRoutineContents(&buf, proc, includeDefinitions)
+			writeComment(&buf, proc.Comment)
+			formatRoutineContents(&buf, proc)
 		}
 	}
 
@@ -59,8 +59,8 @@ func FormatSchema(schema *DatabaseSchema, includeDefinitions, includeComments bo
 // lines directly under the object's header. Comments may span multiple
 // lines; each line gets its own prefix. No-op when comments were not
 // requested or the object has no comment.
-func writeComment(buf *strings.Builder, comment string, includeComments bool) {
-	if !includeComments || comment == "" {
+func writeComment(buf *strings.Builder, comment string) {
+	if comment == "" {
 		return
 	}
 	for line := range strings.SplitSeq(comment, "\n") {
@@ -75,7 +75,7 @@ func inlineComment(comment string) string {
 	return "  -- " + strings.ReplaceAll(comment, "\n", " ")
 }
 
-func formatTableContents(buf *strings.Builder, table TableSchema, includeComments bool) {
+func formatTableContents(buf *strings.Builder, table TableSchema) {
 	if table.Hypertable != nil {
 		fmt.Fprintf(buf, "  -- HYPERTABLE (chunks=%d, compression=%s)\n",
 			table.Hypertable.NumChunks,
@@ -149,7 +149,7 @@ func formatTableContents(buf *strings.Builder, table TableSchema, includeComment
 		fk, hasSingleFK := singleFK[col.Name]
 		chk, hasSingleCheck := singleCheck[col.Name]
 		line := formatTableColumn(col, maxNameLen, isPK, isUnique, hasSingleFK, fk, hasSingleCheck, chk)
-		if includeComments && col.Comment != "" {
+		if col.Comment != "" {
 			line += inlineComment(col.Comment)
 		}
 		fmt.Fprintf(buf, "  %s\n", line)
@@ -291,7 +291,7 @@ func formatConstraint(con TableConstraint) string {
 	}
 }
 
-func formatViewContents(buf *strings.Builder, view ViewSchema, includeDefinitions, includeComments bool) {
+func formatViewContents(buf *strings.Builder, view ViewSchema) {
 	if view.ContinuousAggregate != nil {
 		fmt.Fprintf(buf, "  -- CONTINUOUS AGGREGATE (materialized_only=%t, compression=%s)\n",
 			view.ContinuousAggregate.MaterializedOnly,
@@ -306,7 +306,7 @@ func formatViewContents(buf *strings.Builder, view ViewSchema, includeDefinition
 	}
 	for _, col := range view.Columns {
 		line := fmt.Sprintf("%-*s  %s", maxNameLen, col.Name, strings.ToUpper(col.Type))
-		if includeComments && col.Comment != "" {
+		if col.Comment != "" {
 			line += inlineComment(col.Comment)
 		}
 		fmt.Fprintf(buf, "  %s\n", line)
@@ -323,7 +323,7 @@ func formatViewContents(buf *strings.Builder, view ViewSchema, includeDefinition
 			fmt.Fprintf(buf, "  %s\n", formatTrigger(trg))
 		}
 	}
-	if includeDefinitions && view.Definition != "" {
+	if view.Definition != "" {
 		buf.WriteString("\n  AS\n")
 		for line := range strings.SplitSeq(view.Definition, "\n") {
 			fmt.Fprintf(buf, "    %s\n", line)
@@ -346,8 +346,8 @@ func routineSignature(r Routine) string {
 	return fmt.Sprintf("%s(%s)", r.Name, r.Arguments)
 }
 
-func formatRoutineContents(buf *strings.Builder, r Routine, includeDefinitions bool) {
-	if !includeDefinitions || r.Definition == "" {
+func formatRoutineContents(buf *strings.Builder, r Routine) {
+	if r.Definition == "" {
 		return
 	}
 	for line := range strings.SplitSeq(r.Definition, "\n") {
