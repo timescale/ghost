@@ -33,8 +33,11 @@ type Server struct {
 func NewServer(ctx context.Context, app *common.App, logger *slog.Logger) (*Server, error) {
 	logger = ensureLogger(logger)
 	instructions := "Ghost provides tools for creating, managing, and querying fully-managed PostgreSQL databases. " +
-		"Use it to provision new databases, fork existing ones, pause and resume instances, execute SQL queries, inspect schemas, and manage credentials. " +
-		"It also provides access to PostgreSQL documentation through semantic and keyword search."
+		"Use it to provision new databases, fork existing ones for isolation and testing migrations, share database copies with other users, pause and resume instances, execute SQL queries, inspect schemas, and manage credentials. " +
+		"It also provides access to PostgreSQL, TimescaleDB, and PostGIS documentation through semantic and keyword search, " +
+		"plus skills with best-practice guidance for working with Postgres: schema and table design (data types, indexing, constraints, JSONB, partitioning), TimescaleDB hypertables for time-series data, pgvector embeddings for semantic search and RAG, hybrid BM25 + vector search, and PostGIS spatial data. " +
+		"Consult these skills when designing schemas or setting up Postgres features like time-series, vector, or full-text search. " +
+		"A free monthly compute allowance is included (shared across your space; databases auto-pause when it's reached), so creating and forking databases for experimentation is low-risk."
 
 	// Append a directive to the instructions when an update is available, so
 	// the agent proactively surfaces the outdated CLI to the user. Runs
