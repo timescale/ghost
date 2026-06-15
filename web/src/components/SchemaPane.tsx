@@ -1,7 +1,7 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { DatabaseSchema } from '../schema';
+import { useSchemaQuery } from '../hooks/useSchemaQuery';
 import { useServeStore } from '../store';
 import { debounce } from '../util/debounce';
 import { Icon } from './Icon';
@@ -15,27 +15,9 @@ export function SchemaPane({ databaseId }: Props) {
   const showInternalObjects = useServeStore((s) => s.showInternalObjects);
   const setShowInternalObjects = useServeStore((s) => s.setShowInternalObjects);
 
-  const query = useQuery({
-    queryKey: ['schema', databaseId, showInternalObjects],
-    queryFn: async () => {
-      // Request object definitions and comments so the tree's View/Copy
-      // definition and View/Copy comment actions have data. The server
-      // omits both by default to keep the payload light, so these opt-ins
-      // are required.
-      const params = new URLSearchParams({
-        databaseId,
-        definitions: 'true',
-        comments: 'true',
-      });
-      if (showInternalObjects) params.set('internal', 'true');
-      const res = await fetch(`/api/schema?${params}`);
-      if (!res.ok) {
-        throw new Error(`/api/schema: ${res.status} ${await res.text()}`);
-      }
-      return res.json() as Promise<DatabaseSchema>;
-    },
-    staleTime: 60_000,
-  });
+  // Shared with the autocomplete index (useAutocompletePlugin) so both consume
+  // a single cached /api/schema fetch per database + internal-objects toggle.
+  const query = useSchemaQuery(databaseId);
 
   const queryClient = useQueryClient();
   const refresh = useCallback(() => {

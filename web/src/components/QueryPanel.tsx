@@ -1,13 +1,42 @@
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ContextMenuContext,
   ContextMenuProvider,
+  type ExecuteQueryData,
   ExecuteQueryEngine,
+  type GetExecuteQueryDataArgs,
+  type OnQueryCompleteArgs,
   QueryWidget,
   QueryWidgetProvider,
+  Theme,
   TimescaleResultsCacheContextProvider,
 } from '@timescale/popsql-query-widget-cdn';
 import type React from 'react';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+
+import { useAutocompletePlugin } from '../autocomplete/useAutocompletePlugin';
+
+// Postgres command tags whose execution can change the schema; a successful
+// statement with one of these prefixes refreshes the schema cache so the tree
+// and autocomplete pick up the change. Plain SELECT/INSERT/UPDATE/DELETE don't
+// alter the schema, so they don't trigger a (relatively expensive) refetch.
+const DDL_COMMAND_PREFIXES = [
+  'CREATE',
+  'ALTER',
+  'DROP',
+  'TRUNCATE',
+  'COMMENT',
+  'GRANT',
+  'REVOKE',
+  'RENAME',
+  'REINDEX',
+];
+
+function isSchemaChangingCommand(command: string | undefined): boolean {
+  if (!command) return false;
+  const verb = command.trim().toUpperCase();
+  return DDL_COMMAND_PREFIXES.some((prefix) => verb.startsWith(prefix));
+}
 
 interface Props {
   projectId: string;
@@ -33,12 +62,27 @@ export function QueryPanel({
   onResizeEditor,
 }: Props) {
   const [statementCount, setStatementCount] = useState(0);
+  const queryClient = useQueryClient();
+
+  const autocompletePlugin = useAutocompletePlugin(databaseId);
+  const editorPlugins = useMemo(
+    () => [autocompletePlugin],
+    [autocompletePlugin],
+  );
 
   const handleQueryComplete = useCallback(
-    (args: { statementCount?: number }) => {
+    (args: OnQueryCompleteArgs) => {
       setStatementCount(args.statementCount ?? 0);
+      // Refresh the schema (shared by the tree and autocomplete) after a
+      // statement that may have altered it, so new objects appear without a
+      // manual refresh.
+      if (isSchemaChangingCommand(args.command)) {
+        void queryClient.invalidateQueries({
+          queryKey: ['schema', databaseId],
+        });
+      }
     },
-    [],
+    [queryClient, databaseId],
   );
 
   const renderToolbarAppendLeft = useCallback(
@@ -54,7 +98,7 @@ export function QueryPanel({
   );
 
   const getExecuteQueryData = useCallback(
-    ({ runId, query: q }: { runId: string; query: string }) => ({
+    ({ runId, query: q }: GetExecuteQueryDataArgs): ExecuteQueryData => ({
       engine: ExecuteQueryEngine.timescaleQuery,
       params: {
         projectId,
@@ -68,7 +112,7 @@ export function QueryPanel({
 
   return (
     <TimescaleResultsCacheContextProvider baseUrl={window.location.origin}>
-      <QueryWidgetProvider theme="light">
+      <QueryWidgetProvider theme={Theme.light}>
         <ContextMenuProvider>
           <QueryWidget
             className="flex-auto"
@@ -85,6 +129,7 @@ export function QueryPanel({
             onQueryComplete={handleQueryComplete}
             renderToolbarAppendLeft={renderToolbarAppendLeft}
             getExecuteQueryData={getExecuteQueryData}
+            editorPlugins={editorPlugins}
           />
           <ContextMenuContext.Consumer>
             {({ render }: { render: () => React.ReactNode }) => render()}

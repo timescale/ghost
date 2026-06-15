@@ -1,9 +1,12 @@
 import {
   ContextMenuContext,
   ContextMenuProvider,
+  type ExecuteQueryData,
   ExecuteQueryEngine,
+  type GetExecuteQueryDataArgs,
   QueryWidget,
   QueryWidgetProvider,
+  Theme,
   TimescaleResultsCacheContextProvider,
 } from '@timescale/popsql-query-widget-cdn';
 import type React from 'react';
@@ -28,7 +31,7 @@ export function SqlCodeView({ query, language }: Props) {
   // Required by QueryWidget, but never invoked here: the editor is read-only
   // and the run button is hidden/disabled, so no query is ever executed.
   const getExecuteQueryData = useCallback(
-    ({ runId }: { runId: string }) => ({
+    ({ runId }: GetExecuteQueryDataArgs): ExecuteQueryData => ({
       engine: ExecuteQueryEngine.timescaleQuery,
       params: { projectId: '', serviceId: '', query, runId },
     }),
@@ -42,7 +45,7 @@ export function SqlCodeView({ query, language }: Props) {
 
   return (
     <TimescaleResultsCacheContextProvider baseUrl={window.location.origin}>
-      <QueryWidgetProvider theme="light">
+      <QueryWidgetProvider theme={Theme.light}>
         <ContextMenuProvider>
           <QueryWidget
             id="definition-viewer"

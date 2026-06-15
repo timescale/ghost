@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["bun"]
+  },
+  "include": [
+    "src/**/*.test.ts",
+    "src/autocomplete",
+    "src/hooks",
+    "src/schema.ts"
+  ]
+}

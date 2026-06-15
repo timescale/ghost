@@ -7,13 +7,14 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "lint": "biome check",
-    "check": "./bun i --silent && ./bun run typecheck && ./bun run lint --write"
+    "test": "bun test",
+    "check": "./bun i --silent && ./bun run typecheck && ./bun run lint --write && ./bun test"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.7",
-    "@timescale/popsql-query-widget-cdn": "0.0.0-dev.161",
+    "@timescale/popsql-query-widget-cdn": "0.1.0",
     "framer-motion": "^12.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",
+    "@types/bun": "^1.3.14",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
