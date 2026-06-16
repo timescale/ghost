@@ -26,6 +26,9 @@ ghost serve [flags]
 
   # Pin a port and skip the browser
   ghost serve --port 5174 --no-open
+
+  # Open in a dedicated app window
+  ghost serve --window
 ```
 
 ### Options
@@ -36,6 +39,7 @@ ghost serve [flags]
       --log-level     log level: debug, info, warn, or error (default INFO)
       --no-open       do not open the browser
       --port int      TCP port to listen on (0 = auto)
+  -w, --window        open in a dedicated app window without an address bar (requires a Chromium-based browser)
 ```
 
 ### Options inherited from parent commands
@@ -49,4 +53,4 @@ ghost serve [flags]
 
 ### SEE ALSO
 
-* [ghost](ghost.md)	 - CLI for managing Postgres databases
+- [ghost](ghost.md) - CLI for managing Postgres databases

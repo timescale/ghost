@@ -51,6 +51,7 @@ type runConfig struct {
 	envVars        map[string]string
 	clientErr      error                                                                  // if set, the client factory returns this error (nil client)
 	openBrowser    func(string) error                                                     // if set, overrides common.OpenBrowser for this test
+	openAppWindow  func(string) error                                                     // if set, overrides common.OpenAppWindow for this test
 	newGhostClient func(string, api.AuthMethod) (api.ClientWithResponsesInterface, error) // if set, overrides api.NewGhostClient
 	credentials    *config.Credentials                                                    // if set, seeded into the credentials file in the temp config dir
 }
@@ -111,6 +112,15 @@ func withClientError(err error) runOption {
 func withOpenBrowser(f func(string) error) runOption {
 	return func(rc *runConfig) {
 		rc.openBrowser = f
+	}
+}
+
+// withOpenAppWindow overrides common.OpenAppWindow for the duration of the
+// test. By default, runCommand stubs OpenAppWindow to return an error. Use this
+// to simulate a successful app-window open (pass a nil-returning func).
+func withOpenAppWindow(f func(string) error) runOption {
+	return func(rc *runConfig) {
+		rc.openAppWindow = f
 	}
 }
 
@@ -207,6 +217,18 @@ func runCommand(
 		}
 	}
 	t.Cleanup(func() { common.OpenBrowser = originalOpenBrowser })
+
+	// Prevent app-window opens in tests (default: return error).
+	// Tests that need to simulate a successful app-window open use withOpenAppWindow.
+	originalOpenAppWindow := common.OpenAppWindow
+	if rc.openAppWindow != nil {
+		common.OpenAppWindow = rc.openAppWindow
+	} else {
+		common.OpenAppWindow = func(url string) error {
+			return errors.New("app window disabled in tests")
+		}
+	}
+	t.Cleanup(func() { common.OpenAppWindow = originalOpenAppWindow })
 
 	// Override api.NewGhostClient if requested (e.g. login tests)
 	if rc.newGhostClient != nil {

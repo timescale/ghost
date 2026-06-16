@@ -15,6 +15,7 @@ func buildServeCmd(app *common.App) *cobra.Command {
 	var port int
 	var host string
 	var noOpen bool
+	var window bool
 	var logLevel slog.Level
 
 	cmd := &cobra.Command{
@@ -27,7 +28,10 @@ of this command — press Ctrl+C to stop it.`,
   ghost serve
 
   # Pin a port and skip the browser
-  ghost serve --port 5174 --no-open`,
+  ghost serve --port 5174 --no-open
+
+  # Open in a dedicated app window
+  ghost serve --window`,
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
@@ -69,7 +73,14 @@ of this command — press Ctrl+C to stop it.`,
 			logger.Info("Listening", slog.String("url", url))
 
 			if !noOpen {
-				if err := common.OpenBrowser(url); err != nil {
+				if window {
+					if err := common.OpenAppWindow(url); err != nil {
+						logger.Warn("Failed to open app window; falling back to browser", slog.Any("error", err))
+						if err := common.OpenBrowser(url); err != nil {
+							logger.Warn("Failed to open browser", slog.Any("error", err))
+						}
+					}
+				} else if err := common.OpenBrowser(url); err != nil {
 					logger.Warn("Failed to open browser", slog.Any("error", err))
 				}
 			}
@@ -94,6 +105,8 @@ of this command — press Ctrl+C to stop it.`,
 	cmd.Flags().IntVar(&port, "port", 0, "TCP port to listen on (0 = auto)")
 	cmd.Flags().StringVar(&host, "host", "127.0.0.1", "interface to bind (loopback by default)")
 	cmd.Flags().BoolVar(&noOpen, "no-open", false, "do not open the browser")
+	cmd.Flags().BoolVarP(&window, "window", "w", false, "open in a dedicated app window without an address bar (requires a Chromium-based browser)")
+	cmd.MarkFlagsMutuallyExclusive("no-open", "window")
 	cmd.Flags().TextVar(&logLevel, "log-level", slog.LevelInfo, "log level: debug, info, warn, or error")
 
 	if err := cmd.RegisterFlagCompletionFunc("log-level", logLevelCompletion); err != nil {
