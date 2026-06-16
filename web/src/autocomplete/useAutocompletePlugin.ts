@@ -42,7 +42,7 @@ export function useAutocompletePlugin(databaseId: string): AutocompletePlugin {
       schemaDataRef.current = null;
       return;
     }
-    const schemas = (schema.schemas ?? []).map((ns) => ns.name);
+    const schemas = schema.schemas?.map((ns) => ns.name) ?? [];
     schemaDataRef.current = {
       databaseName: schema.name,
       schemas,
@@ -59,31 +59,34 @@ export function useAutocompletePlugin(databaseId: string): AutocompletePlugin {
   useEffect(() => {
     const client = new SchemaSearchClient();
     clientRef.current = client;
-    if (schemaDataRef.current) client.index(schemaDataRef.current.raw);
+    if (schemaDataRef.current) {
+      client.index(schemaDataRef.current.raw);
+    }
     return () => {
       client.dispose();
       clientRef.current = null;
     };
   }, []);
 
-  return useMemo(() => {
-    const config: AutocompletePluginConfig = {
-      fetchCurrentDatabase: async () =>
-        schemaDataRef.current?.databaseName ?? '',
-      fetchDatabases: async () =>
-        schemaDataRef.current ? [schemaDataRef.current.databaseName] : [],
-      fetchDefaultSchema: async () => schemaDataRef.current?.defaultSchema,
-      fetchSchemas: async () => schemaDataRef.current?.schemas ?? [],
-      fetchSuggestions: async (query, requests) =>
-        clientRef.current?.search(query, requests) ?? [],
-      fetchTable: async (name, database, schemaName) =>
-        findTable(
-          schemaDataRef.current?.responses ?? [],
-          name,
-          database,
-          schemaName,
-        ),
-    };
-    return createAutocompletePlugin(config);
-  }, []);
+  return useMemo(
+    () =>
+      createAutocompletePlugin({
+        fetchCurrentDatabase: async () =>
+          schemaDataRef.current?.databaseName ?? '',
+        fetchDatabases: async () =>
+          schemaDataRef.current ? [schemaDataRef.current.databaseName] : [],
+        fetchDefaultSchema: async () => schemaDataRef.current?.defaultSchema,
+        fetchSchemas: async () => schemaDataRef.current?.schemas ?? [],
+        fetchSuggestions: async (query, requests) =>
+          clientRef.current?.search(query, requests) ?? [],
+        fetchTable: async (name, database, schemaName) =>
+          findTable(
+            schemaDataRef.current?.responses ?? [],
+            name,
+            database,
+            schemaName,
+          ),
+      } satisfies AutocompletePluginConfig),
+    [],
+  );
 }
