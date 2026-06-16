@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface SplitPaneProps {
+  className?: string;
   leftWidth: number;
   minLeftWidth?: number;
   maxLeftWidth?: number;
@@ -17,6 +18,7 @@ interface SplitPaneProps {
 // removes it from layout entirely; re-showing remounts the children, so any
 // transient state they hold (scroll position, search input) is not preserved.
 export function SplitPane({
+  className,
   leftWidth,
   minLeftWidth = 0,
   maxLeftWidth,
@@ -96,7 +98,10 @@ export function SplitPane({
   }, [clampedSetLeftWidth]);
 
   return (
-    <div ref={containerRef} className="flex relative h-full w-full flex-auto">
+    <div
+      ref={containerRef}
+      className={`flex relative h-full w-full flex-auto ${className || ''}`}
+    >
       {showLeft ? (
         <>
           <div

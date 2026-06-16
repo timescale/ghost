@@ -281,6 +281,15 @@ type State struct {
 	// schemas and extension-owned objects. Defaults to false (a plain bool, not
 	// a pointer, since the web client also defaults a missing value to false).
 	ShowInternalObjects bool `json:"showInternalObjects,omitempty"`
+	// ResultView selects what's shown below the query editor: the results table,
+	// the rendered chart, or the chart config editor.
+	ResultView string `json:"resultView,omitempty"`
+	// ChartConfig is the user's chart config source (the body of the chart
+	// function), persisted so it survives reloads.
+	ChartConfig string `json:"chartConfig,omitempty"`
+	// ChartEditorWidth is the width (px) of the chart config editor pane in the
+	// editor/preview split.
+	ChartEditorWidth int `json:"chartEditorWidth,omitempty"`
 }
 
 // GetStateResponse is the response body of the GET /api/state endpoint.

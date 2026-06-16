@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { DEFAULT_CHART_CONFIG } from './components/chart/defaultConfig';
+import type { ResultView } from './components/chart/types';
 import { debounce } from './util/debounce';
 
 export interface PersistedState {
@@ -9,6 +11,9 @@ export interface PersistedState {
   schemaPaneVisible?: boolean;
   schemaTreeExpanded?: Record<string, string[]>;
   showInternalObjects?: boolean;
+  resultView?: ResultView;
+  chartConfig?: string;
+  chartEditorWidth?: number;
 }
 
 interface ServeStore {
@@ -20,6 +25,9 @@ interface ServeStore {
   schemaPaneVisible: boolean;
   schemaTreeExpanded: Record<string, string[]>;
   showInternalObjects: boolean;
+  resultView: ResultView;
+  chartConfig: string;
+  chartEditorWidth: number;
   hydrate: (saved: PersistedState) => void;
   setSelectedDatabaseId: (id: string | null) => void;
   setEditorSql: (sql: string) => void;
@@ -28,11 +36,17 @@ interface ServeStore {
   setSchemaPaneWidth: (width: number | ((prevWidth: number) => number)) => void;
   setSchemaPaneVisible: (visible: boolean) => void;
   setShowInternalObjects: (show: boolean) => void;
+  setResultView: (view: ResultView) => void;
+  setChartConfig: (config: string) => void;
+  setChartEditorWidth: (
+    width: number | ((prevWidth: number) => number),
+  ) => void;
   toggleSchemaNode: (databaseId: string, key: string) => void;
 }
 
 export const DEFAULT_EDITOR_HEIGHT = 240;
 export const DEFAULT_SCHEMA_PANE_WIDTH = 280;
+export const DEFAULT_CHART_EDITOR_WIDTH = 640;
 
 function getUrlDbId(): string | null {
   return new URLSearchParams(window.location.search).get('db');
@@ -62,6 +76,9 @@ function snapshotFor(store: ServeStore): PersistedState {
     schemaPaneVisible: store.schemaPaneVisible,
     schemaTreeExpanded: store.schemaTreeExpanded,
     showInternalObjects: store.showInternalObjects,
+    resultView: store.resultView,
+    chartConfig: store.chartConfig,
+    chartEditorWidth: store.chartEditorWidth,
   };
 }
 
@@ -74,6 +91,9 @@ export const useServeStore = create<ServeStore>((set, get) => ({
   schemaPaneVisible: true,
   schemaTreeExpanded: {},
   showInternalObjects: false,
+  resultView: 'table',
+  chartConfig: DEFAULT_CHART_CONFIG,
+  chartEditorWidth: DEFAULT_CHART_EDITOR_WIDTH,
   hydrate: (saved) => {
     const selectedDatabaseId = getUrlDbId() ?? saved.selectedDatabaseId ?? null;
     if (selectedDatabaseId) setUrlDbId(selectedDatabaseId);
@@ -86,6 +106,9 @@ export const useServeStore = create<ServeStore>((set, get) => ({
       schemaPaneVisible: saved.schemaPaneVisible ?? true,
       schemaTreeExpanded: saved.schemaTreeExpanded ?? {},
       showInternalObjects: saved.showInternalObjects ?? false,
+      resultView: saved.resultView ?? 'table',
+      chartConfig: saved.chartConfig ?? DEFAULT_CHART_CONFIG,
+      chartEditorWidth: saved.chartEditorWidth ?? DEFAULT_CHART_EDITOR_WIDTH,
     });
   },
   setSelectedDatabaseId: (id) => {
@@ -121,6 +144,22 @@ export const useServeStore = create<ServeStore>((set, get) => ({
   },
   setShowInternalObjects: (show) => {
     set({ showInternalObjects: show });
+    persist(snapshotFor(get()));
+  },
+  setResultView: (view) => {
+    set({ resultView: view });
+    persist(snapshotFor(get()));
+  },
+  setChartConfig: (config) => {
+    set({ chartConfig: config });
+    persist(snapshotFor(get()));
+  },
+  setChartEditorWidth: (width) => {
+    set({
+      chartEditorWidth: Math.round(
+        typeof width === 'function' ? width(get().chartEditorWidth) : width,
+      ),
+    });
     persist(snapshotFor(get()));
   },
   toggleSchemaNode: (databaseId, key) => {

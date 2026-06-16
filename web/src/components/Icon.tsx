@@ -19,8 +19,10 @@ const icons = Object.fromEntries(
 // IconName enumerates the available icons (the .svg filenames). Keeping this an
 // explicit union gives compile-time safety at call sites.
 export type IconName =
+  | 'chart'
   | 'chevron-down'
   | 'check'
+  | 'code'
   | 'comment'
   | 'copy'
   | 'eye'

@@ -13,6 +13,7 @@
     "check": "./bun i --silent && ./bun run typecheck && ./bun run lint --write && ./bun test"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@tanstack/react-query": "^5.62.7",
     "@timescale/popsql-query-widget-cdn": "0.1.0",
     "framer-motion": "^12.0.0",
@@ -28,6 +29,8 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.20",
+    "echarts": "6.1.0",
+    "monaco-editor": "^0.55.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
