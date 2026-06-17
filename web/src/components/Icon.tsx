@@ -28,9 +28,11 @@ export type IconName =
   | 'eye'
   | 'eye-off'
   | 'function'
+  | 'history'
   | 'new-query'
   | 'refresh'
   | 'table'
+  | 'trash'
   | 'x';
 
 export type IconColor =

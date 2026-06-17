@@ -3,6 +3,35 @@ import { DEFAULT_CHART_CONFIG } from './components/chart/defaultConfig';
 import type { ResultView } from './components/chart/types';
 import { debounce } from './util/debounce';
 
+// A single execution of a query, recording when it ran and whether it
+// succeeded. The SQL itself lives on the parent QueryHistoryEntry.
+export interface QueryRun {
+  // Epoch milliseconds when the run completed.
+  ts: number;
+  success: boolean;
+}
+
+// One entry in the query history. Consecutive runs of the same SQL (ignoring
+// leading/trailing whitespace) are collapsed into a single entry: the most
+// recent run is the entry's own `ts`/`success`, and any earlier consecutive
+// runs are recorded in `additionalRuns` (newest first).
+export interface QueryHistoryEntry {
+  // The exact SQL that was executed (a selection, if one was active, otherwise
+  // the full editor contents).
+  sql: string;
+  // Epoch milliseconds when the most recent run completed.
+  ts: number;
+  success: boolean;
+  // Earlier consecutive runs of the same SQL, newest first. Omitted when there
+  // was only a single run.
+  additionalRuns?: QueryRun[];
+}
+
+// Maximum number of distinct history entries to retain (oldest dropped first).
+export const MAX_QUERY_HISTORY_ENTRIES = 100;
+// Maximum number of additional (deduplicated) runs to retain per entry.
+export const MAX_ADDITIONAL_RUNS = 100;
+
 export interface PersistedState {
   selectedDatabaseId?: string;
   editorHeight?: number;
@@ -14,6 +43,7 @@ export interface PersistedState {
   resultView?: ResultView;
   chartConfig?: string;
   chartEditorWidth?: number;
+  queryHistory?: QueryHistoryEntry[];
 }
 
 interface ServeStore {
@@ -28,6 +58,7 @@ interface ServeStore {
   resultView: ResultView;
   chartConfig: string;
   chartEditorWidth: number;
+  queryHistory: QueryHistoryEntry[];
   hydrate: (saved: PersistedState) => void;
   setSelectedDatabaseId: (id: string | null) => void;
   setEditorSql: (sql: string) => void;
@@ -42,6 +73,9 @@ interface ServeStore {
     width: number | ((prevWidth: number) => number),
   ) => void;
   toggleSchemaNode: (databaseId: string, key: string) => void;
+  addQueryHistoryEntry: (sql: string, success: boolean) => void;
+  removeQueryHistoryEntry: (index: number) => void;
+  clearQueryHistory: () => void;
 }
 
 export const DEFAULT_EDITOR_HEIGHT = 240;
@@ -79,6 +113,7 @@ function snapshotFor(store: ServeStore): PersistedState {
     resultView: store.resultView,
     chartConfig: store.chartConfig,
     chartEditorWidth: store.chartEditorWidth,
+    queryHistory: store.queryHistory,
   };
 }
 
@@ -94,6 +129,7 @@ export const useServeStore = create<ServeStore>((set, get) => ({
   resultView: 'table',
   chartConfig: DEFAULT_CHART_CONFIG,
   chartEditorWidth: DEFAULT_CHART_EDITOR_WIDTH,
+  queryHistory: [],
   hydrate: (saved) => {
     const selectedDatabaseId = getUrlDbId() ?? saved.selectedDatabaseId ?? null;
     if (selectedDatabaseId) setUrlDbId(selectedDatabaseId);
@@ -109,6 +145,7 @@ export const useServeStore = create<ServeStore>((set, get) => ({
       resultView: saved.resultView ?? 'table',
       chartConfig: saved.chartConfig ?? DEFAULT_CHART_CONFIG,
       chartEditorWidth: saved.chartEditorWidth ?? DEFAULT_CHART_EDITOR_WIDTH,
+      queryHistory: saved.queryHistory ?? [],
     });
   },
   setSelectedDatabaseId: (id) => {
@@ -160,6 +197,37 @@ export const useServeStore = create<ServeStore>((set, get) => ({
         typeof width === 'function' ? width(get().chartEditorWidth) : width,
       ),
     });
+    persist(snapshotFor(get()));
+  },
+  addQueryHistoryEntry: (sql, success) => {
+    const trimmed = sql.trim();
+    if (!trimmed) return;
+    const ts = Date.now();
+    const history = get().queryHistory;
+    const newest = history[0];
+    // Collapse consecutive runs of the same SQL (whitespace-insensitive) into
+    // the newest entry, recording the prior run in additionalRuns.
+    if (newest && newest.sql.trim() === trimmed) {
+      const additionalRuns = [
+        { ts: newest.ts, success: newest.success },
+        ...(newest.additionalRuns ?? []),
+      ].slice(0, MAX_ADDITIONAL_RUNS);
+      const merged: QueryHistoryEntry = { sql, ts, success, additionalRuns };
+      set({ queryHistory: [merged, ...history.slice(1)] });
+    } else {
+      const entry: QueryHistoryEntry = { sql, ts, success };
+      set({
+        queryHistory: [entry, ...history].slice(0, MAX_QUERY_HISTORY_ENTRIES),
+      });
+    }
+    persist(snapshotFor(get()));
+  },
+  removeQueryHistoryEntry: (index) => {
+    set({ queryHistory: get().queryHistory.filter((_, i) => i !== index) });
+    persist(snapshotFor(get()));
+  },
+  clearQueryHistory: () => {
+    set({ queryHistory: [] });
     persist(snapshotFor(get()));
   },
   toggleSchemaNode: (databaseId, key) => {

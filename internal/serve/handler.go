@@ -290,6 +290,26 @@ type State struct {
 	// ChartEditorWidth is the width (px) of the chart config editor pane in the
 	// editor/preview split.
 	ChartEditorWidth int `json:"chartEditorWidth,omitempty"`
+	// QueryHistory is the list of previously run queries, newest first. Each PUT
+	// replaces it wholesale; the web client owns dedup and capping.
+	QueryHistory []QueryHistoryEntry `json:"queryHistory,omitempty"`
+}
+
+// QueryRun records a single execution of a query: when it completed (epoch
+// milliseconds) and whether it succeeded.
+type QueryRun struct {
+	Timestamp int64 `json:"ts"`
+	Success   bool  `json:"success"`
+}
+
+// QueryHistoryEntry is one entry in the query history. Consecutive runs of the
+// same SQL (whitespace-insensitive) are collapsed by the web client into a
+// single entry, with earlier runs recorded in AdditionalRuns (newest first).
+type QueryHistoryEntry struct {
+	SQL            string     `json:"sql"`
+	Timestamp      int64      `json:"ts"`
+	Success        bool       `json:"success"`
+	AdditionalRuns []QueryRun `json:"additionalRuns,omitempty"`
 }
 
 // GetStateResponse is the response body of the GET /api/state endpoint.

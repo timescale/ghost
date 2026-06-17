@@ -12,12 +12,14 @@ import {
   TimescaleResultsCacheContextProvider,
 } from '@timescale/popsql-query-widget-cdn';
 import type React from 'react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { useAutocompletePlugin } from '../autocomplete/useAutocompletePlugin';
 import { useServeStore } from '../store';
 import { ChartArea } from './chart/ChartArea';
 import { ResultViewToggle } from './chart/ResultViewToggle';
+import { Icon } from './Icon';
+import { QueryHistoryModal } from './QueryHistoryModal';
 
 // Postgres command tags whose execution can change the schema; a successful
 // statement with one of these prefixes refreshes the schema cache so the tree
@@ -68,7 +70,15 @@ export function QueryPanel({
   // The runId of the most recent successful run, used to load results for the
   // chart. Persists across view toggles; updated on each successful run.
   const [chartRunId, setChartRunId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // Maps a run's id to the exact SQL that was executed (a selection, if active,
+  // otherwise the full editor contents), captured in getExecuteQueryData so the
+  // history entry recorded on completion reflects what actually ran.
+  const runSqlById = useRef<Map<string, string>>(new Map());
   const queryClient = useQueryClient();
+
+  const addQueryHistoryEntry = useServeStore((s) => s.addQueryHistoryEntry);
+  const appendEditorSql = useServeStore((s) => s.appendEditorSql);
 
   const resultView = useServeStore((s) => s.resultView);
   const setResultView = useServeStore((s) => s.setResultView);
@@ -87,7 +97,17 @@ export function QueryPanel({
       setStatementCount(args.statementCount ?? 0);
       // 'rowsAffected' is only present on the success branch of the union, so
       // this narrows to a successful run; track its id for charting.
-      if ('rowsAffected' in args) setChartRunId(args.runId);
+      const succeeded = 'rowsAffected' in args;
+      if (succeeded) setChartRunId(args.runId);
+      // Record every completed run (success or failure) in the history; skip
+      // cancellations, which have no real outcome. Success and failure are the
+      // two branches carrying 'rowsAffected'/'error'; the canceled branch has
+      // neither. The SQL was stashed by getExecuteQueryData under this runId.
+      const sql = runSqlById.current.get(args.runId);
+      runSqlById.current.delete(args.runId);
+      if (sql !== undefined && (succeeded || 'error' in args)) {
+        addQueryHistoryEntry(sql, succeeded);
+      }
       // Refresh the schema (shared by the tree and autocomplete) after a
       // statement that may have altered it, so new objects appear without a
       // manual refresh.
@@ -97,14 +117,23 @@ export function QueryPanel({
         });
       }
     },
-    [queryClient, databaseId],
+    [queryClient, databaseId, addQueryHistoryEntry],
   );
 
   const renderToolbarAppendLeft = useCallback(
     ({ isRunning }: { isRunning: boolean }) => (
-      // The view toggle sits just right of the run button; the statement count
-      // (multi-statement runs only) trails it.
+      // The history button and view toggle sit just right of the run button; the
+      // statement count (multi-statement runs only) trails them.
       <div className="flex-auto flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setHistoryOpen(true)}
+          aria-label="Query history"
+          title="Query history"
+          className="rounded border border-slate-300 bg-white p-1 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800"
+        >
+          <Icon name="history" size="sm" color="current" />
+        </button>
         <ResultViewToggle value={resultView} onChange={setResultView} />
         {!isRunning && statementCount > 1 ? (
           <span className="text-xs text-slate-500">
@@ -117,15 +146,19 @@ export function QueryPanel({
   );
 
   const getExecuteQueryData = useCallback(
-    ({ runId, query: q }: GetExecuteQueryDataArgs): ExecuteQueryData => ({
-      engine: ExecuteQueryEngine.timescaleQuery,
-      params: {
-        projectId,
-        serviceId: databaseId,
-        query: q,
-        runId,
-      },
-    }),
+    ({ runId, query: q }: GetExecuteQueryDataArgs): ExecuteQueryData => {
+      // Stash the exact SQL being run so handleQueryComplete can record it.
+      runSqlById.current.set(runId, q);
+      return {
+        engine: ExecuteQueryEngine.timescaleQuery,
+        params: {
+          projectId,
+          serviceId: databaseId,
+          query: q,
+          runId,
+        },
+      };
+    },
     [projectId, databaseId],
   );
 
@@ -167,6 +200,19 @@ export function QueryPanel({
           <ContextMenuContext.Consumer>
             {({ render }: { render: () => React.ReactNode }) => render()}
           </ContextMenuContext.Consumer>
+          {historyOpen ? (
+            <QueryHistoryModal
+              onClose={() => setHistoryOpen(false)}
+              onApply={(sql) => {
+                onQueryChange(sql);
+                setHistoryOpen(false);
+              }}
+              onAppend={(sql) => {
+                appendEditorSql(sql);
+                setHistoryOpen(false);
+              }}
+            />
+          ) : null}
         </ContextMenuProvider>
       </QueryWidgetProvider>
     </TimescaleResultsCacheContextProvider>
