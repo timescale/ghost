@@ -15,7 +15,7 @@
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@tanstack/react-query": "^5.62.7",
-    "@timescale/popsql-query-widget-cdn": "0.1.0",
+    "@timescale/popsql-query-widget-cdn": "0.1.1",
     "framer-motion": "^12.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

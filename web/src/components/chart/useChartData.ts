@@ -11,7 +11,7 @@ const MAX_CHART_ROWS = 50_000;
 // Minimal shape of the in-process results-cache client exposed by the widget's
 // ResultsCacheContext. The full type isn't re-exported by the package, so we
 // model just the `rpc` surface we use. `getRunInfo` yields the run's column
-// `fields`; `readCache` yields the cached result rows for a run.
+// `fields` (including their Postgres types); `readCache` yields the rows.
 interface ResultsCacheClient {
   rpc(payload: {
     type: 'getRunInfo' | 'readCache';
@@ -72,7 +72,7 @@ export function useChartData(runId: string | null): State {
 
       const rows = (cache.data as CachedResult[] | undefined)?.[0]?.rows ?? [];
       // Prefer the run's declared fields for column order/types; fall back to
-      // the keys of the first row for engines that don't report fields.
+      // the keys of the first row when no fields are available.
       const columns: ChartColumn[] = fields.length
         ? fields.map((f) => ({ name: f.name, type: f.type }))
         : Object.keys(rows[0] ?? {}).map((name) => ({ name }));
