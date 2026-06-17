@@ -36,6 +36,8 @@ export function QueryHistoryModal({ onClose, onApply, onAppend }: Props) {
 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [confirmingClear, setConfirmingClear] = useState(false);
+  // Index of the entry whose delete is awaiting inline confirmation, if any.
+  const [confirmingRemove, setConfirmingRemove] = useState<number | null>(null);
 
   // Clamp the selection to the current list so removals don't leave it dangling.
   const activeIndex = Math.min(selectedIndex, Math.max(0, history.length - 1));
@@ -47,6 +49,7 @@ export function QueryHistoryModal({ onClose, onApply, onAppend }: Props) {
   const handleRemove = (index: number) => {
     removeEntry(index);
     if (index < selectedIndex) setSelectedIndex((i) => i - 1);
+    setConfirmingRemove(null);
   };
 
   return (
@@ -83,44 +86,88 @@ export function QueryHistoryModal({ onClose, onApply, onAppend }: Props) {
                     // stable key for this newest-first list.
                     // biome-ignore lint/suspicious/noArrayIndexKey: list keyed by position
                     key={index}
-                    className={`group flex items-center gap-2 border-b border-slate-100 px-3 py-2 ${
-                      active ? 'bg-slate-100' : 'hover:bg-slate-50'
-                    }`}
                   >
-                    <button
-                      type="button"
+                    {/* The whole row is the clickable target; nested buttons
+                        (delete/confirm) stop propagation so they don't also
+                        select the row. */}
+                    {/* biome-ignore lint/a11y/useSemanticElements: a native <button> can't be used because the row contains nested action buttons (remove/confirm), which is invalid HTML; the role/tabIndex/keydown handler provide equivalent button semantics */}
+                    <div
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setSelectedIndex(index)}
-                      className="flex min-w-0 flex-1 flex-col items-start text-left"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setSelectedIndex(index);
+                        }
+                      }}
+                      className={`group flex w-full cursor-pointer items-center gap-2 border-b border-slate-100 px-3 py-2 text-left ${
+                        active ? 'bg-slate-100' : 'hover:bg-slate-50'
+                      }`}
                     >
-                      <span className="flex w-full items-center gap-1.5">
-                        <Icon
-                          name={entry.success ? 'check' : 'x'}
-                          size="xs"
-                          color={entry.success ? 'green' : 'red'}
-                        />
-                        <span
-                          className="truncate font-mono text-xs text-slate-700"
-                          title={previewSql(entry.sql)}
+                      <span className="flex min-w-0 flex-1 flex-col items-start">
+                        <span className="flex w-full items-center gap-1.5">
+                          <Icon
+                            name={entry.success ? 'check' : 'x'}
+                            size="xs"
+                            color={entry.success ? 'green' : 'red'}
+                          />
+                          <span
+                            className="truncate font-mono text-xs text-slate-700"
+                            title={previewSql(entry.sql)}
+                          >
+                            {previewSql(entry.sql)}
+                          </span>
+                        </span>
+                        <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                          <span title={formatAbsoluteTime(entry.ts)}>
+                            {formatRelativeTime(entry.ts, now)}
+                          </span>
+                          {runs > 1 ? <span>· {runs}×</span> : null}
+                        </span>
+                      </span>
+                      {confirmingRemove === index ? (
+                        <span className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemove(index);
+                            }}
+                            aria-label="Confirm remove"
+                            title="Confirm remove"
+                            className="rounded border border-red-300 bg-red-50 p-1 text-red-600 hover:bg-red-100"
+                          >
+                            <Icon name="check" size="sm" color="current" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmingRemove(null);
+                            }}
+                            aria-label="Cancel remove"
+                            title="Cancel remove"
+                            className="rounded border border-slate-300 bg-white p-1 text-slate-600 hover:bg-slate-50"
+                          >
+                            <Icon name="x" size="sm" color="current" />
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmingRemove(index);
+                          }}
+                          aria-label="Remove from history"
+                          title="Remove from history"
+                          className="rounded p-1 text-slate-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-slate-200 hover:text-red-600"
                         >
-                          {previewSql(entry.sql)}
-                        </span>
-                      </span>
-                      <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
-                        <span title={formatAbsoluteTime(entry.ts)}>
-                          {formatRelativeTime(entry.ts, now)}
-                        </span>
-                        {runs > 1 ? <span>· {runs}×</span> : null}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(index)}
-                      aria-label="Remove from history"
-                      title="Remove from history"
-                      className="rounded p-1 text-slate-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-slate-200 hover:text-red-600"
-                    >
-                      <Icon name="trash" size="sm" color="current" />
-                    </button>
+                          <Icon name="trash" size="sm" color="current" />
+                        </button>
+                      )}
+                    </div>
                   </li>
                 );
               })}
