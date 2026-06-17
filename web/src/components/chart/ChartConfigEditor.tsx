@@ -1,5 +1,9 @@
-import Editor, { loader, type OnMount, useMonaco } from '@monaco-editor/react';
-import { useCallback, useEffect, useRef } from 'react';
+import Editor, {
+  type BeforeMount,
+  loader,
+  type OnMount,
+} from '@monaco-editor/react';
+import { useCallback, useRef } from 'react';
 
 import { DEFAULT_CHART_CONFIG } from './defaultConfig';
 import { configureMonacoForCharts } from './monacoChartSetup';
@@ -20,12 +24,10 @@ interface Props {
 // JSDoc-annotated `chart(data)` function is type-checked against EChartsOption,
 // surfacing return-type errors inline.
 export function ChartConfigEditor({ config, onChange }: Props) {
-  const monaco = useMonaco();
-
-  useEffect(() => {
-    if (!monaco) return;
+  // Configure the JS language service before the editor model is created.
+  const handleBeforeMount = useCallback<BeforeMount>((monaco) => {
     configureMonacoForCharts(monaco).catch(console.error);
-  }, [monaco]);
+  }, []);
 
   // Keep onChange in a ref so the context-menu action (registered once on
   // mount) always calls the latest handler rather than a stale closure.
@@ -53,6 +55,7 @@ export function ChartConfigEditor({ config, onChange }: Props) {
       theme="vs"
       value={config}
       onChange={(value) => onChange(value ?? '')}
+      beforeMount={handleBeforeMount}
       onMount={handleMount}
       loading={
         <div className="p-3 text-xs text-slate-500">Loading editor…</div>
