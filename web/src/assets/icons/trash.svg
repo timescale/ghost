@@ -1,34 +1,27 @@
 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path
-    d="M2 4H14"
+    d="M1.7 3.79999H3.1H14.3"
     stroke="currentColor"
     stroke-width="1.5"
     stroke-linecap="round"
     stroke-linejoin="round"
   />
   <path
-    d="M12.6667 4V13.3333C12.6667 14 12 14.6667 11.3333 14.6667H4.66667C4 14.6667 3.33333 14 3.33333 13.3333V4"
+    d="M5.19999 3.8V2.4C5.19999 1.623 5.82299 1 6.59999 1H9.39999C10.17 1 10.8 1.623 10.8 2.4V3.8M12.9 3.8V13.6C12.9 14.37 12.27 15 11.5 15H4.49999C3.72299 15 3.09999 14.37 3.09999 13.6V3.8H12.9Z"
     stroke="currentColor"
     stroke-width="1.5"
     stroke-linecap="round"
     stroke-linejoin="round"
   />
   <path
-    d="M5.33333 4V2.66667C5.33333 2 6 1.33333 6.66667 1.33333H9.33333C10 1.33333 10.6667 2 10.6667 2.66667V4"
+    d="M6.59999 7.29999V11.5"
     stroke="currentColor"
     stroke-width="1.5"
     stroke-linecap="round"
     stroke-linejoin="round"
   />
   <path
-    d="M6.66667 7.33333V11.3333"
-    stroke="currentColor"
-    stroke-width="1.5"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  />
-  <path
-    d="M9.33333 7.33333V11.3333"
+    d="M9.39999 7.29999V11.5"
     stroke="currentColor"
     stroke-width="1.5"
     stroke-linecap="round"
