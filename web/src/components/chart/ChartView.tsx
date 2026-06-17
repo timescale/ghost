@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { debounce } from '../../util/debounce';
 import { buildChartOption } from './buildChartOption';
-import { type EChartsInstance, getECharts } from './echarts';
+import {
+  type EChartsGlobal,
+  type EChartsInstance,
+  getECharts,
+} from './echarts';
 import type { ChartData } from './types';
 
 interface Props {
@@ -10,6 +15,43 @@ interface Props {
   dataError: string | null;
   config: string;
 }
+
+// applyChartOption evaluates the config against the data and applies the
+// resulting option to the chart instance. It lives outside the component (and
+// is debounced at module scope) and takes everything it needs as args, so there
+// are no closures over component state to go stale. chartRef is a plain mutable
+// box ({ current }); on error we recreate the instance and write it back.
+const applyChartOption = debounce(
+  (
+    echarts: EChartsGlobal,
+    chartRef: { current: EChartsInstance | null },
+    containerEl: HTMLElement | null,
+    data: ChartData | null,
+    config: string,
+    setRenderError: (message: string | null) => void,
+  ): void => {
+    if (!chartRef.current) return;
+    if (!data) {
+      chartRef.current.clear();
+      setRenderError(null);
+      return;
+    }
+    try {
+      const option = buildChartOption(config, data);
+      chartRef.current.setOption(option, { notMerge: true });
+      setRenderError(null);
+    } catch (err) {
+      // A failed setOption can throw mid-render and leave ECharts in an
+      // inconsistent internal state that a later clear()/setOption won't recover
+      // from (the next apply silently renders nothing or stale content). Dispose
+      // and recreate the instance so the next valid config renders cleanly.
+      chartRef.current?.dispose();
+      chartRef.current = containerEl ? echarts.init(containerEl) : null;
+      setRenderError(err instanceof Error ? err.message : String(err));
+    }
+  },
+  200,
+);
 
 // ChartView renders an Apache ECharts chart from the query results and the
 // user-authored config. It owns the chart instance lifecycle (init/resize/
@@ -22,37 +64,36 @@ export function ChartView({ data, loading, dataError, config }: Props) {
   const echarts = getECharts();
 
   // Initialize the chart instance once, and keep it sized to its container.
+  // The ResizeObserver reads chartRef.current (rather than capturing the
+  // instance) so it resizes whichever instance is current, even after the
+  // error-recovery reinit below replaces it.
   useEffect(() => {
     const el = containerRef.current;
     if (!el || !echarts) return;
-    const chart = echarts.init(el);
-    chartRef.current = chart;
-    const observer = new ResizeObserver(() => chart.resize());
+    chartRef.current = echarts.init(el);
+    const observer = new ResizeObserver(() => chartRef.current?.resize());
     observer.observe(el);
     return () => {
       observer.disconnect();
-      chart.dispose();
+      chartRef.current?.dispose();
       chartRef.current = null;
     };
   }, [echarts]);
 
-  // Re-apply the option whenever the data or config changes.
+  // Re-apply (debounced) whenever the data or config changes; cancel any
+  // pending apply on unmount.
   useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
-    if (!data) {
-      chart.clear();
-      setRenderError(null);
-      return;
-    }
-    try {
-      chart.setOption(buildChartOption(config, data), { notMerge: true });
-      setRenderError(null);
-    } catch (err) {
-      chart.clear();
-      setRenderError(err instanceof Error ? err.message : String(err));
-    }
-  }, [data, config]);
+    if (!echarts) return;
+    applyChartOption(
+      echarts,
+      chartRef,
+      containerRef.current,
+      data,
+      config,
+      setRenderError,
+    );
+    return applyChartOption.cancel;
+  }, [echarts, data, config]);
 
   if (!echarts) {
     return (

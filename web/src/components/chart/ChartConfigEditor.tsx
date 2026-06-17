@@ -1,6 +1,7 @@
-import Editor, { loader, useMonaco } from '@monaco-editor/react';
-import { useEffect } from 'react';
+import Editor, { loader, type OnMount, useMonaco } from '@monaco-editor/react';
+import { useCallback, useEffect, useRef } from 'react';
 
+import { DEFAULT_CHART_CONFIG } from './defaultConfig';
 import { configureMonacoForCharts } from './monacoChartSetup';
 
 // Configure to load monaco-editor from CDN
@@ -26,6 +27,24 @@ export function ChartConfigEditor({ config, onChange }: Props) {
     configureMonacoForCharts(monaco).catch(console.error);
   }, [monaco]);
 
+  // Keep onChange in a ref so the context-menu action (registered once on
+  // mount) always calls the latest handler rather than a stale closure.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const handleMount = useCallback<OnMount>((editor) => {
+    // Add a "Reset to default" entry to the editor's right-click context menu.
+    editor.addAction({
+      id: 'ghost.resetChartConfig',
+      label: 'Reset chart config to default',
+      contextMenuGroupId: 'modification',
+      run: () => {
+        editor.setValue(DEFAULT_CHART_CONFIG);
+        onChangeRef.current(DEFAULT_CHART_CONFIG);
+      },
+    });
+  }, []);
+
   return (
     <Editor
       language="javascript"
@@ -34,6 +53,7 @@ export function ChartConfigEditor({ config, onChange }: Props) {
       theme="vs"
       value={config}
       onChange={(value) => onChange(value ?? '')}
+      onMount={handleMount}
       loading={
         <div className="p-3 text-xs text-slate-500">Loading editor…</div>
       }
