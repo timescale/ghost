@@ -71,6 +71,13 @@ export function QueryPanel({
   // chart. Persists across view toggles; updated on each successful run.
   const [chartRunId, setChartRunId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // True only while the user is actively dragging the editor resize handle. In
+  // 'split' mode the widget also fires onResizeEditor programmatically on any
+  // container reflow (e.g. when toggling between table and chart views), which
+  // clamps the editor height to the current container size. Persisting those
+  // programmatic values shrinks the editor on view switches, so we only persist
+  // height changes that occur during a real user drag.
+  const isResizingEditor = useRef(false);
   // Maps a run's id to the exact SQL that was executed (a selection, if active,
   // otherwise the full editor contents), captured in getExecuteQueryData so the
   // history entry recorded on completion reflects what actually ran.
@@ -175,7 +182,15 @@ export function QueryPanel({
               resizeHandles={showTable ? 'split' : 'editor'}
               editorMinHeight={200}
               editorHeight={editorHeight}
-              onResizeEditor={onResizeEditor}
+              onResizeStart={() => {
+                isResizingEditor.current = true;
+              }}
+              onResizeStop={() => {
+                isResizingEditor.current = false;
+              }}
+              onResizeEditor={(height) => {
+                if (isResizingEditor.current) onResizeEditor(height);
+              }}
               id={databaseId}
               query={query}
               onQueryChange={onQueryChange}
