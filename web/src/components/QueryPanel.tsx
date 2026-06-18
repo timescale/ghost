@@ -7,13 +7,25 @@ import {
   type GetExecuteQueryDataArgs,
   type OnQueryCompleteArgs,
   QueryWidget,
+  type QueryWidgetApiRef,
   QueryWidgetProvider,
+  ResultsCacheContext,
   Theme,
   TimescaleResultsCacheContextProvider,
 } from '@timescale/popsql-query-widget-cdn';
 import type React from 'react';
-import { useCallback, useMemo, useRef, useState } from 'react';
-
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import type { QueryOutcome } from '../agent/executor';
+import { type Executor, registerExecutor } from '../agent/executor';
+import { fetchRunData, type ResultsCacheClient } from '../agent/runData';
+import { useAgentStore } from '../agent/store';
 import { useAutocompletePlugin } from '../autocomplete/useAutocompletePlugin';
 import { useServeStore } from '../store';
 import { ChartArea } from './chart/ChartArea';
@@ -82,8 +94,16 @@ export function QueryPanel({
   // otherwise the full editor contents), captured in getExecuteQueryData so the
   // history entry recorded on completion reflects what actually ran.
   const runSqlById = useRef<Map<string, string>>(new Map());
+  // Imperative handle to the widget, used by the agent executor to run queries.
+  const apiRef = useRef<QueryWidgetApiRef>(null);
+  // Resolvers for agent-initiated runs, keyed by runId; resolved in
+  // handleQueryComplete when the matching run finishes.
+  const pendingRuns = useRef<Map<string, (outcome: QueryOutcome) => void>>(
+    new Map(),
+  );
   const queryClient = useQueryClient();
 
+  const setAgentLastRun = useAgentStore((s) => s.setLastRun);
   const addQueryHistoryEntry = useServeStore((s) => s.addQueryHistoryEntry);
   const appendEditorSql = useServeStore((s) => s.appendEditorSql);
 
@@ -106,6 +126,26 @@ export function QueryPanel({
       // this narrows to a successful run; track its id for charting.
       const succeeded = 'rowsAffected' in args;
       if (succeeded) setChartRunId(args.runId);
+      // Resolve any agent run awaiting this completion, and record the run as
+      // the latest for the agent's uiState/chart tools.
+      const failed = 'error' in args;
+      if (succeeded || failed) {
+        setAgentLastRun({
+          runId: args.runId,
+          status: succeeded ? 'success' : 'failed',
+          rowCount: args.rowCount ?? 0,
+          error: failed ? args.error : undefined,
+        });
+      }
+      const pending = pendingRuns.current.get(args.runId);
+      if (pending) {
+        pendingRuns.current.delete(args.runId);
+        pending({
+          runId: args.runId,
+          status: succeeded ? 'success' : 'failed',
+          error: failed ? args.error : undefined,
+        });
+      }
       // Record every completed run (success or failure) in the history; skip
       // cancellations, which have no real outcome. Success and failure are the
       // two branches carrying 'rowsAffected'/'error'; the canceled branch has
@@ -124,7 +164,7 @@ export function QueryPanel({
         });
       }
     },
-    [queryClient, databaseId, addQueryHistoryEntry],
+    [queryClient, databaseId, addQueryHistoryEntry, setAgentLastRun],
   );
 
   const renderToolbarAppendLeft = useCallback(
@@ -169,12 +209,43 @@ export function QueryPanel({
     [projectId, databaseId],
   );
 
+  // runQuery is the agent-facing entry point: it sets the editor SQL and runs
+  // it via the widget's imperative handle, resolving when the run completes.
+  const runQuery = useCallback(
+    (sql: string): Promise<QueryOutcome> => {
+      onQueryChange(sql);
+      // Use a plain UUID: the serve backend parses runId as a uuid.UUID, so a
+      // prefixed value (e.g. `agent-<uuid>`) fails JSON decoding with "invalid
+      // JSON body", surfacing in the UI as a generic "Something went wrong".
+      const runId = crypto.randomUUID();
+      return new Promise<QueryOutcome>((resolve, reject) => {
+        // Defer to the next tick so the editor reflects the new SQL before the
+        // widget reads it for execution. The widget is guaranteed ready here:
+        // ExecutorBridge only registers this executor once the results-cache
+        // client has initialized (see below), and the agent dispatcher awaits
+        // the executor before calling runQuery. So executeQuery returning falsy
+        // here genuinely means a query is already in progress.
+        setTimeout(() => {
+          const started = apiRef.current?.executeQuery(sql, runId);
+          if (!started) {
+            reject(new Error('a query is already running; try again shortly'));
+            return;
+          }
+          pendingRuns.current.set(started, resolve);
+        }, 0);
+      });
+    },
+    [onQueryChange],
+  );
+
   return (
     <TimescaleResultsCacheContextProvider baseUrl={window.location.origin}>
       <QueryWidgetProvider theme={Theme.light}>
         <ContextMenuProvider>
+          <ExecutorBridge databaseId={databaseId} runQuery={runQuery} />
           <div className="flex flex-auto flex-col overflow-hidden">
             <QueryWidget
+              apiRef={apiRef}
               // In table view the widget fills the pane (split layout); in
               // chart/editor view it shrinks to the editor and we render the
               // chart area below it.
@@ -232,4 +303,39 @@ export function QueryPanel({
       </QueryWidgetProvider>
     </TimescaleResultsCacheContextProvider>
   );
+}
+
+// ExecutorBridge registers an agent [Executor] for the currently-mounted
+// database. It must render inside the widget's ResultsCacheContext so it can
+// read cached run results. Rendering nothing, it only wires the imperative
+// run/read capabilities into the module-level executor registry, so the
+// app-level agent dispatcher can drive this database panel.
+function ExecutorBridge({
+  databaseId,
+  runQuery,
+}: {
+  databaseId: string;
+  runQuery: (sql: string) => Promise<QueryOutcome>;
+}) {
+  const { client } = useContext(ResultsCacheContext) as {
+    client: ResultsCacheClient | null;
+  };
+
+  useEffect(() => {
+    // Gate registration on the results-cache client being ready. This client is
+    // the widget's readiness signal: it's initialized asynchronously, and the
+    // widget can't start a run (executeQuery returns null) until it exists.
+    // Registering only once it's ready means the agent dispatcher — which
+    // awaits the executor before running — never races a half-initialized
+    // widget, so runQuery can execute immediately without polling/retrying.
+    if (!client) return;
+    const executor: Executor = {
+      databaseId,
+      runQuery,
+      getRunData: (runId, limit) => fetchRunData(client, runId, limit),
+    };
+    return registerExecutor(executor);
+  }, [databaseId, runQuery, client]);
+
+  return null;
 }

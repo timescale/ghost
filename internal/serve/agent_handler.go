@@ -1,0 +1,158 @@
+package serve
+
+import (
+	"encoding/json"
+	"log/slog"
+	"net/http"
+
+	"github.com/timescale/ghost/internal/log"
+	"github.com/timescale/ghost/internal/serve/api"
+)
+
+// agentEventsHandler serves GET /api/agent/events as a Server-Sent Events
+// stream. The connecting browser tab is registered with the bridge and
+// receives "status" events (whether it is the active controlling tab) and
+// "command" events (work dispatched by MCP tools). The stream stays open until
+// the client disconnects or the server shuts down.
+func (h *Handler) agentEventsHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := log.FromContext(ctx)
+
+	if h.bridge == nil {
+		writeError(w, http.StatusNotFound, api.ErrNotFound, logger)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		logger.Error("Response writer does not support flushing")
+		internalServerError(w, logger)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store, no-transform")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	client := h.bridge.addClient()
+	defer h.bridge.removeClient(client)
+	logger.Debug("Agent client connected", slog.String("clientId", client.id))
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Debug("Agent client disconnected", slog.String("clientId", client.id))
+			return
+		case event := <-client.events:
+			data, err := json.Marshal(event)
+			if err != nil {
+				logger.Error("Error marshaling agent event", slog.Any("error", err))
+				continue
+			}
+			if _, err := w.Write([]byte("data: ")); err != nil {
+				logger.Debug("Error writing agent event", slog.Any("error", err))
+				return
+			}
+			if _, err := w.Write(data); err != nil {
+				logger.Debug("Error writing agent event", slog.Any("error", err))
+				return
+			}
+			if _, err := w.Write([]byte("\n\n")); err != nil {
+				logger.Debug("Error writing agent event", slog.Any("error", err))
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+// AgentRespondRequest is the request body of POST /api/agent/respond. The
+// browser posts heartbeats, command results, and errors back over this
+// endpoint, keyed by the originating client and request IDs.
+type AgentRespondRequest struct {
+	ClientID  string          `json:"clientId"`
+	RequestID string          `json:"requestId"`
+	Type      string          `json:"type"` // "heartbeat" | "result" | "error"
+	Data      json.RawMessage `json:"data,omitempty"`
+	Error     string          `json:"error,omitempty"`
+}
+
+// Validate returns an error if a required field is missing.
+func (r AgentRespondRequest) Validate() error {
+	if r.ClientID == "" {
+		return &RequiredFieldError{Field: "clientId"}
+	}
+	if r.RequestID == "" {
+		return &RequiredFieldError{Field: "requestId"}
+	}
+	if r.Type == "" {
+		return &RequiredFieldError{Field: "type"}
+	}
+	return nil
+}
+
+// AgentRespondResponse is the response body of POST /api/agent/respond.
+type AgentRespondResponse struct {
+	Success bool `json:"success"`
+}
+
+func (h *Handler) agentRespondHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := log.FromContext(ctx)
+	req := requestFromContext(ctx).(*AgentRespondRequest)
+
+	if h.bridge == nil {
+		writeError(w, http.StatusNotFound, api.ErrNotFound, logger)
+		return
+	}
+
+	if err := h.bridge.deliver(req.ClientID, req.RequestID, req.Type, req.Data, req.Error); err != nil {
+		// A stale or mismatched response is expected (e.g. after a takeover or
+		// timeout) and is not a server error.
+		logger.Debug("Discarding agent response", slog.Any("error", err))
+		writeError(w, http.StatusConflict, err, logger)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, AgentRespondResponse{Success: true}, logger)
+}
+
+// AgentActivateRequest is the request body of POST /api/agent/activate. A
+// browser tab posts its own client ID to become the active controlling tab
+// (the "take over" action).
+type AgentActivateRequest struct {
+	ClientID string `json:"clientId"`
+}
+
+// Validate returns an error if a required field is missing.
+func (r AgentActivateRequest) Validate() error {
+	if r.ClientID == "" {
+		return &RequiredFieldError{Field: "clientId"}
+	}
+	return nil
+}
+
+// AgentActivateResponse is the response body of POST /api/agent/activate.
+type AgentActivateResponse struct {
+	Success bool `json:"success"`
+}
+
+func (h *Handler) agentActivateHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := log.FromContext(ctx)
+	req := requestFromContext(ctx).(*AgentActivateRequest)
+
+	if h.bridge == nil {
+		writeError(w, http.StatusNotFound, api.ErrNotFound, logger)
+		return
+	}
+
+	if !h.bridge.Activate(req.ClientID) {
+		writeError(w, http.StatusNotFound, api.ErrNotFound, logger)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, AgentActivateResponse{Success: true}, logger)
+}

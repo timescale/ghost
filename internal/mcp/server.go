@@ -27,10 +27,28 @@ type Server struct {
 	docsProxyClient *ProxyClient
 	logger          *slog.Logger
 	app             *common.App
+	// browser drives an in-process web UI for the visualize/chart/ui_state
+	// tools. Non-nil only in local (stdio) mode, where opening a browser makes
+	// sense; nil for the remote HTTP transport.
+	browser *browserController
+}
+
+// Options configures optional [Server] behavior.
+type Options struct {
+	// Local indicates the server is running in local (stdio) mode, where it can
+	// open a browser on the user's machine. Enables the visualize/chart/
+	// ui_state tools backed by an in-process web UI.
+	Local bool
 }
 
 // NewServer creates a new Ghost MCP server instance
 func NewServer(ctx context.Context, app *common.App, logger *slog.Logger) (*Server, error) {
+	return NewServerWithOptions(ctx, app, logger, Options{})
+}
+
+// NewServerWithOptions creates a new Ghost MCP server instance with the given
+// [Options].
+func NewServerWithOptions(ctx context.Context, app *common.App, logger *slog.Logger, opts Options) (*Server, error) {
 	logger = ensureLogger(logger)
 	instructions := "Ghost provides tools for creating, managing, and querying fully-managed PostgreSQL databases. " +
 		"Use it to provision new databases, fork existing ones for isolation and testing migrations, share database copies with other users, pause and resume instances, execute SQL queries, inspect schemas, and manage credentials. " +
@@ -73,6 +91,9 @@ func NewServer(ctx context.Context, app *common.App, logger *slog.Logger) (*Serv
 		mcpServer: mcpServer,
 		logger:    logger,
 		app:       app,
+	}
+	if opts.Local {
+		server.browser = newBrowserController(app, logger)
 	}
 
 	// Register all tools (including proxied docs tools)
@@ -137,6 +158,12 @@ func (s *Server) registerTools(ctx context.Context) {
 	mcp.AddTool(s.mcpServer, newInvoiceListTool(), s.handleInvoiceList)
 	mcp.AddTool(s.mcpServer, newInvoiceTool(), s.handleInvoice)
 	mcp.AddTool(s.mcpServer, newPricingTool(), s.handlePricing)
+
+	// Register browser-backed visualization tools (local/stdio mode only).
+	if s.browser != nil {
+		mcp.AddTool(s.mcpServer, newChartTool(), s.handleChart)
+		mcp.AddTool(s.mcpServer, newUIStateTool(), s.handleUIState)
+	}
 }
 
 // analyticsMiddleware tracks analytics for all MCP requests
@@ -199,6 +226,13 @@ func (s *Server) analyticsMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 
 // Close gracefully shuts down the MCP server and all proxy connections
 func (s *Server) Close() error {
+	// Tear down the in-process web UI, if it was started.
+	if s.browser != nil {
+		if err := s.browser.Close(); err != nil {
+			return fmt.Errorf("failed to close web server: %w", err)
+		}
+	}
+
 	// Close docs proxy connection
 	if err := s.docsProxyClient.Close(); err != nil {
 		return fmt.Errorf("failed to close docs proxy client: %w", err)

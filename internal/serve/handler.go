@@ -23,12 +23,17 @@ type HandlerConfig struct {
 	App    *common.App
 	Store  *Store
 	Logger *slog.Logger
+	// Bridge is the optional agent communication channel. When non-nil, the
+	// agent SSE/respond/activate endpoints are served, letting MCP tools drive
+	// this UI. It is nil for a plain `ghost serve` (no MCP-driven control).
+	Bridge *Bridge
 }
 
 type Handler struct {
 	app    *common.App
 	store  *Store
 	logger *slog.Logger
+	bridge *Bridge
 }
 
 func NewHandler(config HandlerConfig) *Handler {
@@ -36,6 +41,7 @@ func NewHandler(config HandlerConfig) *Handler {
 		app:    config.App,
 		store:  config.Store,
 		logger: config.Logger,
+		bridge: config.Bridge,
 	}
 }
 
@@ -108,6 +114,22 @@ func (h *Handler) Handler() http.Handler {
 		h.closeSessionHandler,
 		contentTypeJSON(),
 		unmarshalRequest[CloseSessionRequest](),
+		validateRequest(),
+	)
+
+	router.GET("/api/agent/events",
+		h.agentEventsHandler,
+	)
+	router.POST("/api/agent/respond",
+		h.agentRespondHandler,
+		contentTypeJSON(),
+		unmarshalRequest[AgentRespondRequest](),
+		validateRequest(),
+	)
+	router.POST("/api/agent/activate",
+		h.agentActivateHandler,
+		contentTypeJSON(),
+		unmarshalRequest[AgentActivateRequest](),
 		validateRequest(),
 	)
 

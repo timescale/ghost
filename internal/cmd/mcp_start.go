@@ -101,8 +101,9 @@ func buildMCPHTTPCmd(app *common.App) *cobra.Command {
 // startStdioServer starts the MCP server with stdio transport
 func startStdioServer(cmd *cobra.Command, app *common.App) error {
 	ctx := cmd.Context()
-	// Create MCP server
-	server, err := mcp.NewServer(ctx, app, log.New(cmd.ErrOrStderr()))
+	// Create MCP server. Local (stdio) mode enables the browser-backed
+	// visualization tools, since we can open a browser on the user's machine.
+	server, err := mcp.NewServerWithOptions(ctx, app, log.New(cmd.ErrOrStderr()), mcp.Options{Local: true})
 	if err != nil {
 		return fmt.Errorf("failed to create MCP server: %w", err)
 	}
