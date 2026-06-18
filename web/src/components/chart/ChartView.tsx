@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { debounce } from '../../util/debounce';
 import { buildChartOption } from './buildChartOption';
@@ -14,54 +14,68 @@ interface Props {
   loading: boolean;
   dataError: string | null;
   config: string;
+  // Called after the config renders successfully against non-empty data. Used
+  // to record chart config history. Not called for empty data or render errors.
+  onRenderSuccess?: () => void;
 }
 
 // applyChartOption evaluates the config against the data and applies the
-// resulting option to the chart instance. It lives outside the component (and
-// is debounced at module scope) and takes everything it needs as args, so there
-// are no closures over component state to go stale. chartRef is a plain mutable
-// box ({ current }); on error we recreate the instance and write it back.
-const applyChartOption = debounce(
-  (
-    echarts: EChartsGlobal,
-    chartRef: { current: EChartsInstance | null },
-    containerEl: HTMLElement | null,
-    data: ChartData | null,
-    config: string,
-    setRenderError: (message: string | null) => void,
-  ): void => {
-    if (!chartRef.current) return;
-    if (!data) {
-      chartRef.current.clear();
-      setRenderError(null);
-      return;
-    }
-    try {
-      const option = buildChartOption(config, data);
-      chartRef.current.setOption(option, { notMerge: true });
-      setRenderError(null);
-    } catch (err) {
-      // A failed setOption can throw mid-render and leave ECharts in an
-      // inconsistent internal state that a later clear()/setOption won't recover
-      // from (the next apply silently renders nothing or stale content). Dispose
-      // and recreate the instance so the next valid config renders cleanly.
-      chartRef.current?.dispose();
-      chartRef.current = containerEl ? echarts.init(containerEl) : null;
-      setRenderError(err instanceof Error ? err.message : String(err));
-    }
-  },
-  200,
-);
+// resulting option to the chart instance. It takes everything it needs as args,
+// so there are no closures over component state to go stale. chartRef is a
+// plain mutable box ({ current }); on error we recreate the instance and write
+// it back. The component debounces this per-instance (see useMemo below) rather
+// than at module scope, so multiple ChartViews (e.g. the main chart and the
+// history modal's preview) don't share a single timer and clobber each other.
+function applyChartOption(
+  echarts: EChartsGlobal,
+  chartRef: { current: EChartsInstance | null },
+  containerEl: HTMLElement | null,
+  data: ChartData | null,
+  config: string,
+  setRenderError: (message: string | null) => void,
+  onRenderSuccess: (() => void) | undefined,
+): void {
+  if (!chartRef.current) return;
+  if (!data) {
+    chartRef.current.clear();
+    setRenderError(null);
+    return;
+  }
+  try {
+    const option = buildChartOption(config, data);
+    chartRef.current.setOption(option, { notMerge: true });
+    setRenderError(null);
+    // Only a config that renders against real rows is worth remembering.
+    if (data.rows.length > 0) onRenderSuccess?.();
+  } catch (err) {
+    // A failed setOption can throw mid-render and leave ECharts in an
+    // inconsistent internal state that a later clear()/setOption won't recover
+    // from (the next apply silently renders nothing or stale content). Dispose
+    // and recreate the instance so the next valid config renders cleanly.
+    chartRef.current?.dispose();
+    chartRef.current = containerEl ? echarts.init(containerEl) : null;
+    setRenderError(err instanceof Error ? err.message : String(err));
+  }
+}
 
 // ChartView renders an Apache ECharts chart from the query results and the
 // user-authored config. It owns the chart instance lifecycle (init/resize/
 // dispose) and re-applies the option whenever the data or config changes,
 // surfacing any config-evaluation error as an overlay.
-export function ChartView({ data, loading, dataError, config }: Props) {
+export function ChartView({
+  data,
+  loading,
+  dataError,
+  config,
+  onRenderSuccess,
+}: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<EChartsInstance | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const echarts = getECharts();
+
+  // Per-instance debounced apply, so concurrent ChartViews don't share a timer.
+  const debouncedApply = useMemo(() => debounce(applyChartOption, 200), []);
 
   // Initialize the chart instance once, and keep it sized to its container.
   // The ResizeObserver reads chartRef.current (rather than capturing the
@@ -84,16 +98,17 @@ export function ChartView({ data, loading, dataError, config }: Props) {
   // pending apply on unmount.
   useEffect(() => {
     if (!echarts) return;
-    applyChartOption(
+    debouncedApply(
       echarts,
       chartRef,
       containerRef.current,
       data,
       config,
       setRenderError,
+      onRenderSuccess,
     );
-    return applyChartOption.cancel;
-  }, [echarts, data, config]);
+    return debouncedApply.cancel;
+  }, [echarts, data, config, onRenderSuccess, debouncedApply]);
 
   if (!echarts) {
     return (

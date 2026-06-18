@@ -1,0 +1,69 @@
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+
+import { useServeStore } from '../../store';
+import { debounce } from '../../util/debounce';
+
+// Debounce window for recording a chart config into history after it last
+// rendered successfully. Deliberately longer than the live render debounce
+// (200ms) and the state-persist debounce (400ms), so only configs the user
+// actually dwells on are recorded — not every valid intermediate state while
+// actively editing.
+const RECORD_DEBOUNCE_MS = 1500;
+
+export interface ChartConfigRecorder {
+  // Pass to ChartView's onRenderSuccess: signals the current config rendered
+  // cleanly against real rows. Debounced, then records (see below).
+  recordRenderSuccess: () => void;
+  // Call when a config is applied programmatically (from history) so it isn't
+  // mistaken for a user edit and re-recorded.
+  markApplied: (config: string) => void;
+}
+
+// useChartConfigRecorder records chart configs into history, but only ones the
+// user authored by editing — never the config that's merely loaded on startup
+// or restored from history. It works off a "baseline" (the last config that was
+// loaded/applied/recorded): the first successful render seeds the baseline
+// without recording, and afterwards a render success records the current config
+// only if it differs from the baseline. The store additionally deduplicates
+// globally, so a config matching an existing entry is promoted rather than
+// duplicated.
+export function useChartConfigRecorder(): ChartConfigRecorder {
+  const addChartConfigHistoryEntry = useServeStore(
+    (s) => s.addChartConfigHistoryEntry,
+  );
+
+  // The config we won't record (loaded/applied/just-recorded). null until the
+  // first successful render seeds it.
+  const baselineRef = useRef<string | null>(null);
+
+  const recordRenderSuccess = useMemo(
+    () =>
+      debounce(() => {
+        const config = useServeStore.getState().chartConfig;
+        // Seed the baseline on the first render; never record it.
+        if (baselineRef.current === null) {
+          baselineRef.current = config;
+          return;
+        }
+        if (config.trim() === baselineRef.current.trim()) return;
+        baselineRef.current = config;
+        addChartConfigHistoryEntry(config);
+      }, RECORD_DEBOUNCE_MS),
+    [addChartConfigHistoryEntry],
+  );
+
+  const markApplied = useCallback(
+    (config: string) => {
+      // A pending record from edits made just before applying would otherwise
+      // fire against the applied config; cancel it and reset the baseline.
+      recordRenderSuccess.cancel();
+      baselineRef.current = config;
+    },
+    [recordRenderSuccess],
+  );
+
+  // Cancel any pending record on unmount.
+  useEffect(() => recordRenderSuccess.cancel, [recordRenderSuccess]);
+
+  return { recordRenderSuccess, markApplied };
+}

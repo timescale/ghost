@@ -32,6 +32,21 @@ export const MAX_QUERY_HISTORY_ENTRIES = 100;
 // Maximum number of additional (deduplicated) runs to retain per entry.
 export const MAX_ADDITIONAL_RUNS = 100;
 
+// One entry in the chart config history. Unlike query runs, there's no discrete
+// "completion" event for a config, so entries are recorded whenever an edited
+// config renders successfully (debounced). Identical configs are deduplicated
+// globally (re-rendering or re-applying one moves it to the top rather than
+// adding a duplicate).
+export interface ChartConfigHistoryEntry {
+  // The full chart config source.
+  config: string;
+  // Epoch milliseconds when this config was last recorded (rendered/applied).
+  ts: number;
+}
+
+// Maximum number of chart config history entries to retain (oldest dropped).
+export const MAX_CHART_CONFIG_HISTORY_ENTRIES = 100;
+
 export interface PersistedState {
   selectedDatabaseId?: string;
   editorHeight?: number;
@@ -44,6 +59,7 @@ export interface PersistedState {
   chartConfig?: string;
   chartEditorWidth?: number;
   queryHistory?: QueryHistoryEntry[];
+  chartConfigHistory?: ChartConfigHistoryEntry[];
 }
 
 interface ServeStore {
@@ -59,6 +75,7 @@ interface ServeStore {
   chartConfig: string;
   chartEditorWidth: number;
   queryHistory: QueryHistoryEntry[];
+  chartConfigHistory: ChartConfigHistoryEntry[];
   hydrate: (saved: PersistedState) => void;
   setSelectedDatabaseId: (id: string | null) => void;
   setEditorSql: (sql: string) => void;
@@ -76,6 +93,9 @@ interface ServeStore {
   addQueryHistoryEntry: (sql: string, success: boolean) => void;
   removeQueryHistoryEntry: (index: number) => void;
   clearQueryHistory: () => void;
+  addChartConfigHistoryEntry: (config: string) => void;
+  removeChartConfigHistoryEntry: (index: number) => void;
+  clearChartConfigHistory: () => void;
 }
 
 export const DEFAULT_EDITOR_HEIGHT = 240;
@@ -114,6 +134,7 @@ function snapshotFor(store: ServeStore): PersistedState {
     chartConfig: store.chartConfig,
     chartEditorWidth: store.chartEditorWidth,
     queryHistory: store.queryHistory,
+    chartConfigHistory: store.chartConfigHistory,
   };
 }
 
@@ -130,6 +151,7 @@ export const useServeStore = create<ServeStore>((set, get) => ({
   chartConfig: DEFAULT_CHART_CONFIG,
   chartEditorWidth: DEFAULT_CHART_EDITOR_WIDTH,
   queryHistory: [],
+  chartConfigHistory: [],
   hydrate: (saved) => {
     const selectedDatabaseId = getUrlDbId() ?? saved.selectedDatabaseId ?? null;
     if (selectedDatabaseId) setUrlDbId(selectedDatabaseId);
@@ -146,6 +168,7 @@ export const useServeStore = create<ServeStore>((set, get) => ({
       chartConfig: saved.chartConfig ?? DEFAULT_CHART_CONFIG,
       chartEditorWidth: saved.chartEditorWidth ?? DEFAULT_CHART_EDITOR_WIDTH,
       queryHistory: saved.queryHistory ?? [],
+      chartConfigHistory: saved.chartConfigHistory ?? [],
     });
   },
   setSelectedDatabaseId: (id) => {
@@ -228,6 +251,37 @@ export const useServeStore = create<ServeStore>((set, get) => ({
   },
   clearQueryHistory: () => {
     set({ queryHistory: [] });
+    persist(snapshotFor(get()));
+  },
+  addChartConfigHistoryEntry: (config) => {
+    const trimmed = config.trim();
+    if (!trimmed) return;
+    const history = get().chartConfigHistory;
+    // Already at the top: nothing to do (avoids timestamp churn while the
+    // debounced recorder fires repeatedly on the same config).
+    if (history[0]?.config.trim() === trimmed) return;
+    // Global dedup + move-to-top: drop any existing identical config so
+    // re-rendering or re-applying one promotes it rather than duplicating it.
+    const withoutDup = history.filter((e) => e.config.trim() !== trimmed);
+    const entry: ChartConfigHistoryEntry = { config, ts: Date.now() };
+    set({
+      chartConfigHistory: [entry, ...withoutDup].slice(
+        0,
+        MAX_CHART_CONFIG_HISTORY_ENTRIES,
+      ),
+    });
+    persist(snapshotFor(get()));
+  },
+  removeChartConfigHistoryEntry: (index) => {
+    set({
+      chartConfigHistory: get().chartConfigHistory.filter(
+        (_, i) => i !== index,
+      ),
+    });
+    persist(snapshotFor(get()));
+  },
+  clearChartConfigHistory: () => {
+    set({ chartConfigHistory: [] });
     persist(snapshotFor(get()));
   },
   toggleSchemaNode: (databaseId, key) => {
