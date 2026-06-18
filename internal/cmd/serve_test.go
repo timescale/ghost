@@ -73,6 +73,46 @@ func TestServeCmd(t *testing.T) {
 			},
 			stderrExcludes: []string{"Failed to open browser"},
 		},
+		{
+			name: "window opens app window and skips browser",
+			args: []string{"serve", "--window"},
+			opts: func(t *testing.T) []runOption {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return []runOption{
+					withContext(ctx),
+					withOpenAppWindow(func(string) error { return nil }),
+					withOpenBrowser(func(string) error {
+						t.Fatal("OpenBrowser must not be called when the app window opens successfully")
+						return nil
+					}),
+				}
+			},
+			stderrExcludes: []string{
+				"Failed to open app window",
+				"Failed to open browser",
+			},
+		},
+		{
+			name: "window falls back to browser when no app-mode browser is found",
+			args: []string{"serve", "--window"},
+			opts: func(t *testing.T) []runOption {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return []runOption{
+					withContext(ctx),
+					withOpenAppWindow(func(string) error { return errors.New("no Chromium-based browser found for app-window mode") }),
+					withOpenBrowser(func(string) error { return nil }),
+				}
+			},
+			stderrIncludes: []string{"Failed to open app window; falling back to browser"},
+			stderrExcludes: []string{"Failed to open browser"},
+		},
+		{
+			name:    "window and no-open are mutually exclusive",
+			args:    []string{"serve", "--window", "--no-open"},
+			wantErr: "if any flags in the group [no-open window] are set none of the others can be; [no-open window] were all set",
+		},
 	}
 
 	for _, tc := range tests {
