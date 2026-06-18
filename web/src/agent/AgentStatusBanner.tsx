@@ -7,11 +7,13 @@ import { activateClient } from './transport';
 // the incumbent-stays policy where opening/reloading a tab does not steal
 // control automatically.
 export function AgentStatusBanner() {
-  const connected = useAgentStore((s) => s.connected);
+  const agentPresent = useAgentStore((s) => s.agentPresent);
+  const connectionState = useAgentStore((s) => s.connectionState);
   const active = useAgentStore((s) => s.active);
   const clientId = useAgentStore((s) => s.clientId);
 
-  if (!connected) return null;
+  // Only relevant when an agent bridge is present and currently connected.
+  if (!agentPresent || connectionState !== 'connected') return null;
 
   if (active) {
     return (

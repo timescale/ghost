@@ -10,18 +10,16 @@ import (
 )
 
 // agentEventsHandler serves GET /api/agent/events as a Server-Sent Events
-// stream. The connecting browser tab is registered with the bridge and
+// stream. The stream doubles as a backend-liveness signal: the browser treats
+// an open stream as "connected" and a dropped stream as "backend gone", so it
+// is served even when there is no agent bridge (plain `ghost serve`). When a
+// bridge is present, the connecting tab is registered with it and additionally
 // receives "status" events (whether it is the active controlling tab) and
 // "command" events (work dispatched by MCP tools). The stream stays open until
 // the client disconnects or the server shuts down.
 func (h *Handler) agentEventsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := log.FromContext(ctx)
-
-	if h.bridge == nil {
-		writeError(w, http.StatusNotFound, api.ErrNotFound, logger)
-		return
-	}
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -35,6 +33,13 @@ func (h *Handler) agentEventsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
+
+	// Without a bridge there are no agent events to send; just hold the
+	// connection open as a liveness signal until the client or server goes away.
+	if h.bridge == nil {
+		<-ctx.Done()
+		return
+	}
 
 	client := h.bridge.addClient()
 	defer h.bridge.removeClient(client)

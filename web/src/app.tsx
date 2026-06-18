@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import '@timescale/popsql-query-widget-cdn/index.css';
 
 import { AgentStatusBanner } from './agent/AgentStatusBanner';
+import { DisconnectedBanner } from './agent/DisconnectedBanner';
 import { useAgentBridge } from './agent/useAgentBridge';
 import { QueryPanel } from './components/QueryPanel';
 import { SchemaPane } from './components/SchemaPane';
@@ -120,6 +121,7 @@ function ReadyApp({ bootstrap }: ReadyAppProps) {
 
   return (
     <div className="flex h-full flex-col">
+      <DisconnectedBanner />
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
         <div className="flex items-center gap-3">
           <button

@@ -91,6 +91,12 @@ export function useAgentBridge(databases: Database[]): void {
       }
     };
 
+    source.onopen = () => {
+      // The stream is open: the backend is alive. (In plain `ghost serve` this
+      // is the only signal; with an agent bridge a status event follows.)
+      useAgentStore.getState().setConnected();
+    };
+
     source.onmessage = (event) => {
       let parsed: AgentServerEvent;
       try {
@@ -100,7 +106,7 @@ export function useAgentBridge(databases: Database[]): void {
       }
       if (parsed.type === 'status') {
         clientId = parsed.clientId;
-        useAgentStore.getState().setConnection(parsed.clientId, parsed.active);
+        useAgentStore.getState().setStatus(parsed.clientId, parsed.active);
       } else if (parsed.type === 'command') {
         void runCommand(parsed.command);
       }
@@ -108,6 +114,8 @@ export function useAgentBridge(databases: Database[]): void {
 
     source.onerror = () => {
       // EventSource auto-reconnects; reflect the dropped connection meanwhile.
+      // Once it reconnects, onopen fires again and clears the disconnected
+      // state. This is what powers the "backend disconnected" banner.
       useAgentStore.getState().setDisconnected();
     };
 
