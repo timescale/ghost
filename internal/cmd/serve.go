@@ -91,9 +91,9 @@ of this command — press Ctrl+C to stop it.`,
 		},
 	}
 
-	cmd.Flags().IntVar(&port, "port", 0, "TCP port to listen on (0 = auto)")
+	cmd.Flags().IntVarP(&port, "port", "p", 0, "TCP port to listen on (0 = auto)")
 	cmd.Flags().StringVar(&host, "host", "127.0.0.1", "interface to bind (loopback by default)")
-	cmd.Flags().BoolVar(&noOpen, "no-open", false, "do not open the browser")
+	cmd.Flags().BoolVarP(&noOpen, "no-open", "n", false, "do not open the browser")
 	cmd.Flags().TextVar(&logLevel, "log-level", slog.LevelInfo, "log level: debug, info, warn, or error")
 
 	if err := cmd.RegisterFlagCompletionFunc("log-level", logLevelCompletion); err != nil {
