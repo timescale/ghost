@@ -23,7 +23,12 @@ export async function renderChartImage(
   }
 
   // Build the option first so a config error surfaces before we touch the DOM.
-  const option = buildChartOption(config, data);
+  // Force animation off for the capture: ECharts animates the initial render,
+  // and getDataURL grabs whatever is on the canvas at that instant — so an
+  // animated chart is usually captured mid-transition (a partial graph).
+  // Disabling animation makes the first painted frame the final one. This only
+  // affects the off-screen screenshot, never the live on-screen chart.
+  const option = { ...buildChartOption(config, data), animation: false };
 
   const container = document.createElement('div');
   container.style.position = 'absolute';
