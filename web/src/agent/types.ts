@@ -46,8 +46,13 @@ export interface VisualizeResult {
   columns: AgentColumn[];
   rows: unknown[][];
   rowCount: number;
-  // Data URL of the rendered chart, present only for view='chart'.
+  // Data URL of the rendered chart. Present when the chart rendered
+  // successfully; mutually exclusive with chartError.
   image?: string;
+  // Message explaining why the chart couldn't be rendered (e.g. an invalid
+  // chart config, or data the config can't plot). The run data is still
+  // returned alongside it.
+  chartError?: string;
 }
 
 export interface ChartResult {
@@ -69,6 +74,9 @@ export interface UIStateResult {
   chartConfig?: string;
   resultView?: ResultView;
   lastRun?: LastRunState;
-  // Data URL of the currently-visible chart, if any.
+  // Data URL of the rendered chart of the last run. Mutually exclusive with
+  // chartError.
   image?: string;
+  // Message explaining why the chart couldn't be rendered, if applicable.
+  chartError?: string;
 }

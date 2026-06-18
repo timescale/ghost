@@ -34,6 +34,7 @@ type UIStateOutput struct {
 	LastRunStatus      string             `json:"last_run_status,omitempty"`
 	LastRunError       string             `json:"last_run_error,omitempty"`
 	ResultSets         []common.ResultSet `json:"result_sets,omitempty"`
+	ChartError         string             `json:"chart_error,omitempty"`
 }
 
 func (UIStateOutput) Schema() *jsonschema.Schema {
@@ -46,6 +47,7 @@ func (UIStateOutput) Schema() *jsonschema.Schema {
 	schema.Properties["last_run_status"].Description = "Status of the most recent query run"
 	schema.Properties["last_run_status"].Examples = []any{"success", "failed", "running"}
 	schema.Properties["last_run_error"].Description = "Error message from the most recent query run, if it failed"
+	schema.Properties["chart_error"].Description = "Set when the last run's chart could not be rendered (e.g. an invalid chart config or data it can't plot). The run results are still returned; fix the chart config and retry to get an image."
 	return schema
 }
 
@@ -84,6 +86,7 @@ func (s *Server) handleUIState(ctx context.Context, req *mcp.CallToolRequest, in
 		EditorSQL:          result.EditorSQL,
 		ChartConfig:        result.ChartConfig,
 		ResultView:         result.ResultView,
+		ChartError:         result.ChartError,
 	}
 	if result.LastRun != nil {
 		output.LastRunStatus = result.LastRun.Status

@@ -1,4 +1,4 @@
-import type { ResultView } from '../components/chart/types';
+import type { ChartData, ResultView } from '../components/chart/types';
 import { awaitExecutor, getExecutor } from './executor';
 import { rowsToMatrix } from './runData';
 import { renderChartImage } from './screenshot';
@@ -36,6 +36,20 @@ function toColumns(columns: { name: string; type?: string }[]): AgentColumn[] {
   return columns.map((c) => ({ name: c.name, type: c.type }));
 }
 
+// tryRenderChart renders a chart image, returning either the image data URL or
+// an error message. It never throws: a bad chart config or unplottable data
+// shouldn't fail the whole tool call, since the run data is still useful.
+async function tryRenderChart(
+  config: string,
+  data: ChartData,
+): Promise<{ image?: string; chartError?: string }> {
+  try {
+    return { image: await renderChartImage(config, data) };
+  } catch (err) {
+    return { chartError: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 // handleVisualize runs a query in the browser, syncing the live UI, and (for
 // the chart view) renders a screenshot of the result.
 async function handleVisualize(
@@ -66,31 +80,23 @@ async function handleVisualize(
 
   const data = await executor.getRunData(outcome.runId, cmd.limit);
   const columns = toColumns(data.columns);
-  const result: VisualizeResult = {
+
+  // Always render a chart image so the agent can inspect the data visually,
+  // regardless of which view the user is looking at — the screenshot is drawn
+  // off-screen and doesn't depend on the visible pane. A render failure (e.g. a
+  // bad chart config, or data the config can't plot) never fails the call: it's
+  // reported as chartError alongside the run data.
+  const config = cmd.chartConfig || deps.getState().chartConfig;
+  const { image, chartError } = await tryRenderChart(config, data);
+
+  return {
     runId: outcome.runId,
     columns,
     rows: rowsToMatrix(data.rows, data.columns),
     rowCount: data.rows.length,
+    image,
+    chartError,
   };
-
-  // Always render a chart image so the agent can inspect the data visually,
-  // regardless of which view the user is looking at — the screenshot is drawn
-  // off-screen and doesn't depend on the visible pane. When the user explicitly
-  // requested the chart view, a render failure is a real error (they asked for
-  // a chart). Otherwise the image is a best-effort bonus alongside the table, so
-  // a render failure (e.g. data the default config can't plot) is swallowed
-  // rather than failing the whole query.
-  const config = cmd.chartConfig || deps.getState().chartConfig;
-  if (cmd.view === 'chart') {
-    result.image = await renderChartImage(config, data);
-  } else {
-    try {
-      result.image = await renderChartImage(config, data);
-    } catch {
-      // best effort
-    }
-  }
-  return result;
 }
 
 // handleChart reapplies a chart config to the last run and re-renders it.
@@ -156,10 +162,11 @@ async function handleUIState(
         result.lastRun.rows = rowsToMatrix(data.rows, data.columns);
         result.lastRun.rowCount = data.rows.length;
         // Always render a chart image of the last run (off-screen, independent
-        // of the visible view) so the agent can inspect it visually. Best
-        // effort: a render failure falls through to returning state without an
-        // image.
-        result.image = await renderChartImage(state.chartConfig, data);
+        // of the visible view) so the agent can inspect it visually. A render
+        // failure is reported as chartError rather than failing the call.
+        const rendered = await tryRenderChart(state.chartConfig, data);
+        result.image = rendered.image;
+        result.chartError = rendered.chartError;
       } catch {
         // Best effort: if results can't be read, return the state without them.
       }

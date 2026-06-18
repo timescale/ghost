@@ -38,7 +38,7 @@ func (SQLInput) Schema() *jsonschema.Schema {
 	schema.Properties["parameters"].Description = "Query parameters. Values are substituted for $1, $2, etc. placeholders in the query. Only supported for single-statement queries"
 	schema.Properties["limit"].Description = fmt.Sprintf("Maximum number of result rows to return to you (the caller). Defaults to %d. This caps how much data is returned to avoid overwhelming the context window — it does NOT add a LIMIT to your SQL, so aggregate or add LIMIT in the query itself if you need to bound what the database computes. Raise this only when you genuinely need more rows.", defaultRowLimit)
 	schema.Properties["limit"].Default = json.RawMessage(fmt.Sprintf("%d", defaultRowLimit))
-	schema.Properties["visualize"].Description = "Render the results in the local web UI instead of (or in addition to) returning them as text. 'table' shows the rows in a table; 'chart' renders a chart (provide chart_config) as the active view. In BOTH cases the response includes a PNG image of the rendered chart so you can inspect the data visually. When set, the query runs in the browser and the live UI is updated so the user sees exactly what you ran. Opens a browser if one isn't already connected. Omit to just run server-side and return rows as text (no image)."
+	schema.Properties["visualize"].Description = "Render the results in the local web UI instead of (or in addition to) returning them as text. 'table' shows the rows in a table; 'chart' renders a chart (provide chart_config) as the active view. In BOTH cases the response includes a PNG image of the rendered chart so you can inspect the data visually; if the chart can't be rendered, the query still succeeds and 'chart_error' explains why. When set, the query runs in the browser and the live UI is updated so the user sees exactly what you ran. Opens a browser if one isn't already connected. Omit to just run server-side and return rows as text (no image)."
 	schema.Properties["visualize"].Enum = []any{"table", "chart"}
 	schema.Properties["chart_config"].Description = "JavaScript source defining a function `chart(data)` that returns an Apache ECharts option object. `data` provides `data.rows` (array of row objects keyed by column name) and `data.columns` ([{name, type}]). Used with either visualize view to render the returned chart image; with visualize='chart' it also becomes the active view. Applied to the chart and shown in the UI's config editor (overwriting any existing config). If omitted, a sensible default chart config is used."
 	return schema
@@ -47,12 +47,14 @@ func (SQLInput) Schema() *jsonschema.Schema {
 // SQLOutput represents output for ghost_sql
 type SQLOutput struct {
 	ResultSets    []common.ResultSet `json:"result_sets"`
-	ExecutionTime string             `json:"execution_time"`
+	ExecutionTime string             `json:"execution_time,omitempty"`
+	ChartError    string             `json:"chart_error,omitempty"`
 }
 
 func (SQLOutput) Schema() *jsonschema.Schema {
 	schema := util.Must(jsonschema.For[SQLOutput](nil))
 	schema.Properties["execution_time"].Description = "Total client-side elapsed time for all statements"
+	schema.Properties["chart_error"].Description = "Set when visualization was requested but the chart could not be rendered (e.g. an invalid chart_config or data the config can't plot). The query still ran and its rows are returned; fix the chart_config and retry to get an image."
 	return schema
 }
 
@@ -164,6 +166,7 @@ func (s *Server) handleSQLVisualize(ctx context.Context, input SQLInput, query s
 
 	return &mcp.CallToolResult{Content: content}, SQLOutput{
 		ResultSets: []common.ResultSet{browserResultSet(result.Columns, result.Rows)},
+		ChartError: result.ChartError,
 	}, nil
 }
 

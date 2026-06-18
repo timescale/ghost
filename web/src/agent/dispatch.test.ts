@@ -88,6 +88,24 @@ describe('dispatch visualize', () => {
     expect(result.rowCount).toBe(1);
   });
 
+  test('reports a chart render failure as chartError but still returns rows', async () => {
+    // ECharts isn't loaded in the test environment, so rendering fails. The
+    // dispatcher must surface that as chartError without failing the call or
+    // dropping the run data.
+    const { deps } = makeDeps(['db1']);
+    registerStubExecutor('db1');
+    const result = (await dispatch(
+      'visualize',
+      { ...visualizeCmd('db1'), view: 'chart' },
+      deps,
+      () => null,
+    )) as VisualizeResult;
+    expect(result.runId).toBe('run-1');
+    expect(result.rowCount).toBe(1);
+    expect(result.image).toBeUndefined();
+    expect(result.chartError).toBeTruthy();
+  });
+
   test('passes an unresolved ref through without throwing (list not loaded)', async () => {
     // Empty known list simulates /api/databases not having loaded yet. The
     // dispatcher must trust the agent-supplied ref rather than reject it.

@@ -44,8 +44,12 @@ type visualizeResult struct {
 	Rows     [][]any         `json:"rows"`
 	RowCount int             `json:"rowCount"`
 	// Image is a data URL (e.g. "data:image/png;base64,...") of the rendered
-	// chart, present only when the chart view was requested and rendered.
+	// chart. Present when the chart rendered successfully.
 	Image string `json:"image,omitempty"`
+	// ChartError explains why the chart couldn't be rendered (bad config or
+	// unplottable data). The run data is still returned alongside it. Mutually
+	// exclusive with Image.
+	ChartError string `json:"chartError,omitempty"`
 }
 
 // chartResult is the browser's response to a chart command.
@@ -70,7 +74,10 @@ type uiStateResult struct {
 	ChartConfig        string        `json:"chartConfig,omitempty"`
 	ResultView         string        `json:"resultView,omitempty"`
 	LastRun            *lastRunState `json:"lastRun,omitempty"`
-	// Image is a data URL of the currently-rendered chart, present only when
-	// the chart view is visible.
+	// Image is a data URL of the rendered chart of the last run. Present when
+	// the chart rendered successfully.
 	Image string `json:"image,omitempty"`
+	// ChartError explains why the chart couldn't be rendered, if applicable.
+	// Mutually exclusive with Image.
+	ChartError string `json:"chartError,omitempty"`
 }

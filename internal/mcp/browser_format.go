@@ -56,6 +56,8 @@ func formatVisualizeSummary(result visualizeResult, limit int) string {
 	}
 	if result.Image != "" {
 		b.WriteString("A rendered chart image is attached below.\n")
+	} else if result.ChartError != "" {
+		fmt.Fprintf(&b, "The chart could not be rendered: %s\n", result.ChartError)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
