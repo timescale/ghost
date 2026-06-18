@@ -73,9 +73,22 @@ async function handleVisualize(
     rowCount: data.rows.length,
   };
 
+  // Always render a chart image so the agent can inspect the data visually,
+  // regardless of which view the user is looking at — the screenshot is drawn
+  // off-screen and doesn't depend on the visible pane. When the user explicitly
+  // requested the chart view, a render failure is a real error (they asked for
+  // a chart). Otherwise the image is a best-effort bonus alongside the table, so
+  // a render failure (e.g. data the default config can't plot) is swallowed
+  // rather than failing the whole query.
+  const config = cmd.chartConfig || deps.getState().chartConfig;
   if (cmd.view === 'chart') {
-    const config = cmd.chartConfig || deps.getState().chartConfig;
     result.image = await renderChartImage(config, data);
+  } else {
+    try {
+      result.image = await renderChartImage(config, data);
+    } catch {
+      // best effort
+    }
   }
   return result;
 }
@@ -142,10 +155,11 @@ async function handleUIState(
         result.lastRun.columns = toColumns(data.columns);
         result.lastRun.rows = rowsToMatrix(data.rows, data.columns);
         result.lastRun.rowCount = data.rows.length;
-        // Include a chart image only when the chart view is currently visible.
-        if (state.resultView === 'chart') {
-          result.image = await renderChartImage(state.chartConfig, data);
-        }
+        // Always render a chart image of the last run (off-screen, independent
+        // of the visible view) so the agent can inspect it visually. Best
+        // effort: a render failure falls through to returning state without an
+        // image.
+        result.image = await renderChartImage(state.chartConfig, data);
       } catch {
         // Best effort: if results can't be read, return the state without them.
       }

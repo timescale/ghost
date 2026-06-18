@@ -53,7 +53,7 @@ func newUIStateTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:         "ghost_ui_state",
 		Title:        "Get UI State",
-		Description:  "Read the current state of the local web UI: the selected database, the SQL editor contents, the chart config, the active view, and the most recent query run's status and results (capped at 'limit' rows). If a chart is currently visible, a rendered image of it is also returned. Requires the local web UI (opens a browser if needed).",
+		Description:  "Read the current state of the local web UI: the selected database, the SQL editor contents, the chart config, the active view, and the most recent query run's status and results (capped at 'limit' rows). When the last run succeeded, a rendered chart image of its data is also returned (drawn off-screen, regardless of the active view). Requires the local web UI (opens a browser if needed).",
 		InputSchema:  UIStateInput{}.Schema(),
 		OutputSchema: UIStateOutput{}.Schema(),
 		Annotations: &mcp.ToolAnnotations{
