@@ -35,6 +35,7 @@ type UIStateOutput struct {
 	LastRunError       string             `json:"last_run_error,omitempty"`
 	ResultSets         []common.ResultSet `json:"result_sets,omitempty"`
 	ChartError         string             `json:"chart_error,omitempty"`
+	ChartDiagnostics   []ChartDiagnostic  `json:"chart_diagnostics,omitempty"`
 }
 
 func (UIStateOutput) Schema() *jsonschema.Schema {
@@ -48,6 +49,7 @@ func (UIStateOutput) Schema() *jsonschema.Schema {
 	schema.Properties["last_run_status"].Examples = []any{"success", "failed", "running"}
 	schema.Properties["last_run_error"].Description = "Error message from the most recent query run, if it failed"
 	schema.Properties["chart_error"].Description = "Set when the last run's chart could not be rendered (e.g. an invalid chart config or data it can't plot). The run results are still returned; fix the chart config and retry to get an image."
+	schema.Properties["chart_diagnostics"].Description = "Type and syntax issues the config editor found in the current chart config (the same errors a human sees as red squiggles). Each item has line, column, message, and severity ('error' or 'warning')."
 	return schema
 }
 
@@ -87,6 +89,7 @@ func (s *Server) handleUIState(ctx context.Context, req *mcp.CallToolRequest, in
 		ChartConfig:        result.ChartConfig,
 		ResultView:         result.ResultView,
 		ChartError:         result.ChartError,
+		ChartDiagnostics:   toChartDiagnostics(result.ChartDiagnostics),
 	}
 	if result.LastRun != nil {
 		output.LastRunStatus = result.LastRun.Status
@@ -96,7 +99,7 @@ func (s *Server) handleUIState(ctx context.Context, req *mcp.CallToolRequest, in
 		}
 	}
 
-	content := []mcp.Content{&mcp.TextContent{Text: formatUIStateSummary(result)}}
+	content := []mcp.Content{&mcp.TextContent{Text: formatUIStateSummary(result) + chartDiagnosticsSuffix(result.ChartDiagnostics)}}
 	if result.Image != "" {
 		image, err := decodeImageDataURL(result.Image)
 		if err != nil {

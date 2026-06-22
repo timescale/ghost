@@ -37,6 +37,15 @@ type browserColumn struct {
 	Type string `json:"type,omitempty"`
 }
 
+// chartDiagnostic is one type/syntax issue reported by the editor's language
+// service for a chart config (the same squiggles a human sees in the editor).
+type chartDiagnostic struct {
+	Line     int    `json:"line"`
+	Column   int    `json:"column"`
+	Message  string `json:"message"`
+	Severity string `json:"severity"` // "error" | "warning"
+}
+
 // visualizeResult is the browser's response to a visualize command.
 type visualizeResult struct {
 	RunID    string          `json:"runId"`
@@ -50,11 +59,15 @@ type visualizeResult struct {
 	// unplottable data). The run data is still returned alongside it. Mutually
 	// exclusive with Image.
 	ChartError string `json:"chartError,omitempty"`
+	// ChartDiagnostics are type/syntax issues the editor's language service
+	// found in the chart config. May be present even when the chart rendered.
+	ChartDiagnostics []chartDiagnostic `json:"chartDiagnostics,omitempty"`
 }
 
 // chartResult is the browser's response to a chart command.
 type chartResult struct {
-	Image string `json:"image"`
+	Image            string            `json:"image"`
+	ChartDiagnostics []chartDiagnostic `json:"chartDiagnostics,omitempty"`
 }
 
 // lastRunState describes the most recent query run in the browser UI.
@@ -80,4 +93,7 @@ type uiStateResult struct {
 	// ChartError explains why the chart couldn't be rendered, if applicable.
 	// Mutually exclusive with Image.
 	ChartError string `json:"chartError,omitempty"`
+	// ChartDiagnostics are type/syntax issues the editor's language service
+	// found in the chart config.
+	ChartDiagnostics []chartDiagnostic `json:"chartDiagnostics,omitempty"`
 }

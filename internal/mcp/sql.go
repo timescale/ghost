@@ -46,15 +46,17 @@ func (SQLInput) Schema() *jsonschema.Schema {
 
 // SQLOutput represents output for ghost_sql
 type SQLOutput struct {
-	ResultSets    []common.ResultSet `json:"result_sets"`
-	ExecutionTime string             `json:"execution_time,omitempty"`
-	ChartError    string             `json:"chart_error,omitempty"`
+	ResultSets       []common.ResultSet `json:"result_sets"`
+	ExecutionTime    string             `json:"execution_time,omitempty"`
+	ChartError       string             `json:"chart_error,omitempty"`
+	ChartDiagnostics []ChartDiagnostic  `json:"chart_diagnostics,omitempty"`
 }
 
 func (SQLOutput) Schema() *jsonschema.Schema {
 	schema := util.Must(jsonschema.For[SQLOutput](nil))
 	schema.Properties["execution_time"].Description = "Total client-side elapsed time for all statements"
 	schema.Properties["chart_error"].Description = "Set when visualization was requested but the chart could not be rendered (e.g. an invalid chart_config or data the config can't plot). The query still ran and its rows are returned; fix the chart_config and retry to get an image."
+	schema.Properties["chart_diagnostics"].Description = "Type and syntax issues the web UI's config editor found in the chart_config (the same errors a human sees as red squiggles). May be present even when the chart rendered, since many type errors don't throw at runtime but still produce a wrong chart. Each item has line, column, message, and severity ('error' or 'warning')."
 	return schema
 }
 
@@ -165,8 +167,9 @@ func (s *Server) handleSQLVisualize(ctx context.Context, input SQLInput, query s
 	}
 
 	return &mcp.CallToolResult{Content: content}, SQLOutput{
-		ResultSets: []common.ResultSet{browserResultSet(result.Columns, result.Rows)},
-		ChartError: result.ChartError,
+		ResultSets:       []common.ResultSet{browserResultSet(result.Columns, result.Rows)},
+		ChartError:       result.ChartError,
+		ChartDiagnostics: toChartDiagnostics(result.ChartDiagnostics),
 	}, nil
 }
 

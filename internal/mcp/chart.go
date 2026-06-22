@@ -59,7 +59,7 @@ func (s *Server) handleChart(ctx context.Context, req *mcp.CallToolRequest, inpu
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
-			&mcp.TextContent{Text: "Applied chart config to the last run. Rendered chart attached."},
+			&mcp.TextContent{Text: "Applied chart config to the last run. Rendered chart attached." + chartDiagnosticsSuffix(result.ChartDiagnostics)},
 			image,
 		},
 	}, nil, nil

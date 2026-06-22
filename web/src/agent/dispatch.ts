@@ -1,10 +1,12 @@
 import type { ChartData, ResultView } from '../components/chart/types';
+import { tryGetChartConfigDiagnostics } from './diagnostics';
 import { awaitExecutor, getExecutor } from './executor';
 import { rowsToMatrix } from './runData';
 import { renderChartImage } from './screenshot';
 import type {
   AgentColumn,
   ChartCommand,
+  ChartConfigDiagnostic,
   UIStateCommand,
   UIStateResult,
   VisualizeCommand,
@@ -36,18 +38,35 @@ function toColumns(columns: { name: string; type?: string }[]): AgentColumn[] {
   return columns.map((c) => ({ name: c.name, type: c.type }));
 }
 
-// tryRenderChart renders a chart image, returning either the image data URL or
-// an error message. It never throws: a bad chart config or unplottable data
-// shouldn't fail the whole tool call, since the run data is still useful.
+// tryRenderChart renders a chart image and collects the config's editor
+// diagnostics, returning either the image data URL or a render error message,
+// plus any type/syntax diagnostics. It never throws: a bad chart config or
+// unplottable data shouldn't fail the whole tool call, since the run data is
+// still useful. Diagnostics are gathered even on a successful render, because
+// many type errors (e.g. a misspelled option key) don't throw at runtime but
+// still produce a wrong chart — surfacing them gives the agent the same
+// feedback a human sees as red squiggles in the editor.
 async function tryRenderChart(
   config: string,
   data: ChartData,
-): Promise<{ image?: string; chartError?: string }> {
-  try {
-    return { image: await renderChartImage(config, data) };
-  } catch (err) {
-    return { chartError: err instanceof Error ? err.message : String(err) };
-  }
+): Promise<{
+  image?: string;
+  chartError?: string;
+  chartDiagnostics?: ChartConfigDiagnostic[];
+}> {
+  const [render, diagnostics] = await Promise.all([
+    renderChartImage(config, data).then(
+      (image) => ({ image }),
+      (err) => ({
+        chartError: err instanceof Error ? err.message : String(err),
+      }),
+    ),
+    tryGetChartConfigDiagnostics(config),
+  ]);
+  return {
+    ...render,
+    chartDiagnostics: diagnostics.length > 0 ? diagnostics : undefined,
+  };
 }
 
 // handleVisualize runs a query in the browser, syncing the live UI, and (for
@@ -87,7 +106,10 @@ async function handleVisualize(
   // bad chart config, or data the config can't plot) never fails the call: it's
   // reported as chartError alongside the run data.
   const config = cmd.chartConfig || deps.getState().chartConfig;
-  const { image, chartError } = await tryRenderChart(config, data);
+  const { image, chartError, chartDiagnostics } = await tryRenderChart(
+    config,
+    data,
+  );
 
   return {
     runId: outcome.runId,
@@ -96,6 +118,7 @@ async function handleVisualize(
     rowCount: data.rows.length,
     image,
     chartError,
+    chartDiagnostics,
   };
 }
 
@@ -119,12 +142,19 @@ async function handleChart(
   }
   // Read the full result for charting (the chart caps internally).
   const data = await executor.getRunData(runId, 50_000);
-  const image = await renderChartImage(cmd.chartConfig, data);
-  return { image };
+  const [image, diagnostics] = await Promise.all([
+    renderChartImage(cmd.chartConfig, data),
+    tryGetChartConfigDiagnostics(cmd.chartConfig),
+  ]);
+  return {
+    image,
+    chartDiagnostics: diagnostics.length > 0 ? diagnostics : undefined,
+  };
 }
 
 interface ChartResultWire {
   image: string;
+  chartDiagnostics?: ChartConfigDiagnostic[];
 }
 
 // handleUIState reads the current UI state plus the last run's results.
@@ -167,6 +197,7 @@ async function handleUIState(
         const rendered = await tryRenderChart(state.chartConfig, data);
         result.image = rendered.image;
         result.chartError = rendered.chartError;
+        result.chartDiagnostics = rendered.chartDiagnostics;
       } catch {
         // Best effort: if results can't be read, return the state without them.
       }

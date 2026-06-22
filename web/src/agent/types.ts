@@ -3,6 +3,9 @@
 // shapes in internal/serve/agent.go — keep them in sync.
 
 import type { ResultView } from '../components/chart/types';
+import type { ChartConfigDiagnostic } from './diagnostics';
+
+export type { ChartConfigDiagnostic } from './diagnostics';
 
 // Events pushed from the server over the SSE stream.
 export type AgentServerEvent =
@@ -53,10 +56,15 @@ export interface VisualizeResult {
   // chart config, or data the config can't plot). The run data is still
   // returned alongside it.
   chartError?: string;
+  // Type/syntax issues reported by the editor's language service for the chart
+  // config (the same red squiggles a human sees). May be present even when the
+  // chart renders, since many type errors don't throw at runtime.
+  chartDiagnostics?: ChartConfigDiagnostic[];
 }
 
 export interface ChartResult {
   image: string;
+  chartDiagnostics?: ChartConfigDiagnostic[];
 }
 
 export interface LastRunState {
@@ -79,4 +87,7 @@ export interface UIStateResult {
   image?: string;
   // Message explaining why the chart couldn't be rendered, if applicable.
   chartError?: string;
+  // Type/syntax issues reported by the editor's language service for the chart
+  // config (the same red squiggles a human sees).
+  chartDiagnostics?: ChartConfigDiagnostic[];
 }

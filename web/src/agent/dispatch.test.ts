@@ -1,9 +1,20 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 import type { ResultView } from '../components/chart/types';
-import { type DispatchDeps, dispatch } from './dispatch';
-import { type Executor, registerExecutor } from './executor';
+import type { DispatchDeps } from './dispatch';
+import { dispatch } from './dispatch';
+import type { Executor } from './executor';
+import { registerExecutor } from './executor';
 import type { VisualizeCommand, VisualizeResult } from './types';
+
+// Stub the diagnostics module: it loads Monaco from a CDN, which can't run in
+// the test environment. The dispatcher's diagnostics collection is best-effort
+// and tested separately (flattenMessage.test.ts); here we only care that it
+// doesn't block or fail the dispatch path. Bun hoists mock.module so this takes
+// effect for the static dispatch import above.
+mock.module('./diagnostics', () => ({
+  tryGetChartConfigDiagnostics: async () => [],
+}));
 
 // makeDeps builds a DispatchDeps whose resolveDatabaseId mimics the app: it
 // returns the id for refs in the (possibly empty) known list, else null. It
