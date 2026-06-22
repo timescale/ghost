@@ -171,14 +171,12 @@ func (h *Handler) bootstrapHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := log.FromContext(ctx)
 
-	_, projectID, err := h.loadClient(ctx)
+	cfg, _, projectID, err := h.loadClient(ctx)
 	if err != nil {
 		logger.Warn("Error loading client", slog.Any("error", err))
 		writeError(w, http.StatusUnauthorized, err, logger)
 		return
 	}
-	// loadClient just reloaded the config, so GetConfig is safe (won't panic).
-	cfg := h.app.GetConfig()
 
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, GetBootstrapResponse{
@@ -205,7 +203,7 @@ func (h *Handler) databasesHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := log.FromContext(ctx)
 
-	client, projectID, err := h.loadClient(ctx)
+	_, client, projectID, err := h.loadClient(ctx)
 	if err != nil {
 		logger.Warn("Error loading client", slog.Any("error", err))
 		writeError(w, http.StatusUnauthorized, err, logger)
@@ -260,7 +258,7 @@ func (h *Handler) schemaHandler(w http.ResponseWriter, r *http.Request) {
 	includeDefinitions := boolQueryParamFromContext(ctx, "definitions")
 	includeComments := boolQueryParamFromContext(ctx, "comments")
 
-	client, projectID, err := h.loadClient(ctx)
+	_, client, projectID, err := h.loadClient(ctx)
 	if err != nil {
 		logger.Warn("Error loading client", slog.Any("error", err))
 		writeError(w, http.StatusUnauthorized, err, logger)
@@ -779,22 +777,26 @@ func (h *Handler) methodNotAllowedHandler(w http.ResponseWriter, r *http.Request
 }
 
 // loadClient reloads credentials from disk (refreshing the OAuth token if
-// needed) and returns an API client bound to the active project. Called per
-// request so a long-running server doesn't keep using a stale token after it
-// expires.
-func (h *Handler) loadClient(ctx context.Context) (ghostapi.ClientWithResponsesInterface, string, error) {
-	_, client, projectID, err := h.app.Load(ctx)
+// needed) and returns the config plus an API client bound to the active
+// project, all from a single atomic snapshot. Called per request so a
+// long-running server doesn't keep using a stale token after it expires.
+// Returning the config alongside the client (rather than having callers call
+// app.GetConfig() separately) ensures the config and client/project always
+// come from the same snapshot, so a concurrent reload can't pair one request's
+// client/project with another snapshot's config (e.g. ReadOnly).
+func (h *Handler) loadClient(ctx context.Context) (*config.Config, ghostapi.ClientWithResponsesInterface, string, error) {
+	cfg, client, projectID, err := h.app.Load(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	if client == nil {
 		_, _, clientErr := h.app.GetClient()
 		if clientErr != nil {
-			return nil, "", clientErr
+			return nil, nil, "", clientErr
 		}
-		return nil, "", errors.New("authentication required")
+		return nil, nil, "", errors.New("authentication required")
 	}
-	return client, projectID, nil
+	return cfg, client, projectID, nil
 }
 
 // defaultRole matches the role used by `ghost sql` / `ghost connect` / etc.
@@ -808,12 +810,10 @@ const defaultRole = "tsdbadmin"
 // authoritative; the request's projectId is accepted for compatibility but not
 // used for routing.
 func (h *Handler) connectionStringForService(ctx context.Context, serviceID string) (string, error) {
-	client, projectID, err := h.loadClient(ctx)
+	cfg, client, projectID, err := h.loadClient(ctx)
 	if err != nil {
 		return "", err
 	}
-	// loadClient just reloaded the config, so GetConfig is safe (won't panic).
-	cfg := h.app.GetConfig()
 
 	resp, err := client.GetDatabaseWithResponse(ctx, projectID, serviceID)
 	if err != nil {
