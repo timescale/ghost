@@ -30,6 +30,20 @@ export async function renderChartImage(
   // affects the off-screen screenshot, never the live on-screen chart.
   const option = { ...buildChartOption(config, data), animation: false };
 
+  // getDataURL's backgroundColor *overrides* the option's backgroundColor for
+  // the exported image. ECharts paints a transparent background by default, so
+  // we fall back to white for configs that don't set one — but a config that
+  // does set a backgroundColor (e.g. a dark theme, or a gradient/pattern
+  // object) must be honored, otherwise the on-screen chart and the
+  // agent-facing screenshot disagree. Reuse the config's backgroundColor when
+  // it's set (a non-empty string or an object); else default to white.
+  const optionBackground = option.backgroundColor;
+  const hasBackground =
+    typeof optionBackground === 'string'
+      ? optionBackground !== ''
+      : optionBackground != null && typeof optionBackground === 'object';
+  const backgroundColor = hasBackground ? optionBackground : '#ffffff';
+
   const container = document.createElement('div');
   container.style.position = 'absolute';
   container.style.left = '-10000px';
@@ -57,7 +71,7 @@ export async function renderChartImage(
       return chart.getDataURL({
         type: 'png',
         pixelRatio: PIXEL_RATIO,
-        backgroundColor: '#ffffff',
+        backgroundColor,
       });
     } finally {
       chart.dispose();
