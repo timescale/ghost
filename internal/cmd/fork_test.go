@@ -156,6 +156,19 @@ func TestForkCmd(t *testing.T) {
 			wantErr: "no valid payment method found",
 		},
 		{
+			name: "compute limit exceeded shows overages guidance",
+			args: []string{"fork", "abc1234567"},
+			setup: func(m *mock.MockClientWithResponsesInterface) {
+				setupGetSource(m)
+				m.EXPECT().ForkDatabaseWithResponse(validCtx, "test-project", "abc1234567", api.ForkDatabaseRequest{}).
+					Return(&api.ForkDatabaseResponse{
+						HTTPResponse: httpResponse(http.StatusBadRequest),
+						JSONDefault:  &api.Error{Message: "compute limit has been exceeded", Code: new(api.ErrorCodeComputeLimitExceeded)},
+					}, nil)
+			},
+			wantErr: "this space has reached its compute limit, so it cannot fork a database\n\nRaise or remove the limit with 'ghost overages enable', or wait until your free allowance resets next cycle",
+		},
+		{
 			name: "nil response body on fork",
 			args: []string{"fork", "abc1234567"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {

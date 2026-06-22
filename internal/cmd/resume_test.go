@@ -39,6 +39,18 @@ func TestResumeCmd(t *testing.T) {
 			wantErr: "database not found",
 		},
 		{
+			name: "compute limit exceeded shows overages guidance",
+			args: []string{"resume", "abc1234567"},
+			setup: func(m *mock.MockClientWithResponsesInterface) {
+				m.EXPECT().ResumeDatabaseWithResponse(validCtx, "test-project", "abc1234567").
+					Return(&api.ResumeDatabaseResponse{
+						HTTPResponse: httpResponse(http.StatusBadRequest),
+						JSONDefault:  &api.Error{Message: "compute limit has been exceeded", Code: new(api.ErrorCodeComputeLimitExceeded)},
+					}, nil)
+			},
+			wantErr: "this space has reached its compute limit, so it cannot resume this database\n\nRaise or remove the limit with 'ghost overages enable', or wait until your free allowance resets next cycle",
+		},
+		{
 			name: "nil response body",
 			args: []string{"resume", "abc1234567"},
 			setup: func(m *mock.MockClientWithResponsesInterface) {

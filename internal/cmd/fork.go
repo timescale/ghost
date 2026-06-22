@@ -125,6 +125,9 @@ func forkDatabase(cmd *cobra.Command, app *common.App, args forkDatabaseArgs) er
 		if common.IsNoPaymentMethod(forkResp.JSONDefault) && util.Deref(args.req.Type) == api.DatabaseTypeDedicated {
 			return common.NoPaymentMethodError("fork a dedicated database")
 		}
+		if common.IsComputeLimitExceeded(forkResp.JSONDefault) {
+			return common.ComputeLimitExceededError("fork a database")
+		}
 		return common.ExitWithErrorFromStatusCode(forkResp.StatusCode(), forkResp.JSONDefault)
 	}
 

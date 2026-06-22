@@ -46,6 +46,9 @@ func buildResumeCmd(app *common.App) *cobra.Command {
 
 			// Handle API response
 			if resp.StatusCode() != http.StatusAccepted {
+				if common.IsComputeLimitExceeded(resp.JSONDefault) {
+					return common.ComputeLimitExceededError("resume this database")
+				}
 				return common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
 			}
 

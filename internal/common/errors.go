@@ -61,6 +61,22 @@ func NoPaymentMethodError(action string) error {
 		fmt.Errorf("a payment method is required to %s\n\nAdd one with 'ghost payment add', then try again", action))
 }
 
+// IsComputeLimitExceeded reports whether an API error indicates the operation
+// was rejected because the space has used up its included compute allowance.
+func IsComputeLimitExceeded(apiErr *api.Error) bool {
+	return apiErr != nil && apiErr.Code != nil && *apiErr.Code == api.ErrorCodeComputeLimitExceeded
+}
+
+// ComputeLimitExceededError returns a user-friendly error explaining that the
+// space has reached its compute limit, with guidance on enabling overages. The
+// action should complete the sentence "cannot ..." (e.g. "create a database").
+// It carries the invalid-parameters exit code, matching the 400 the API returns
+// for this condition.
+func ComputeLimitExceededError(action string) error {
+	return ExitWithCode(ExitInvalidParameters,
+		fmt.Errorf("this space has reached its compute limit, so it cannot %s\n\nRaise or remove the limit with 'ghost overages enable', or wait until your free allowance resets next cycle", action))
+}
+
 // ExitWithErrorFromStatusCode maps HTTP status codes to CLI exit codes
 func ExitWithErrorFromStatusCode(statusCode int, err error) error {
 	if err == nil {

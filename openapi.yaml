@@ -1066,6 +1066,7 @@ components:
         code omit this field.
       enum:
         - no_payment_method
+        - compute_limit_exceeded
 
     StatusResponse:
       type: object

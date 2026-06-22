@@ -48,7 +48,8 @@ const (
 
 // Defines values for ErrorCode.
 const (
-	ErrorCodeNoPaymentMethod ErrorCode = "no_payment_method"
+	ErrorCodeComputeLimitExceeded ErrorCode = "compute_limit_exceeded"
+	ErrorCodeNoPaymentMethod      ErrorCode = "no_payment_method"
 )
 
 // Defines values for InviteStatus.

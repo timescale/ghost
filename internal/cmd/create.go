@@ -128,6 +128,9 @@ func createDatabase(cmd *cobra.Command, app *common.App, args createDatabaseArgs
 		if common.IsNoPaymentMethod(resp.JSONDefault) && util.Deref(args.req.Type) == api.DatabaseTypeDedicated {
 			return common.NoPaymentMethodError("create a dedicated database")
 		}
+		if common.IsComputeLimitExceeded(resp.JSONDefault) {
+			return common.ComputeLimitExceededError("create a database")
+		}
 		return common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
 	}
 
