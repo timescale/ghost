@@ -155,8 +155,24 @@ func (s *Server) handleSQLVisualize(ctx context.Context, input SQLInput, query s
 		return nil, SQLOutput{}, fmt.Errorf("visualization failed: %w", err)
 	}
 
+	output := SQLOutput{
+		ResultSets:       []common.ResultSet{browserResultSet(result.Columns, result.Rows, result.RowsAffected)},
+		ChartError:       result.ChartError,
+		ChartDiagnostics: toChartDiagnostics(result.ChartDiagnostics),
+	}
+
+	// We set Content explicitly (a human-readable summary plus, optionally, the
+	// rendered chart image), which opts out of the SDK auto-populating it with
+	// the structured output's JSON. Prepend that JSON ourselves so the result
+	// rows stay visible to clients that read only the text content (per the MCP
+	// spec, structured and unstructured content must be equivalent).
+	structured, err := structuredOutputContent(output)
+	if err != nil {
+		return nil, SQLOutput{}, err
+	}
 	content := []mcp.Content{
 		&mcp.TextContent{Text: formatVisualizeSummary(result, limit)},
+		structured,
 	}
 	if result.Image != "" {
 		image, err := decodeImageDataURL(result.Image)
@@ -166,11 +182,7 @@ func (s *Server) handleSQLVisualize(ctx context.Context, input SQLInput, query s
 		content = append(content, image)
 	}
 
-	return &mcp.CallToolResult{Content: content}, SQLOutput{
-		ResultSets:       []common.ResultSet{browserResultSet(result.Columns, result.Rows, result.RowsAffected)},
-		ChartError:       result.ChartError,
-		ChartDiagnostics: toChartDiagnostics(result.ChartDiagnostics),
-	}, nil
+	return &mcp.CallToolResult{Content: content}, output, nil
 }
 
 // capResultSetRows truncates each result set's rows to at most limit, so large

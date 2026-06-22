@@ -2,9 +2,31 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// structuredOutputContent serializes a tool's structured output to a JSON
+// [mcp.TextContent] block. The MCP spec requires that a tool returning
+// structured content also return functionally-equivalent unstructured content,
+// so a client can rely on the text content alone:
+// https://modelcontextprotocol.io/specification/2025-06-18/server/tools#structured-content
+//
+// The go-sdk does this automatically, but only when the handler leaves
+// CallToolResult.Content unset (see ToolHandlerFor). Handlers that set Content
+// themselves (e.g. to attach a human-readable summary and an image) opt out of
+// that auto-population, so they must prepend this block to keep the structured
+// payload (e.g. query rows) visible to the model. Returns an error if the
+// output can't be marshaled.
+func structuredOutputContent(output any) (*mcp.TextContent, error) {
+	data, err := json.Marshal(output)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling structured output: %w", err)
+	}
+	return &mcp.TextContent{Text: string(data)}, nil
+}
 
 // Input property helpers
 

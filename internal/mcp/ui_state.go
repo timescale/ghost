@@ -106,7 +106,19 @@ func (s *Server) handleUIState(ctx context.Context, req *mcp.CallToolRequest, in
 		}
 	}
 
-	content := []mcp.Content{&mcp.TextContent{Text: formatUIStateSummary(result) + chartDiagnosticsSuffix(result.ChartDiagnostics)}}
+	// We set Content explicitly (a human-readable summary plus, optionally, the
+	// rendered chart image), which opts out of the SDK auto-populating it with
+	// the structured output's JSON. Prepend that JSON ourselves so the last
+	// run's rows stay visible to clients that read only the text content (per
+	// the MCP spec, structured and unstructured content must be equivalent).
+	structured, err := structuredOutputContent(output)
+	if err != nil {
+		return nil, UIStateOutput{}, err
+	}
+	content := []mcp.Content{
+		&mcp.TextContent{Text: formatUIStateSummary(result) + chartDiagnosticsSuffix(result.ChartDiagnostics)},
+		structured,
+	}
 	if result.Image != "" {
 		image, err := decodeImageDataURL(result.Image)
 		if err != nil {
