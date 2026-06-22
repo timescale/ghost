@@ -40,6 +40,13 @@ func (s *Server) handleChart(ctx context.Context, req *mcp.CallToolRequest, inpu
 	if s.browser == nil {
 		return nil, nil, errors.New("charting is only available when running the MCP server locally (stdio transport)")
 	}
+	// Verify the API client is available before opening the browser. Without
+	// this, a logged-out user gets an opaque "no browser connected" timeout
+	// (the web app fails /api/bootstrap and never connects an active client)
+	// instead of the real auth/config error.
+	if _, _, err := s.app.GetClient(); err != nil {
+		return nil, nil, err
+	}
 	if input.ChartConfig == "" {
 		return nil, nil, errors.New("chart_config is required")
 	}

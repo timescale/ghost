@@ -72,6 +72,13 @@ func (s *Server) handleUIState(ctx context.Context, req *mcp.CallToolRequest, in
 	if s.browser == nil {
 		return nil, UIStateOutput{}, errors.New("the UI state tool is only available when running the MCP server locally (stdio transport)")
 	}
+	// Verify the API client is available before opening the browser. Without
+	// this, a logged-out user gets an opaque "no browser connected" timeout
+	// (the web app fails /api/bootstrap and never connects an active client)
+	// instead of the real auth/config error.
+	if _, _, err := s.app.GetClient(); err != nil {
+		return nil, UIStateOutput{}, err
+	}
 
 	limit := input.Limit
 	if limit <= 0 {
