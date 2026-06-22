@@ -52,14 +52,30 @@ export const useAgentStore = create<AgentStore>((set) => ({
   agentPresent: false,
   connectionState: 'connecting',
   lastRun: null,
-  // The SSE stream opened: the backend is alive. Agent presence is signaled
-  // separately by the first status event (setStatus).
-  setConnected: () => set({ connectionState: 'connected' }),
+  // The SSE stream opened: the backend is alive. Clear any stale agent state
+  // and let the next status event (setStatus) restore it. This matters when a
+  // tab that was bridge-backed reconnects to a plain `ghost serve` (no MCP):
+  // the liveness stream reopens but no status event ever follows, so leaving
+  // agentPresent/clientId set would wrongly keep showing "agent active in
+  // another tab" with a stale clientId. A bridge-backed reconnect re-sends a
+  // status event immediately, so the cleared state is transient there.
+  setConnected: () =>
+    set({
+      clientId: null,
+      active: false,
+      agentPresent: false,
+      connectionState: 'connected',
+    }),
   setStatus: (clientId, active) =>
     set({ clientId, active, agentPresent: true, connectionState: 'connected' }),
-  // The stream dropped. Keep agentPresent as-is so a reconnect restores prior
-  // behavior; clear the active/clientId since they're no longer valid.
+  // The stream dropped. Clear the agent state since it's no longer valid; a
+  // reconnect (onopen → setConnected) and any following status event restore it.
   setDisconnected: () =>
-    set({ clientId: null, active: false, connectionState: 'disconnected' }),
+    set({
+      clientId: null,
+      active: false,
+      agentPresent: false,
+      connectionState: 'disconnected',
+    }),
   setLastRun: (lastRun) => set({ lastRun }),
 }));
