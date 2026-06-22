@@ -3,6 +3,11 @@ import { create } from 'zustand';
 // Status of the most recent query run executed in this tab (whether triggered
 // by the user or the agent), surfaced to the agent via the uiState command.
 export interface AgentLastRun {
+  // The database this run executed against. The agent's chart/uiState tools use
+  // it to ignore a run that belongs to a different database than the one whose
+  // panel is currently mounted (e.g. after switching databases), so they never
+  // read or chart results from the wrong panel.
+  databaseId: string;
   runId: string;
   status: 'success' | 'failed';
   rowCount: number;

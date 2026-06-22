@@ -42,7 +42,7 @@ function makeDeps(known: string[]): {
     },
     setResultView: () => {},
     setChartConfig: () => {},
-    getLastRunId: () => null,
+    getLastRun: () => null,
   };
   return { deps, selected, editorSql: () => editorSql };
 }
@@ -114,7 +114,6 @@ describe('dispatch visualize', () => {
       'visualize',
       visualizeCmd('db1'),
       deps,
-      () => null,
     )) as VisualizeResult;
     expect(selected).toEqual(['db1']);
     expect(result.runId).toBe('run-1');
@@ -131,7 +130,6 @@ describe('dispatch visualize', () => {
       'visualize',
       visualizeCmd('db1'),
       deps,
-      () => null,
     )) as VisualizeResult;
     expect(result.rowCount).toBe(10_000);
     expect(result.rows.length).toBe(50);
@@ -147,7 +145,6 @@ describe('dispatch visualize', () => {
       'visualize',
       { ...visualizeCmd('db1'), view: 'chart' },
       deps,
-      () => null,
     )) as VisualizeResult;
     expect(result.runId).toBe('run-1');
     expect(result.rowCount).toBe(1);
@@ -164,7 +161,6 @@ describe('dispatch visualize', () => {
       'visualize',
       visualizeCmd('db-unlisted'),
       deps,
-      () => null,
     )) as VisualizeResult;
     expect(selected).toEqual(['db-unlisted']);
     expect(result.runId).toBe('run-1');

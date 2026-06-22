@@ -12,6 +12,16 @@ import type { ChartData } from './types';
 // their database — so the config introduces no new trust boundary. Errors are
 // thrown to the caller, which surfaces them in the chart pane.
 //
+// Note: with the MCP agent bridge, a `chart_config` can also originate from an
+// AI agent (via `ghost_sql`/`ghost_chart`) rather than being hand-authored by
+// the operator. This is a deliberate, accepted trade-off: the whole stack runs
+// on localhost, driven by an MCP server the operator chose to connect to a
+// model they trust, and that model can already issue arbitrary SQL. So an
+// agent-synthesized config executing here grants no capability beyond what the
+// operator has already delegated, and the blast radius is the operator's own
+// local machine. We keep direct `new Function` evaluation for simplicity rather
+// than sandboxing it.
+//
 // The config is plain JavaScript (the editor's TypeScript checking is driven by
 // JSDoc, so no transpilation is needed); we append a `return` to hand back the
 // declared `chart` function.

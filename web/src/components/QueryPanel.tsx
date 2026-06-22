@@ -131,6 +131,7 @@ export function QueryPanel({
       const failed = 'error' in args;
       if (succeeded || failed) {
         setAgentLastRun({
+          databaseId,
           runId: args.runId,
           status: succeeded ? 'success' : 'failed',
           rowCount: args.rowCount ?? 0,
@@ -228,6 +229,29 @@ export function QueryPanel({
   const cancelRunningQuery = useCallback(() => {
     apiRef.current?.cancelQuery();
   }, []);
+
+  // When this panel unmounts (or the database changes, which remounts it), any
+  // agent run still awaiting handleQueryComplete will never settle — the
+  // completion handler won't fire for a torn-down instance. Reject those
+  // pending runs and abort the in-flight query so the agent dispatcher's
+  // runQuery promise rejects (and its heartbeat stops), instead of hanging the
+  // MCP tool call indefinitely.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: databaseId is the reset trigger (panel re-targets on DB change), not read in the body
+  useEffect(() => {
+    const pending = pendingRuns.current;
+    return () => {
+      apiRef.current?.cancelQuery();
+      for (const [runId, resolve] of pending) {
+        resolve({
+          runId,
+          status: 'failed',
+          rowCount: 0,
+          error: 'the database panel was torn down before the query completed',
+        });
+      }
+      pending.clear();
+    };
+  }, [databaseId]);
 
   const runQuery = useCallback(
     (sql: string): Promise<QueryOutcome> => {

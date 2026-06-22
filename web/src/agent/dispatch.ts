@@ -3,6 +3,7 @@ import { tryGetChartConfigDiagnostics } from './diagnostics';
 import { awaitExecutor, getExecutor } from './executor';
 import { rowsToMatrix } from './runData';
 import { renderChartImage } from './screenshot';
+import type { AgentLastRun } from './store';
 import type {
   AgentColumn,
   ChartCommand,
@@ -31,7 +32,11 @@ export interface DispatchDeps {
   setEditorSql(sql: string): void;
   setResultView(view: ResultView): void;
   setChartConfig(config: string): void;
-  getLastRunId(): string | null;
+  // The most recent query run in this tab (any database), or null. Handlers
+  // must check its databaseId against the currently-mounted executor before
+  // using it, so a run from a previously-selected database isn't read or
+  // charted through the wrong panel.
+  getLastRun(): AgentLastRun | null;
 }
 
 function toColumns(columns: { name: string; type?: string }[]): AgentColumn[] {
@@ -133,18 +138,21 @@ async function handleChart(
   deps.setChartConfig(cmd.chartConfig);
   deps.setResultView('chart');
 
-  const runId = deps.getLastRunId();
-  if (!runId) {
-    throw new Error(
-      'no completed query run to chart; run a query first (e.g. ghost_sql with visualize)',
-    );
-  }
   const executor = getExecutor();
   if (!executor) {
     throw new Error('no database panel is mounted to read results from');
   }
+  // Only chart a run that belongs to the currently-mounted database. A run
+  // recorded against a different database (before a database switch) must not be
+  // read through this executor.
+  const lastRun = deps.getLastRun();
+  if (!lastRun || lastRun.databaseId !== executor.databaseId) {
+    throw new Error(
+      'no completed query run to chart for the current database; run a query first (e.g. ghost_sql with visualize)',
+    );
+  }
   // Read the full result for charting (the chart caps internally).
-  const data = await executor.getRunData(runId, 50_000);
+  const data = await executor.getRunData(lastRun.runId, 50_000);
   const [image, diagnostics] = await Promise.all([
     renderChartImage(cmd.chartConfig, data),
     tryGetChartConfigDiagnostics(cmd.chartConfig),
@@ -164,12 +172,6 @@ interface ChartResultWire {
 async function handleUIState(
   cmd: UIStateCommand,
   deps: DispatchDeps,
-  getLastRun: () => {
-    runId: string;
-    status: string;
-    rowCount: number;
-    error?: string;
-  } | null,
 ): Promise<UIStateResult> {
   const state = deps.getState();
   const result: UIStateResult = {
@@ -179,7 +181,7 @@ async function handleUIState(
     resultView: state.resultView,
   };
 
-  const lastRun = getLastRun();
+  const lastRun = deps.getLastRun();
   if (lastRun) {
     result.lastRun = {
       runId: lastRun.runId,
@@ -188,7 +190,15 @@ async function handleUIState(
       error: lastRun.error,
     };
     const executor = getExecutor();
-    if (executor && lastRun.status === 'success') {
+    // Only read back results for a run that belongs to the currently-mounted
+    // database. After a database switch, the recorded last run may be from the
+    // previous database; its results aren't available through this executor, so
+    // we report the run metadata but skip the (mismatched) data/chart.
+    if (
+      executor &&
+      lastRun.status === 'success' &&
+      lastRun.databaseId === executor.databaseId
+    ) {
       try {
         const data = await executor.getRunData(lastRun.runId, cmd.limit);
         result.lastRun.columns = toColumns(data.columns);
@@ -217,12 +227,6 @@ export async function dispatch(
   type: string,
   payload: unknown,
   deps: DispatchDeps,
-  getLastRun: () => {
-    runId: string;
-    status: string;
-    rowCount: number;
-    error?: string;
-  } | null,
 ): Promise<unknown> {
   switch (type) {
     case 'visualize':
@@ -230,7 +234,7 @@ export async function dispatch(
     case 'chart':
       return handleChart(payload as ChartCommand, deps);
     case 'uiState':
-      return handleUIState(payload as UIStateCommand, deps, getLastRun);
+      return handleUIState(payload as UIStateCommand, deps);
     default:
       throw new Error(`unknown command type: ${type}`);
   }

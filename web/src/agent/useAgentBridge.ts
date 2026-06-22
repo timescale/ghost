@@ -59,19 +59,7 @@ export function useAgentBridge(databases: Database[]): void {
         useServeStore.getState().setResultView(view),
       setChartConfig: (config) =>
         useServeStore.getState().setChartConfig(config),
-      getLastRunId: () => useAgentStore.getState().lastRun?.runId ?? null,
-    };
-
-    const getLastRun = () => {
-      const run = useAgentStore.getState().lastRun;
-      return run
-        ? {
-            runId: run.runId,
-            status: run.status,
-            rowCount: run.rowCount,
-            error: run.error,
-          }
-        : null;
+      getLastRun: () => useAgentStore.getState().lastRun,
     };
 
     const runCommand = async (command: AgentCommand) => {
@@ -79,12 +67,7 @@ export function useAgentBridge(databases: Database[]): void {
       inFlightCommandId = command.id;
       const stopHeartbeat = startHeartbeat(clientId, command.id);
       try {
-        const result = await dispatch(
-          command.type,
-          command.payload,
-          deps,
-          getLastRun,
-        );
+        const result = await dispatch(command.type, command.payload, deps);
         await sendResult(clientId, command.id, result);
       } catch (err) {
         await sendError(
