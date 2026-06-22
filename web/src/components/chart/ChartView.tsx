@@ -14,9 +14,10 @@ interface Props {
   loading: boolean;
   dataError: string | null;
   config: string;
-  // Called after the config renders successfully against non-empty data. Used
-  // to record chart config history. Not called for empty data or render errors.
-  onRenderSuccess?: () => void;
+  // Called after the config renders successfully against non-empty data, with
+  // the exact config that rendered. Used to record chart config history. Not
+  // called for empty data or render errors.
+  onRenderSuccess?: (config: string) => void;
 }
 
 // applyChartOption evaluates the config against the data and applies the
@@ -33,7 +34,7 @@ function applyChartOption(
   data: ChartData | null,
   config: string,
   setRenderError: (message: string | null) => void,
-  onRenderSuccess: (() => void) | undefined,
+  onRenderSuccess: ((config: string) => void) | undefined,
 ): void {
   if (!chartRef.current) return;
   if (!data) {
@@ -45,8 +46,11 @@ function applyChartOption(
     const option = buildChartOption(config, data);
     chartRef.current.setOption(option, { notMerge: true });
     setRenderError(null);
-    // Only a config that renders against real rows is worth remembering.
-    if (data.rows.length > 0) onRenderSuccess?.();
+    // Only a config that renders against real rows is worth remembering. Pass
+    // the config that actually rendered, so a later debounced record can't
+    // capture a different (e.g. invalid, not-yet-rendered) config from the
+    // store if the user edited it in the meantime.
+    if (data.rows.length > 0) onRenderSuccess?.(config);
   } catch (err) {
     // A failed setOption can throw mid-render and leave ECharts in an
     // inconsistent internal state that a later clear()/setOption won't recover

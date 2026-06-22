@@ -11,9 +11,9 @@ import { debounce } from '../../util/debounce';
 const RECORD_DEBOUNCE_MS = 1500;
 
 export interface ChartConfigRecorder {
-  // Pass to ChartView's onRenderSuccess: signals the current config rendered
+  // Pass to ChartView's onRenderSuccess: signals that the given config rendered
   // cleanly against real rows. Debounced, then records (see below).
-  recordRenderSuccess: () => void;
+  recordRenderSuccess: (config: string) => void;
   // Call when a config is applied programmatically (from history) so it isn't
   // mistaken for a user edit and re-recorded.
   markApplied: (config: string) => void;
@@ -38,8 +38,10 @@ export function useChartConfigRecorder(): ChartConfigRecorder {
 
   const recordRenderSuccess = useMemo(
     () =>
-      debounce(() => {
-        const config = useServeStore.getState().chartConfig;
+      // Record the config that actually rendered (passed in by ChartView), not
+      // whatever is in the store when the debounce fires — the user may have
+      // edited it to something invalid/unrendered in the meantime.
+      debounce((config: string) => {
         // Seed the baseline on the first render; never record it.
         if (baselineRef.current === null) {
           baselineRef.current = config;
