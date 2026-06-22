@@ -161,6 +161,10 @@ func (h *Handler) healthHandler(w http.ResponseWriter, r *http.Request) {
 type GetBootstrapResponse struct {
 	ProjectID string `json:"projectId"`
 	Version   string `json:"version"`
+	// ReadOnly reflects the read_only config option. When true, queries run by
+	// this server use an immutable read-only connection, so the UI surfaces a
+	// read-only indicator to the user.
+	ReadOnly bool `json:"readOnly"`
 }
 
 func (h *Handler) bootstrapHandler(w http.ResponseWriter, r *http.Request) {
@@ -173,11 +177,14 @@ func (h *Handler) bootstrapHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, err, logger)
 		return
 	}
+	// loadClient just reloaded the config, so GetConfig is safe (won't panic).
+	cfg := h.app.GetConfig()
 
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, GetBootstrapResponse{
 		ProjectID: projectID,
 		Version:   config.Version,
+		ReadOnly:  cfg.ReadOnly,
 	}, logger)
 }
 
@@ -805,6 +812,8 @@ func (h *Handler) connectionStringForService(ctx context.Context, serviceID stri
 	if err != nil {
 		return "", err
 	}
+	// loadClient just reloaded the config, so GetConfig is safe (won't panic).
+	cfg := h.app.GetConfig()
 
 	resp, err := client.GetDatabaseWithResponse(ctx, projectID, serviceID)
 	if err != nil {
@@ -833,10 +842,16 @@ func (h *Handler) connectionStringForService(ctx context.Context, serviceID stri
 		return "", connectErr("retrieving password: %v", err)
 	}
 
+	// Honor the read-only config option (e.g. an MCP server started with
+	// read_only: true): build the DSN with the immutable read-only connection
+	// GUC so queries run through this in-process server can't write, matching
+	// the server-side `ghost sql` / ghost_sql path. Without this, visualized
+	// MCP queries would bypass read-only enforcement.
 	connStr, err := common.BuildConnectionString(common.ConnectionStringArgs{
 		Database: database,
 		Role:     defaultRole,
 		Password: password,
+		ReadOnly: cfg.ReadOnly,
 	})
 	if err != nil {
 		return "", connectErr("building connection string: %v", err)

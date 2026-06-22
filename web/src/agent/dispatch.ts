@@ -115,7 +115,10 @@ async function handleVisualize(
     runId: outcome.runId,
     columns,
     rows: rowsToMatrix(data.rows, data.columns),
-    rowCount: data.rows.length,
+    // Report the true total row count from the run, not the capped number of
+    // rows read back — otherwise a query returning more than `limit` rows would
+    // be reported (and summarized) as only `limit` rows, hiding truncation.
+    rowCount: outcome.rowCount,
     image,
     chartError,
     chartDiagnostics,
@@ -190,7 +193,9 @@ async function handleUIState(
         const data = await executor.getRunData(lastRun.runId, cmd.limit);
         result.lastRun.columns = toColumns(data.columns);
         result.lastRun.rows = rowsToMatrix(data.rows, data.columns);
-        result.lastRun.rowCount = data.rows.length;
+        // Keep lastRun.rowCount as the true total reported on completion; do NOT
+        // overwrite it with the capped number of rows read back here, or
+        // truncation would be hidden from the agent.
         // Always render a chart image of the last run (off-screen, independent
         // of the visible view) so the agent can inspect it visually. A render
         // failure is reported as chartError rather than failing the call.

@@ -223,6 +223,52 @@ func TestBridgeRequestFailsOnSupersede(t *testing.T) {
 	}
 }
 
+// TestBridgeRequestDoesNotWedgeOnFullBuffer verifies that a request can still
+// fail fast (here, via a takeover resolving p.result) even when the active
+// client's outbound event buffer is full — i.e. the command-dispatch send step
+// can't wedge the request. This models a browser whose SSE stream is stuck so
+// its buffer never drains.
+func TestBridgeRequestDoesNotWedgeOnFullBuffer(t *testing.T) {
+	b := NewBridge()
+	c1 := b.addClient()
+	// Fill c1's event buffer to capacity (without draining it), so the command
+	// dispatch send in Request would block.
+	for {
+		select {
+		case c1.events <- agentServerEvent{Type: "status"}:
+		default:
+			goto full
+		}
+	}
+full:
+	// A second client connects so we have someone to take over control. The
+	// broadcast to the full c1 buffer is dropped (non-blocking), as designed.
+	c2 := b.addClient()
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := b.Request(context.Background(), "uiState", nil)
+		errCh <- err
+	}()
+
+	// Let the request reach (and block on) the dispatch send.
+	time.Sleep(50 * time.Millisecond)
+	// Take over with c2; this resolves the in-flight request even though the
+	// dispatch send to c1 is blocked on its full buffer.
+	if !b.Activate(c2.id) {
+		t.Fatal("activate should succeed for a known client")
+	}
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, ErrClientSuperseded) {
+			t.Fatalf("expected ErrClientSuperseded, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("request wedged on a full client buffer")
+	}
+}
+
 func TestBridgeStaleResponseRejected(t *testing.T) {
 	b := NewBridge()
 	c := b.addClient()

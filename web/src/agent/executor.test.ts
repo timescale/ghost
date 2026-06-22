@@ -10,7 +10,11 @@ import {
 function makeExecutor(databaseId: string): Executor {
   return {
     databaseId,
-    runQuery: async () => ({ runId: 'r', status: 'success' as const }),
+    runQuery: async () => ({
+      runId: 'r',
+      status: 'success' as const,
+      rowCount: 0,
+    }),
     getRunData: async () => ({ rows: [], columns: [] }),
   };
 }

@@ -143,6 +143,9 @@ export function QueryPanel({
         pending({
           runId: args.runId,
           status: succeeded ? 'success' : 'failed',
+          // args.rowCount is the true total row count produced by the query,
+          // independent of any cap applied when reading rows back for the agent.
+          rowCount: args.rowCount ?? 0,
           error: failed ? args.error : undefined,
         });
       }

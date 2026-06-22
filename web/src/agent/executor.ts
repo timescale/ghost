@@ -4,6 +4,10 @@ import type { ChartData } from '../components/chart/types';
 export interface QueryOutcome {
   runId: string;
   status: 'success' | 'failed';
+  // Total number of rows the query produced, as reported by the widget on
+  // completion. This is the true total, independent of any row cap applied when
+  // reading results back for the agent.
+  rowCount: number;
   error?: string;
 }
 

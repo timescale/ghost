@@ -47,12 +47,23 @@ function makeDeps(known: string[]): {
   return { deps, selected, editorSql: () => editorSql };
 }
 
-function registerStubExecutor(databaseId: string): void {
+// registerStubExecutor installs a stub executor. totalRowCount is the total the
+// run reports on completion; rowsRead is the number of rows getRunData returns
+// (the capped read), defaulting to totalRowCount when omitted.
+function registerStubExecutor(
+  databaseId: string,
+  totalRowCount = 1,
+  rowsRead = totalRowCount,
+): void {
   const executor: Executor = {
     databaseId,
-    runQuery: async () => ({ runId: 'run-1', status: 'success' as const }),
+    runQuery: async () => ({
+      runId: 'run-1',
+      status: 'success' as const,
+      rowCount: totalRowCount,
+    }),
     getRunData: async () => ({
-      rows: [{ n: 1 }],
+      rows: Array.from({ length: rowsRead }, (_, i) => ({ n: i + 1 })),
       columns: [{ name: 'n', type: 'INT8' }],
     }),
   };
@@ -70,7 +81,11 @@ describe('dispatch visualize', () => {
   beforeEach(() => {
     const cleanup = registerExecutor({
       databaseId: 'reset',
-      runQuery: async () => ({ runId: 'r', status: 'success' as const }),
+      runQuery: async () => ({
+        runId: 'r',
+        status: 'success' as const,
+        rowCount: 0,
+      }),
       getRunData: async () => ({ rows: [], columns: [] }),
     });
     cleanup();
@@ -79,7 +94,11 @@ describe('dispatch visualize', () => {
   afterEach(() => {
     const cleanup = registerExecutor({
       databaseId: 'reset',
-      runQuery: async () => ({ runId: 'r', status: 'success' as const }),
+      runQuery: async () => ({
+        runId: 'r',
+        status: 'success' as const,
+        rowCount: 0,
+      }),
       getRunData: async () => ({ rows: [], columns: [] }),
     });
     cleanup();
@@ -97,6 +116,22 @@ describe('dispatch visualize', () => {
     expect(selected).toEqual(['db1']);
     expect(result.runId).toBe('run-1');
     expect(result.rowCount).toBe(1);
+  });
+
+  test('reports the true total row count, not the capped number read', async () => {
+    // The run produced 10,000 rows but only 50 were read back (the cap). The
+    // result must report the total (10,000), not the capped read (50), so the
+    // agent knows the output was truncated.
+    const { deps } = makeDeps(['db1']);
+    registerStubExecutor('db1', 10_000, 50);
+    const result = (await dispatch(
+      'visualize',
+      visualizeCmd('db1'),
+      deps,
+      () => null,
+    )) as VisualizeResult;
+    expect(result.rowCount).toBe(10_000);
+    expect(result.rows.length).toBe(50);
   });
 
   test('reports a chart render failure as chartError but still returns rows', async () => {

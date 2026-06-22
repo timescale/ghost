@@ -267,17 +267,28 @@ func (b *Bridge) Request(ctx context.Context, commandType string, payload any) (
 	// Ensure the pending slot is cleared on every exit path.
 	defer b.clearPending(p)
 
+	// Start the idle timer before dispatch so a stalled active client can't
+	// wedge the request at the send step. If the client's event buffer is full
+	// (its SSE handler is stuck writing to a slow/dead browser connection), the
+	// send below would block; including the timer, p.result, and client.done in
+	// this select guarantees the request still fails fast — on idle timeout, a
+	// takeover/disconnect that resolves p.result, or the stream closing.
+	timer := time.NewTimer(agentIdleTimeout)
+	defer timer.Stop()
+
 	// Dispatch the command to the client's SSE stream.
 	select {
 	case client.events <- agentServerEvent{Type: "command", Command: &cmd}:
+	case res := <-p.result:
+		return res.data, res.err
 	case <-client.done:
 		return nil, ErrClientDisconnected
+	case <-timer.C:
+		return nil, ErrAgentIdleTimeout
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 
-	timer := time.NewTimer(agentIdleTimeout)
-	defer timer.Stop()
 	for {
 		select {
 		case res := <-p.result:
