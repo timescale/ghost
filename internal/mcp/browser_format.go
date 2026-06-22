@@ -45,7 +45,11 @@ func browserResultSet(columns []browserColumn, rows [][]any) common.ResultSet {
 		}
 		stringRows[i] = cells
 	}
-	return common.ResultSet{Columns: cols, Rows: stringRows, RowsAffected: int64(len(rows))}
+	// RowsAffected is left at zero: it reflects a Postgres command tag (rows
+	// touched by a DML command), which the browser widget doesn't report. The
+	// returned row count is conveyed separately (RowCount / len(rows)), so we
+	// don't conflate it with RowsAffected here.
+	return common.ResultSet{Columns: cols, Rows: stringRows}
 }
 
 // stringifyCell renders a JSON-decoded cell value as a string. nil becomes the

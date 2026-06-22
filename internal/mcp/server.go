@@ -226,17 +226,19 @@ func (s *Server) analyticsMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 
 // Close gracefully shuts down the MCP server and all proxy connections
 func (s *Server) Close() error {
+	var errs []error
+
 	// Tear down the in-process web UI, if it was started.
 	if s.browser != nil {
 		if err := s.browser.Close(); err != nil {
-			return fmt.Errorf("failed to close web server: %w", err)
+			errs = append(errs, fmt.Errorf("failed to close web server: %w", err))
 		}
 	}
 
 	// Close docs proxy connection
 	if err := s.docsProxyClient.Close(); err != nil {
-		return fmt.Errorf("failed to close docs proxy client: %w", err)
+		errs = append(errs, fmt.Errorf("failed to close docs proxy client: %w", err))
 	}
 
-	return nil
+	return errors.Join(errs...)
 }

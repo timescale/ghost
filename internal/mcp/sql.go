@@ -174,7 +174,10 @@ func (s *Server) handleSQLVisualize(ctx context.Context, input SQLInput, query s
 }
 
 // capResultSetRows truncates each result set's rows to at most limit, so large
-// result sets aren't returned wholesale to the agent.
+// result sets aren't returned wholesale to the agent. RowsAffected is left
+// untouched: it reflects the Postgres command tag (e.g. rows touched by an
+// UPDATE/DELETE), not the number of result rows returned, so it must not be
+// overwritten with a post-truncation count.
 func capResultSetRows(sets []common.ResultSet, limit int) {
 	for i := range sets {
 		if len(sets[i].Rows) > limit {

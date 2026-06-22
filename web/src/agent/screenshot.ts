@@ -38,23 +38,31 @@ export async function renderChartImage(
   container.style.height = `${CHART_HEIGHT}px`;
   document.body.appendChild(container);
 
-  const chart = echarts.init(container, undefined, {
-    width: CHART_WIDTH,
-    height: CHART_HEIGHT,
-  });
+  // Append to the DOM before init so that echarts.init() throwing (or any other
+  // error below) can't leak the detached container — container.remove() always
+  // runs in the outer finally.
   try {
-    chart.setOption(option, { notMerge: true });
-    // Wait for the render to flush before capturing. ECharts renders
-    // synchronously on setOption by default, but a rAF tick ensures any
-    // deferred layout (e.g. animations disabled) has settled.
-    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
-    return chart.getDataURL({
-      type: 'png',
-      pixelRatio: PIXEL_RATIO,
-      backgroundColor: '#ffffff',
+    const chart = echarts.init(container, undefined, {
+      width: CHART_WIDTH,
+      height: CHART_HEIGHT,
     });
+    try {
+      chart.setOption(option, { notMerge: true });
+      // Wait for the render to flush before capturing. ECharts renders
+      // synchronously on setOption by default, but a rAF tick ensures any
+      // deferred layout (e.g. animations disabled) has settled.
+      await new Promise((resolve) =>
+        requestAnimationFrame(() => resolve(null)),
+      );
+      return chart.getDataURL({
+        type: 'png',
+        pixelRatio: PIXEL_RATIO,
+        backgroundColor: '#ffffff',
+      });
+    } finally {
+      chart.dispose();
+    }
   } finally {
-    chart.dispose();
     container.remove();
   }
 }

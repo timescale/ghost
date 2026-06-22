@@ -170,6 +170,8 @@ func (c *browserController) Close() error {
 		return nil
 	}
 	err := c.server.Close()
+	// Store.Close() returns no error — it logs any session-teardown failures
+	// internally.
 	c.store.Close()
 	c.server = nil
 	c.store = nil
