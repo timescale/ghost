@@ -84,9 +84,10 @@ func formatVisualizeSummary(result visualizeResult, limit int) string {
 	}
 	if result.Image != "" {
 		b.WriteString("A rendered chart image is attached below.\n")
-	} else if result.ChartError != "" {
-		fmt.Fprintf(&b, "The chart could not be rendered: %s\n", result.ChartError)
 	}
+	// The chart error is intentionally not echoed here: it's carried in the
+	// structured output's chart_error field, so repeating it in the prose summary
+	// would duplicate it in the tool result content.
 	if diag := formatChartDiagnostics(result.ChartDiagnostics); diag != "" {
 		b.WriteString(diag)
 		b.WriteByte('\n')
