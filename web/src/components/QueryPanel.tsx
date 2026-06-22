@@ -137,6 +137,10 @@ export function QueryPanel({
           error: failed ? args.error : undefined,
         });
       }
+      // Resolve the agent run on any terminal outcome, including cancellation
+      // (neither succeeded nor failed) — otherwise an aborted run would leave
+      // the dispatcher's runQuery promise pending forever (and its heartbeat
+      // running). A canceled run is reported as failed with a clear message.
       const pending = pendingRuns.current.get(args.runId);
       if (pending) {
         pendingRuns.current.delete(args.runId);
@@ -146,7 +150,11 @@ export function QueryPanel({
           // args.rowCount is the true total row count produced by the query,
           // independent of any cap applied when reading rows back for the agent.
           rowCount: args.rowCount ?? 0,
-          error: failed ? args.error : undefined,
+          error: failed
+            ? args.error
+            : succeeded
+              ? undefined
+              : 'the query was canceled',
         });
       }
       // Record every completed run (success or failure) in the history; skip
@@ -214,6 +222,13 @@ export function QueryPanel({
 
   // runQuery is the agent-facing entry point: it sets the editor SQL and runs
   // it via the widget's imperative handle, resolving when the run completes.
+  // cancelRunningQuery aborts the in-flight run via the widget's imperative
+  // handle. The resulting 'canceled' completion resolves any pending agent run
+  // (see handleQueryComplete).
+  const cancelRunningQuery = useCallback(() => {
+    apiRef.current?.cancelQuery();
+  }, []);
+
   const runQuery = useCallback(
     (sql: string): Promise<QueryOutcome> => {
       onQueryChange(sql);
@@ -245,7 +260,11 @@ export function QueryPanel({
     <TimescaleResultsCacheContextProvider baseUrl={window.location.origin}>
       <QueryWidgetProvider theme={Theme.light}>
         <ContextMenuProvider>
-          <ExecutorBridge databaseId={databaseId} runQuery={runQuery} />
+          <ExecutorBridge
+            databaseId={databaseId}
+            runQuery={runQuery}
+            cancelQuery={cancelRunningQuery}
+          />
           <div className="flex flex-auto flex-col overflow-hidden">
             <QueryWidget
               apiRef={apiRef}
@@ -316,9 +335,11 @@ export function QueryPanel({
 function ExecutorBridge({
   databaseId,
   runQuery,
+  cancelQuery,
 }: {
   databaseId: string;
   runQuery: (sql: string) => Promise<QueryOutcome>;
+  cancelQuery: () => void;
 }) {
   const { client } = useContext(ResultsCacheContext) as {
     client: ResultsCacheClient | null;
@@ -336,9 +357,10 @@ function ExecutorBridge({
       databaseId,
       runQuery,
       getRunData: (runId, limit) => fetchRunData(client, runId, limit),
+      cancelQuery,
     };
     return registerExecutor(executor);
-  }, [databaseId, runQuery, client]);
+  }, [databaseId, runQuery, cancelQuery, client]);
 
   return null;
 }

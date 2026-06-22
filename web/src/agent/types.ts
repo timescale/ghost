@@ -10,7 +10,10 @@ export type { ChartConfigDiagnostic } from './diagnostics';
 // Events pushed from the server over the SSE stream.
 export type AgentServerEvent =
   | { type: 'status'; clientId: string; active: boolean }
-  | { type: 'command'; command: AgentCommand };
+  | { type: 'command'; command: AgentCommand }
+  // Tells the client to abort the in-flight command with this requestId (the
+  // MCP caller canceled, the request timed out, or another tab took over).
+  | { type: 'cancel'; requestId: string };
 
 // A unit of work dispatched by an MCP tool for the browser to execute.
 export interface AgentCommand {

@@ -16,6 +16,7 @@ function makeExecutor(databaseId: string): Executor {
       rowCount: 0,
     }),
     getRunData: async () => ({ rows: [], columns: [] }),
+    cancelQuery: () => {},
   };
 }
 

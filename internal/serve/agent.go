@@ -39,8 +39,8 @@ var (
 )
 
 // agentServerEvent is a message sent from the server to a browser client over
-// the SSE stream. Exactly one of the optional fields is populated depending on
-// Type ("status" or "command").
+// the SSE stream. Exactly one group of optional fields is populated depending
+// on Type ("status", "command", or "cancel").
 type agentServerEvent struct {
 	Type string `json:"type"`
 	// status events
@@ -48,6 +48,26 @@ type agentServerEvent struct {
 	Active   *bool  `json:"active,omitempty"`
 	// command events
 	Command *AgentCommand `json:"command,omitempty"`
+	// cancel events: tells the client to abort the in-flight command with this
+	// request ID (e.g. the MCP caller canceled, the request timed out, or
+	// another tab took over). Without this, a browser-run query keeps going
+	// after the bridge has already given up on the request.
+	RequestID string `json:"requestId,omitempty"`
+}
+
+// sendCancel best-effort notifies a client to abort the in-flight command with
+// the given request ID. The send is non-blocking: if the client's outbound
+// buffer is full (its SSE stream is stuck), the cancel is dropped — such a
+// client is already unreachable and will be cleaned up on disconnect. Safe to
+// call without holding b.mu (it only sends on the client's channel).
+func sendCancel(c *agentClient, requestID string) {
+	if c == nil {
+		return
+	}
+	select {
+	case c.events <- agentServerEvent{Type: "cancel", RequestID: requestID}:
+	default:
+	}
 }
 
 // AgentCommand is a single command dispatched to the browser to execute (e.g.
@@ -189,6 +209,9 @@ func (b *Bridge) Activate(clientID string) bool {
 	}
 	b.activeID = clientID
 	if b.pending != nil && b.pending.clientID == old {
+		// The superseded client is still connected (just deactivated), so tell
+		// it to abort the work it was doing for the now-abandoned request.
+		sendCancel(b.clientByIDLocked(old), b.pending.id)
 		b.resolveLocked(b.pending, pendingResult{err: ErrClientSuperseded})
 	}
 	b.broadcastStatusLocked()
@@ -276,7 +299,9 @@ func (b *Bridge) Request(ctx context.Context, commandType string, payload any) (
 	timer := time.NewTimer(agentIdleTimeout)
 	defer timer.Stop()
 
-	// Dispatch the command to the client's SSE stream.
+	// Dispatch the command to the client's SSE stream. The ctx/timeout paths
+	// here return before the command was delivered, so there's nothing for the
+	// browser to cancel yet.
 	select {
 	case client.events <- agentServerEvent{Type: "command", Command: &cmd}:
 	case res := <-p.result:
@@ -298,8 +323,13 @@ func (b *Bridge) Request(ctx context.Context, commandType string, payload any) (
 		case <-client.done:
 			return nil, ErrClientDisconnected
 		case <-timer.C:
+			// The command was dispatched and the browser may still be running it
+			// (e.g. a long query); tell it to abort before we give up.
+			sendCancel(client, cmd.ID)
 			return nil, ErrAgentIdleTimeout
 		case <-ctx.Done():
+			// The MCP caller canceled/disconnected; stop the browser's work.
+			sendCancel(client, cmd.ID)
 			return nil, ctx.Err()
 		}
 	}
@@ -362,11 +392,17 @@ func (b *Bridge) clearPending(p *pendingRequest) {
 // activeClientLocked returns the active client, or nil if none. Must be called
 // with b.mu held.
 func (b *Bridge) activeClientLocked() *agentClient {
-	if b.activeID == "" {
+	return b.clientByIDLocked(b.activeID)
+}
+
+// clientByIDLocked returns the client with the given ID, or nil if none (or the
+// ID is empty). Must be called with b.mu held.
+func (b *Bridge) clientByIDLocked(id string) *agentClient {
+	if id == "" {
 		return nil
 	}
 	for _, c := range b.clients {
-		if c.id == b.activeID {
+		if c.id == id {
 			return c
 		}
 	}

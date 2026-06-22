@@ -66,6 +66,7 @@ function registerStubExecutor(
       rows: Array.from({ length: rowsRead }, (_, i) => ({ n: i + 1 })),
       columns: [{ name: 'n', type: 'INT8' }],
     }),
+    cancelQuery: () => {},
   };
   registerExecutor(executor);
 }
@@ -87,6 +88,7 @@ describe('dispatch visualize', () => {
         rowCount: 0,
       }),
       getRunData: async () => ({ rows: [], columns: [] }),
+      cancelQuery: () => {},
     });
     cleanup();
   });
@@ -100,6 +102,7 @@ describe('dispatch visualize', () => {
         rowCount: 0,
       }),
       getRunData: async () => ({ rows: [], columns: [] }),
+      cancelQuery: () => {},
     });
     cleanup();
   });

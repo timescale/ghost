@@ -163,6 +163,85 @@ func TestBridgeRequestErrorFromClient(t *testing.T) {
 	}
 }
 
+// drainCancel reads the next event off a client's stream, asserting it is a
+// "cancel" event for the expected request ID.
+func drainCancel(t *testing.T, c *agentClient, requestID string) {
+	t.Helper()
+	select {
+	case ev := <-c.events:
+		if ev.Type != "cancel" {
+			t.Fatalf("expected cancel event, got %+v", ev)
+		}
+		if ev.RequestID != requestID {
+			t.Fatalf("expected cancel for %q, got %q", requestID, ev.RequestID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for cancel event")
+	}
+}
+
+// TestBridgeRequestCancelsBrowserOnContextCancel verifies that canceling the
+// caller's context after the command was dispatched sends a cancel event to
+// the client (so the browser aborts its in-flight query) and fails the request.
+func TestBridgeRequestCancelsBrowserOnContextCancel(t *testing.T) {
+	b := NewBridge()
+	c := b.addClient()
+	drainStatus(t, c)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := b.Request(ctx, "visualize", nil)
+		errCh <- err
+	}()
+
+	cmd := waitForCommand(t, c)
+	cancel()
+
+	drainCancel(t, c, cmd.ID)
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("request did not fail on context cancel")
+	}
+}
+
+// TestBridgeSupersedeCancelsBrowser verifies that a takeover sends a cancel
+// event to the superseded (still-connected) client so it aborts its in-flight
+// query, in addition to failing the request with ErrClientSuperseded.
+func TestBridgeSupersedeCancelsBrowser(t *testing.T) {
+	b := NewBridge()
+	c1 := b.addClient()
+	drainStatus(t, c1)
+	c2 := b.addClient()
+	drainStatus(t, c2)
+	drainStatus(t, c1)
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := b.Request(context.Background(), "visualize", nil)
+		errCh <- err
+	}()
+
+	cmd := waitForCommand(t, c1)
+	b.Activate(c2.id)
+
+	// c1 receives a cancel for the in-flight command (then status events from
+	// the takeover broadcast follow on the stream).
+	drainCancel(t, c1, cmd.ID)
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, ErrClientSuperseded) {
+			t.Fatalf("expected ErrClientSuperseded, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("request did not fail on supersede")
+	}
+}
+
 func TestBridgeRequestNoActiveClient(t *testing.T) {
 	b := NewBridge()
 	_, err := b.Request(context.Background(), "uiState", nil)

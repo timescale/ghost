@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import type { ResultView } from '../components/chart/types';
 import { useServeStore } from '../store';
 import { type DispatchDeps, dispatch } from './dispatch';
+import { getExecutor } from './executor';
 import { useAgentStore } from './store';
 import { sendError, sendResult, startHeartbeat } from './transport';
 import type { AgentCommand, AgentServerEvent } from './types';
@@ -27,6 +28,10 @@ export function useAgentBridge(databases: Database[]): void {
   useEffect(() => {
     const source = new EventSource('/api/agent/events');
     let clientId: string | null = null;
+    // The command currently being executed, so a 'cancel' event targeting it
+    // can abort the in-flight query. Only one command runs at a time (the
+    // server serializes dispatch).
+    let inFlightCommandId: string | null = null;
 
     const resolveDatabaseId = (ref: string): string | null => {
       const list = databasesRef.current;
@@ -71,6 +76,7 @@ export function useAgentBridge(databases: Database[]): void {
 
     const runCommand = async (command: AgentCommand) => {
       if (!clientId) return;
+      inFlightCommandId = command.id;
       const stopHeartbeat = startHeartbeat(clientId, command.id);
       try {
         const result = await dispatch(
@@ -88,7 +94,18 @@ export function useAgentBridge(databases: Database[]): void {
         );
       } finally {
         stopHeartbeat();
+        if (inFlightCommandId === command.id) inFlightCommandId = null;
       }
+    };
+
+    // cancelCommand aborts the in-flight query when the server signals the
+    // request should be abandoned (caller canceled, timed out, or another tab
+    // took over). The aborted run completes as 'canceled', which rejects the
+    // dispatcher's runQuery and lets runCommand finish (its sendError is then a
+    // no-op since the server already dropped the request).
+    const cancelCommand = (requestId: string) => {
+      if (inFlightCommandId !== requestId) return;
+      getExecutor()?.cancelQuery();
     };
 
     source.onopen = () => {
@@ -109,6 +126,8 @@ export function useAgentBridge(databases: Database[]): void {
         useAgentStore.getState().setStatus(parsed.clientId, parsed.active);
       } else if (parsed.type === 'command') {
         void runCommand(parsed.command);
+      } else if (parsed.type === 'cancel') {
+        cancelCommand(parsed.requestId);
       }
     };
 

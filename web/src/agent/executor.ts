@@ -21,6 +21,9 @@ export interface Executor {
   runQuery(sql: string): Promise<QueryOutcome>;
   // Read the cached results for a completed run, capped at `limit` rows.
   getRunData(runId: string, limit: number): Promise<ChartData>;
+  // Abort the query currently running (if any). Used when the agent bridge
+  // signals that the MCP caller canceled, timed out, or another tab took over.
+  cancelQuery(): void;
 }
 
 let current: Executor | null = null;
