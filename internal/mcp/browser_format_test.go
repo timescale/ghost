@@ -68,6 +68,30 @@ func TestToChartDiagnostics(t *testing.T) {
 	}
 }
 
+func TestStringifyCell(t *testing.T) {
+	tests := []struct {
+		name string
+		in   any
+		want string
+	}{
+		// A nil cell is a SQL NULL and must render as "NULL", matching
+		// common.ExecuteQuery, not as an empty string (which is a distinct value).
+		{name: "nil becomes NULL", in: nil, want: "NULL"},
+		{name: "empty string stays empty", in: "", want: ""},
+		{name: "string passes through", in: "hello", want: "hello"},
+		{name: "number is formatted", in: 42, want: "42"},
+		{name: "float is formatted", in: 1.5, want: "1.5"},
+		{name: "bool is formatted", in: true, want: "true"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stringifyCell(tt.in); got != tt.want {
+				t.Errorf("stringifyCell(%#v) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFormatVisualizeSummary_WithDiagnostics(t *testing.T) {
 	result := visualizeResult{
 		RunID:    "r1",

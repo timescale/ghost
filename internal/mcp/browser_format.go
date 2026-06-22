@@ -52,11 +52,13 @@ func browserResultSet(columns []browserColumn, rows [][]any) common.ResultSet {
 	return common.ResultSet{Columns: cols, Rows: stringRows}
 }
 
-// stringifyCell renders a JSON-decoded cell value as a string. nil becomes the
-// empty string (mirroring NULL handling elsewhere).
+// stringifyCell renders a JSON-decoded cell value as a string. A nil cell is a
+// SQL NULL and becomes the literal "NULL" — matching common.ExecuteQuery's
+// server-side path — so ghost_sql results don't depend on whether visualize was
+// used, and a SQL NULL stays distinct from an empty string.
 func stringifyCell(v any) string {
 	if v == nil {
-		return ""
+		return "NULL"
 	}
 	if s, ok := v.(string); ok {
 		return s
