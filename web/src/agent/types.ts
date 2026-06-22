@@ -72,7 +72,12 @@ export interface VisualizeResult {
 }
 
 export interface ChartResult {
-  image: string;
+  // Data URL of the rendered chart. Present when the chart rendered
+  // successfully; mutually exclusive with chartError.
+  image?: string;
+  // Message explaining why the chart couldn't be rendered (e.g. an invalid
+  // chart config, or data the config can't plot).
+  chartError?: string;
   chartDiagnostics?: ChartConfigDiagnostic[];
 }
 

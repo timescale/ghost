@@ -60,8 +60,19 @@ func (s *Server) handleChart(ctx context.Context, req *mcp.CallToolRequest, inpu
 	if err != nil {
 		return nil, nil, err
 	}
+	// A render failure (bad config or unplottable data) is not a tool error: the
+	// chart config was applied to the UI, and the agent needs the error message
+	// plus the editor diagnostics to fix it — matching the ghost_sql visualize
+	// path, which reports chartError rather than failing the call.
 	if image == nil {
-		return nil, nil, errors.New("no chart image was returned; is there a completed query run to chart?")
+		chartError := result.ChartError
+		if chartError == "" {
+			chartError = "the chart could not be rendered"
+		}
+		text := "Applied chart config to the last run, but the chart could not be rendered: " + chartError + chartDiagnosticsSuffix(result.ChartDiagnostics)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: text}},
+		}, nil, nil
 	}
 
 	return &mcp.CallToolResult{

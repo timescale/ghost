@@ -75,7 +75,12 @@ type visualizeResult struct {
 
 // chartResult is the browser's response to a chart command.
 type chartResult struct {
-	Image            string            `json:"image"`
+	// Image is a data URL of the rendered chart. Present when the chart rendered
+	// successfully; mutually exclusive with ChartError.
+	Image string `json:"image,omitempty"`
+	// ChartError explains why the chart couldn't be rendered (bad config or
+	// unplottable data). Mutually exclusive with Image.
+	ChartError       string            `json:"chartError,omitempty"`
 	ChartDiagnostics []chartDiagnostic `json:"chartDiagnostics,omitempty"`
 }
 

@@ -5,7 +5,8 @@ import type { DispatchDeps } from './dispatch';
 import { dispatch } from './dispatch';
 import type { Executor } from './executor';
 import { registerExecutor } from './executor';
-import type { VisualizeCommand, VisualizeResult } from './types';
+import type { AgentLastRun } from './store';
+import type { ChartResult, VisualizeCommand, VisualizeResult } from './types';
 
 // Stub the diagnostics module: it loads Monaco from a CDN, which can't run in
 // the test environment. The dispatcher's diagnostics collection is best-effort
@@ -200,5 +201,64 @@ describe('dispatch visualize', () => {
     )) as VisualizeResult;
     expect(selected).toEqual(['db-unlisted']);
     expect(result.runId).toBe('run-1');
+  });
+});
+
+const stubLastRun = (databaseId: string): AgentLastRun => ({
+  databaseId,
+  runId: 'run-1',
+  status: 'success',
+  rowCount: 1,
+  rowsAffected: 1,
+  commandTag: 'SELECT',
+});
+
+describe('dispatch chart', () => {
+  afterEach(() => {
+    const cleanup = registerExecutor({
+      databaseId: 'reset',
+      runQuery: async () => ({
+        runId: 'r',
+        status: 'success' as const,
+        rowCount: 0,
+        rowsAffected: 0,
+        commandTag: 'SELECT',
+      }),
+      getRunData: async () => ({ rows: [], columns: [] }),
+      cancelQuery: () => {},
+    });
+    cleanup();
+  });
+
+  test('throws when no executor is mounted', async () => {
+    const { deps } = makeDeps(['db1']);
+    expect(
+      dispatch('chart', { chartConfig: 'function chart(){}' }, deps),
+    ).rejects.toThrow('no database panel is mounted');
+  });
+
+  test('throws when the last run belongs to a different database', async () => {
+    const { deps } = makeDeps(['db1']);
+    registerStubExecutor('db1');
+    deps.getLastRun = () => stubLastRun('db2');
+    expect(
+      dispatch('chart', { chartConfig: 'function chart(){}' }, deps),
+    ).rejects.toThrow('no completed query run to chart');
+  });
+
+  test('reports a render failure as chartError instead of throwing', async () => {
+    // ECharts isn't loaded in the test environment, so rendering fails. Like the
+    // visualize path, handleChart must surface that as chartError without
+    // failing the call or dropping the editor diagnostics.
+    const { deps } = makeDeps(['db1']);
+    registerStubExecutor('db1');
+    deps.getLastRun = () => stubLastRun('db1');
+    const result = (await dispatch(
+      'chart',
+      { chartConfig: 'function chart(){}' },
+      deps,
+    )) as ChartResult;
+    expect(result.image).toBeUndefined();
+    expect(result.chartError).toBeTruthy();
   });
 });

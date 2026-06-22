@@ -159,18 +159,21 @@ async function handleChart(
   }
   // Read the full result for charting (the chart caps internally).
   const data = await executor.getRunData(lastRun.runId, 50_000);
-  const [image, diagnostics] = await Promise.all([
-    renderChartImage(cmd.chartConfig, data),
-    tryGetChartConfigDiagnostics(cmd.chartConfig),
-  ]);
-  return {
-    image,
-    chartDiagnostics: diagnostics.length > 0 ? diagnostics : undefined,
-  };
+  // Reuse tryRenderChart so a bad config doesn't fail the whole tool call:
+  // it's reported as chartError alongside the editor diagnostics, matching the
+  // ghost_sql visualize path. Many type errors don't throw at runtime but still
+  // produce a wrong chart, so surfacing diagnostics even on a successful render
+  // gives the agent the same feedback a human sees as red squiggles.
+  const { image, chartError, chartDiagnostics } = await tryRenderChart(
+    cmd.chartConfig,
+    data,
+  );
+  return { image, chartError, chartDiagnostics };
 }
 
 interface ChartResultWire {
-  image: string;
+  image?: string;
+  chartError?: string;
   chartDiagnostics?: ChartConfigDiagnostic[];
 }
 
