@@ -48,10 +48,16 @@ type chartDiagnostic struct {
 
 // visualizeResult is the browser's response to a visualize command.
 type visualizeResult struct {
-	RunID    string          `json:"runId"`
-	Columns  []browserColumn `json:"columns"`
-	Rows     [][]any         `json:"rows"`
-	RowCount int             `json:"rowCount"`
+	RunID   string          `json:"runId"`
+	Columns []browserColumn `json:"columns"`
+	Rows    [][]any         `json:"rows"`
+	// RowCount is the true total number of rows the query produced, independent
+	// of any row cap applied when reading Rows back for the agent.
+	RowCount int `json:"rowCount"`
+	// RowsAffected is the Postgres command-tag count (rows touched by a DML
+	// command, or rows returned by a SELECT), matching common.ExecuteQuery's
+	// server-side semantics.
+	RowsAffected int64 `json:"rowsAffected"`
 	// Image is a data URL (e.g. "data:image/png;base64,...") of the rendered
 	// chart. Present when the chart rendered successfully.
 	Image string `json:"image,omitempty"`
@@ -72,12 +78,16 @@ type chartResult struct {
 
 // lastRunState describes the most recent query run in the browser UI.
 type lastRunState struct {
-	RunID    string          `json:"runId,omitempty"`
-	Status   string          `json:"status,omitempty"`
-	RowCount int             `json:"rowCount"`
-	Columns  []browserColumn `json:"columns,omitempty"`
-	Rows     [][]any         `json:"rows,omitempty"`
-	Error    string          `json:"error,omitempty"`
+	RunID  string `json:"runId,omitempty"`
+	Status string `json:"status,omitempty"`
+	// RowCount is the true total number of rows the query produced, independent
+	// of any row cap applied when reading Rows back for the agent.
+	RowCount int `json:"rowCount"`
+	// RowsAffected is the Postgres command-tag count (see visualizeResult).
+	RowsAffected int64           `json:"rowsAffected"`
+	Columns      []browserColumn `json:"columns,omitempty"`
+	Rows         [][]any         `json:"rows,omitempty"`
+	Error        string          `json:"error,omitempty"`
 }
 
 // uiStateResult is the browser's response to a uiState command.

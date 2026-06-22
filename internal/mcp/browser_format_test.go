@@ -92,6 +92,33 @@ func TestStringifyCell(t *testing.T) {
 	}
 }
 
+func TestBrowserResultSet(t *testing.T) {
+	columns := []browserColumn{{Name: "id", Type: "INT8"}, {Name: "name", Type: "TEXT"}}
+	rows := [][]any{{1, "a"}, {2, nil}}
+
+	got := browserResultSet(columns, rows, 5)
+
+	if len(got.Columns) != 2 || got.Columns[0].Name != "id" || got.Columns[0].Type != "INT8" {
+		t.Fatalf("unexpected columns: %+v", got.Columns)
+	}
+	// rowsAffected (the Postgres command-tag count) must be carried through, not
+	// left at zero — otherwise the structured output would misreport it.
+	if got.RowsAffected != 5 {
+		t.Errorf("RowsAffected = %d, want 5", got.RowsAffected)
+	}
+	wantRows := [][]string{{"1", "a"}, {"2", "NULL"}}
+	if len(got.Rows) != len(wantRows) {
+		t.Fatalf("got %d rows, want %d", len(got.Rows), len(wantRows))
+	}
+	for i := range wantRows {
+		for j := range wantRows[i] {
+			if got.Rows[i][j] != wantRows[i][j] {
+				t.Errorf("Rows[%d][%d] = %q, want %q", i, j, got.Rows[i][j], wantRows[i][j])
+			}
+		}
+	}
+}
+
 func TestFormatVisualizeSummary_WithDiagnostics(t *testing.T) {
 	result := visualizeResult{
 		RunID:    "r1",

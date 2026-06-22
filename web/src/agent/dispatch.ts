@@ -124,6 +124,9 @@ async function handleVisualize(
     // rows read back — otherwise a query returning more than `limit` rows would
     // be reported (and summarized) as only `limit` rows, hiding truncation.
     rowCount: outcome.rowCount,
+    // The Postgres command-tag count, surfaced in the structured tool output's
+    // rows_affected (matching the server-side ghost_sql path).
+    rowsAffected: outcome.rowsAffected,
     image,
     chartError,
     chartDiagnostics,
@@ -187,6 +190,7 @@ async function handleUIState(
       runId: lastRun.runId,
       status: lastRun.status,
       rowCount: lastRun.rowCount,
+      rowsAffected: lastRun.rowsAffected,
       error: lastRun.error,
     };
     const executor = getExecutor();

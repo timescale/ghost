@@ -167,7 +167,7 @@ func (s *Server) handleSQLVisualize(ctx context.Context, input SQLInput, query s
 	}
 
 	return &mcp.CallToolResult{Content: content}, SQLOutput{
-		ResultSets:       []common.ResultSet{browserResultSet(result.Columns, result.Rows)},
+		ResultSets:       []common.ResultSet{browserResultSet(result.Columns, result.Rows, result.RowsAffected)},
 		ChartError:       result.ChartError,
 		ChartDiagnostics: toChartDiagnostics(result.ChartDiagnostics),
 	}, nil

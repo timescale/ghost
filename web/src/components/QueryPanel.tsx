@@ -126,6 +126,10 @@ export function QueryPanel({
       // this narrows to a successful run; track its id for charting.
       const succeeded = 'rowsAffected' in args;
       if (succeeded) setChartRunId(args.runId);
+      // The Postgres command-tag count (rows touched by a DML command, or rows
+      // returned by a SELECT) is only carried on the success branch; it's zero
+      // for a failed/canceled run.
+      const rowsAffected = succeeded ? args.rowsAffected : 0;
       // Resolve any agent run awaiting this completion, and record the run as
       // the latest for the agent's uiState/chart tools.
       const failed = 'error' in args;
@@ -135,6 +139,7 @@ export function QueryPanel({
           runId: args.runId,
           status: succeeded ? 'success' : 'failed',
           rowCount: args.rowCount ?? 0,
+          rowsAffected,
           error: failed ? args.error : undefined,
         });
       }
@@ -151,6 +156,7 @@ export function QueryPanel({
           // args.rowCount is the true total row count produced by the query,
           // independent of any cap applied when reading rows back for the agent.
           rowCount: args.rowCount ?? 0,
+          rowsAffected,
           error: failed
             ? args.error
             : succeeded
@@ -246,6 +252,7 @@ export function QueryPanel({
           runId,
           status: 'failed',
           rowCount: 0,
+          rowsAffected: 0,
           error: 'the database panel was torn down before the query completed',
         });
       }

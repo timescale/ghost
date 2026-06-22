@@ -102,7 +102,7 @@ func (s *Server) handleUIState(ctx context.Context, req *mcp.CallToolRequest, in
 		output.LastRunStatus = result.LastRun.Status
 		output.LastRunError = result.LastRun.Error
 		if len(result.LastRun.Columns) > 0 || len(result.LastRun.Rows) > 0 {
-			output.ResultSets = []common.ResultSet{browserResultSet(result.LastRun.Columns, result.LastRun.Rows)}
+			output.ResultSets = []common.ResultSet{browserResultSet(result.LastRun.Columns, result.LastRun.Rows, result.LastRun.RowsAffected)}
 		}
 	}
 

@@ -31,8 +31,12 @@ func toChartDiagnostics(diagnostics []chartDiagnostic) []ChartDiagnostic {
 
 // browserResultSet converts the browser's column/row representation into a
 // [common.ResultSet] for the structured tool output. Cell values are stringified
-// to match the server-side query path's [][]string row shape.
-func browserResultSet(columns []browserColumn, rows [][]any) common.ResultSet {
+// to match the server-side query path's [][]string row shape. rowsAffected is
+// the Postgres command-tag count the browser reports for the run, matching
+// common.ExecuteQuery's RowsAffected semantics (rows touched by a DML command,
+// or rows returned by a SELECT) — so the structured output is accurate whether
+// or not the query was visualized.
+func browserResultSet(columns []browserColumn, rows [][]any, rowsAffected int64) common.ResultSet {
 	cols := make([]common.Column, len(columns))
 	for i, c := range columns {
 		cols[i] = common.Column{Name: c.Name, Type: c.Type}
@@ -45,11 +49,7 @@ func browserResultSet(columns []browserColumn, rows [][]any) common.ResultSet {
 		}
 		stringRows[i] = cells
 	}
-	// RowsAffected is left at zero: it reflects a Postgres command tag (rows
-	// touched by a DML command), which the browser widget doesn't report. The
-	// returned row count is conveyed separately (RowCount / len(rows)), so we
-	// don't conflate it with RowsAffected here.
-	return common.ResultSet{Columns: cols, Rows: stringRows}
+	return common.ResultSet{Columns: cols, Rows: stringRows, RowsAffected: rowsAffected}
 }
 
 // stringifyCell renders a JSON-decoded cell value as a string. A nil cell is a

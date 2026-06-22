@@ -49,11 +49,13 @@ function makeDeps(known: string[]): {
 
 // registerStubExecutor installs a stub executor. totalRowCount is the total the
 // run reports on completion; rowsRead is the number of rows getRunData returns
-// (the capped read), defaulting to totalRowCount when omitted.
+// (the capped read), defaulting to totalRowCount when omitted. rowsAffected is
+// the Postgres command-tag count the run reports, defaulting to totalRowCount.
 function registerStubExecutor(
   databaseId: string,
   totalRowCount = 1,
   rowsRead = totalRowCount,
+  rowsAffected = totalRowCount,
 ): void {
   const executor: Executor = {
     databaseId,
@@ -61,6 +63,7 @@ function registerStubExecutor(
       runId: 'run-1',
       status: 'success' as const,
       rowCount: totalRowCount,
+      rowsAffected,
     }),
     getRunData: async () => ({
       rows: Array.from({ length: rowsRead }, (_, i) => ({ n: i + 1 })),
@@ -86,6 +89,7 @@ describe('dispatch visualize', () => {
         runId: 'r',
         status: 'success' as const,
         rowCount: 0,
+        rowsAffected: 0,
       }),
       getRunData: async () => ({ rows: [], columns: [] }),
       cancelQuery: () => {},
@@ -100,6 +104,7 @@ describe('dispatch visualize', () => {
         runId: 'r',
         status: 'success' as const,
         rowCount: 0,
+        rowsAffected: 0,
       }),
       getRunData: async () => ({ rows: [], columns: [] }),
       cancelQuery: () => {},
@@ -133,6 +138,20 @@ describe('dispatch visualize', () => {
     )) as VisualizeResult;
     expect(result.rowCount).toBe(10_000);
     expect(result.rows.length).toBe(50);
+  });
+
+  test('carries the command-tag rowsAffected through to the result', async () => {
+    // The run's command-tag count (e.g. rows touched by a DELETE) is reported
+    // separately from the total row count, and must reach the result so the
+    // structured tool output's rows_affected is accurate.
+    const { deps } = makeDeps(['db1']);
+    registerStubExecutor('db1', 0, 0, 7);
+    const result = (await dispatch(
+      'visualize',
+      visualizeCmd('db1'),
+      deps,
+    )) as VisualizeResult;
+    expect(result.rowsAffected).toBe(7);
   });
 
   test('reports a chart render failure as chartError but still returns rows', async () => {

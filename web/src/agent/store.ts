@@ -11,6 +11,9 @@ export interface AgentLastRun {
   runId: string;
   status: 'success' | 'failed';
   rowCount: number;
+  // Postgres command-tag count for the run (rows touched by a DML command, or
+  // rows returned by a SELECT). Zero for a failed run.
+  rowsAffected: number;
   error?: string;
 }
 

@@ -8,6 +8,11 @@ export interface QueryOutcome {
   // completion. This is the true total, independent of any row cap applied when
   // reading results back for the agent.
   rowCount: number;
+  // Postgres command-tag count for the run (rows touched by a DML command, or
+  // rows returned by a SELECT), as reported by the widget. Matches Go's
+  // common.ExecuteQuery RowsAffected so the structured tool output is accurate
+  // whether or not the query was visualized. Zero for a failed/canceled run.
+  rowsAffected: number;
   error?: string;
 }
 
