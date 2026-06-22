@@ -10,6 +10,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/timescale/ghost/internal/api"
 	"github.com/timescale/ghost/internal/common"
 	"github.com/timescale/ghost/internal/util"
 )
@@ -108,7 +109,7 @@ func (s *Server) handleSQL(ctx context.Context, req *mcp.CallToolRequest, input 
 		if s.browser == nil {
 			return nil, SQLOutput{}, errors.New("visualization is only available when running the MCP server locally (stdio transport)")
 		}
-		return s.handleSQLVisualize(ctx, input, query, limit)
+		return s.handleSQLVisualize(ctx, client, projectID, input, query, limit)
 	}
 
 	// Execute the query
@@ -138,14 +139,26 @@ func (s *Server) handleSQL(ctx context.Context, req *mcp.CallToolRequest, input 
 // produced for both 'table' and 'chart' views (the browser renders it
 // off-screen); it may be omitted only if the data can't be charted by the
 // active config in the non-chart case.
-func (s *Server) handleSQLVisualize(ctx context.Context, input SQLInput, query string, limit int) (*mcp.CallToolResult, SQLOutput, error) {
+func (s *Server) handleSQLVisualize(ctx context.Context, client api.ClientWithResponsesInterface, projectID string, input SQLInput, query string, limit int) (*mcp.CallToolResult, SQLOutput, error) {
 	if len(input.Parameters) > 0 {
 		return nil, SQLOutput{}, errors.New("query parameters are not supported with visualize")
 	}
 
+	// Resolve the ref (which may be a database name or id) to the canonical
+	// database id before dispatching to the browser. The web UI selects the
+	// database by id and reflects it in the URL (?db=<id>); if we passed a name
+	// through, the selector wouldn't match any option ("Select a database...")
+	// and the URL would show the name. The backend always has the API client to
+	// resolve this reliably, whereas the frontend's database list may not be
+	// loaded yet.
+	databaseID, err := resolveDatabaseID(ctx, client, projectID, input.Ref)
+	if err != nil {
+		return nil, SQLOutput{}, err
+	}
+
 	var result visualizeResult
-	err := s.browser.request(ctx, commandVisualize, visualizeCommand{
-		DatabaseRef: input.Ref,
+	err = s.browser.request(ctx, commandVisualize, visualizeCommand{
+		DatabaseRef: databaseID,
 		SQL:         query,
 		View:        input.Visualize,
 		ChartConfig: input.ChartConfig,

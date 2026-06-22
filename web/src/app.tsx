@@ -96,10 +96,19 @@ function ReadyApp({ bootstrap }: ReadyAppProps) {
     queryFn: async () => {
       const { databases } =
         await fetchJSON<DatabasesResponse>('/api/databases');
-      if (!useServeStore.getState().selectedDatabaseId) {
+      const selectedId = useServeStore.getState().selectedDatabaseId;
+      if (!selectedId) {
         const defaultId = pickDefaultDatabaseId(databases);
         if (defaultId)
           useServeStore.getState().setSelectedDatabaseId(defaultId);
+      } else if (!databases.some((db) => db.id === selectedId)) {
+        // The selection doesn't match any database id. It may be a name passed
+        // via the ?db= URL parameter (e.g. ?db=weather-data); now that the list
+        // has loaded, resolve it to the canonical id so the selector matches and
+        // the URL is normalized. If it matches neither id nor name, leave it as
+        // is — the backend will surface an invalid ref when a query runs.
+        const byName = databases.find((db) => db.name === selectedId);
+        if (byName) useServeStore.getState().setSelectedDatabaseId(byName.id);
       }
       return databases;
     },

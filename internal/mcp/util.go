@@ -1,12 +1,36 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/timescale/ghost/internal/api"
+	"github.com/timescale/ghost/internal/common"
 )
+
+// resolveDatabaseID fetches the database by ref (which may be a name or an id)
+// and returns its canonical id. Use this when a downstream consumer needs the
+// id specifically rather than an arbitrary ref — for example the web UI, which
+// selects the database by id and reflects it in the URL.
+func resolveDatabaseID(ctx context.Context, client api.ClientWithResponsesInterface, projectID, databaseRef string) (string, error) {
+	resp, err := client.GetDatabaseWithResponse(ctx, projectID, databaseRef)
+	if err != nil {
+		return "", fmt.Errorf("failed to get database: %w", err)
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return "", common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
+	}
+	if resp.JSON200 == nil {
+		return "", errors.New("empty response from API")
+	}
+	return resp.JSON200.Id, nil
+}
 
 // structuredOutputContent serializes a tool's structured output to a JSON
 // [mcp.TextContent] block. The MCP spec requires that a tool returning
