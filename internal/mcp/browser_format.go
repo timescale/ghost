@@ -35,8 +35,9 @@ func toChartDiagnostics(diagnostics []chartDiagnostic) []ChartDiagnostic {
 // the Postgres command-tag count the browser reports for the run, matching
 // common.ExecuteQuery's RowsAffected semantics (rows touched by a DML command,
 // or rows returned by a SELECT) — so the structured output is accurate whether
-// or not the query was visualized.
-func browserResultSet(columns []browserColumn, rows [][]any, rowsAffected int64) common.ResultSet {
+// or not the query was visualized. commandTag is the Postgres command tag (e.g.
+// "SELECT"), matching common.ResultSet.CommandTag from the server-side path.
+func browserResultSet(columns []browserColumn, rows [][]any, rowsAffected int64, commandTag string) common.ResultSet {
 	cols := make([]common.Column, len(columns))
 	for i, c := range columns {
 		cols[i] = common.Column{Name: c.Name, Type: c.Type}
@@ -49,7 +50,7 @@ func browserResultSet(columns []browserColumn, rows [][]any, rowsAffected int64)
 		}
 		stringRows[i] = cells
 	}
-	return common.ResultSet{Columns: cols, Rows: stringRows, RowsAffected: rowsAffected}
+	return common.ResultSet{CommandTag: commandTag, Columns: cols, Rows: stringRows, RowsAffected: rowsAffected}
 }
 
 // stringifyCell renders a JSON-decoded cell value as a string. A nil cell is a

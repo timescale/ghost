@@ -96,7 +96,7 @@ func TestBrowserResultSet(t *testing.T) {
 	columns := []browserColumn{{Name: "id", Type: "INT8"}, {Name: "name", Type: "TEXT"}}
 	rows := [][]any{{1, "a"}, {2, nil}}
 
-	got := browserResultSet(columns, rows, 5)
+	got := browserResultSet(columns, rows, 5, "SELECT")
 
 	if len(got.Columns) != 2 || got.Columns[0].Name != "id" || got.Columns[0].Type != "INT8" {
 		t.Fatalf("unexpected columns: %+v", got.Columns)
@@ -105,6 +105,11 @@ func TestBrowserResultSet(t *testing.T) {
 	// left at zero — otherwise the structured output would misreport it.
 	if got.RowsAffected != 5 {
 		t.Errorf("RowsAffected = %d, want 5", got.RowsAffected)
+	}
+	// commandTag must be carried through so visualized results report the same
+	// command_tag as the server-side query path.
+	if got.CommandTag != "SELECT" {
+		t.Errorf("CommandTag = %q, want %q", got.CommandTag, "SELECT")
 	}
 	wantRows := [][]string{{"1", "a"}, {"2", "NULL"}}
 	if len(got.Rows) != len(wantRows) {

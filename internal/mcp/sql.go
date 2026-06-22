@@ -169,7 +169,7 @@ func (s *Server) handleSQLVisualize(ctx context.Context, client api.ClientWithRe
 	}
 
 	output := SQLOutput{
-		ResultSets:       []common.ResultSet{browserResultSet(result.Columns, result.Rows, result.RowsAffected)},
+		ResultSets:       []common.ResultSet{browserResultSet(result.Columns, result.Rows, result.RowsAffected, result.CommandTag)},
 		ChartError:       result.ChartError,
 		ChartDiagnostics: toChartDiagnostics(result.ChartDiagnostics),
 	}

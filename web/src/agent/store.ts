@@ -14,6 +14,9 @@ export interface AgentLastRun {
   // Postgres command-tag count for the run (rows touched by a DML command, or
   // rows returned by a SELECT). Zero for a failed run.
   rowsAffected: number;
+  // Postgres command tag for the run (e.g. "SELECT", "INSERT"). Empty string
+  // for a failed run or when the widget reported no command.
+  commandTag: string;
   error?: string;
 }
 

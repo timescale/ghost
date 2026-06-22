@@ -13,6 +13,11 @@ export interface QueryOutcome {
   // common.ExecuteQuery RowsAffected so the structured tool output is accurate
   // whether or not the query was visualized. Zero for a failed/canceled run.
   rowsAffected: number;
+  // Postgres command tag for the run (e.g. "SELECT", "INSERT", "CREATE"), as
+  // reported by the widget. Mirrors common.ResultSet.CommandTag from the
+  // server-side path so visualized results carry the same command_tag. Empty
+  // string when the widget reported no command (e.g. a failed parse).
+  commandTag: string;
   error?: string;
 }
 

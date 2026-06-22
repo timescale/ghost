@@ -56,6 +56,7 @@ function registerStubExecutor(
   totalRowCount = 1,
   rowsRead = totalRowCount,
   rowsAffected = totalRowCount,
+  commandTag = 'SELECT',
 ): void {
   const executor: Executor = {
     databaseId,
@@ -64,6 +65,7 @@ function registerStubExecutor(
       status: 'success' as const,
       rowCount: totalRowCount,
       rowsAffected,
+      commandTag,
     }),
     getRunData: async () => ({
       rows: Array.from({ length: rowsRead }, (_, i) => ({ n: i + 1 })),
@@ -90,6 +92,7 @@ describe('dispatch visualize', () => {
         status: 'success' as const,
         rowCount: 0,
         rowsAffected: 0,
+        commandTag: 'SELECT',
       }),
       getRunData: async () => ({ rows: [], columns: [] }),
       cancelQuery: () => {},
@@ -105,6 +108,7 @@ describe('dispatch visualize', () => {
         status: 'success' as const,
         rowCount: 0,
         rowsAffected: 0,
+        commandTag: 'SELECT',
       }),
       getRunData: async () => ({ rows: [], columns: [] }),
       cancelQuery: () => {},
@@ -152,6 +156,19 @@ describe('dispatch visualize', () => {
       deps,
     )) as VisualizeResult;
     expect(result.rowsAffected).toBe(7);
+  });
+
+  test('carries the command tag through to the result', async () => {
+    // The Postgres command tag (e.g. "DELETE") must reach the result so the
+    // structured tool output's command_tag matches the server-side query path.
+    const { deps } = makeDeps(['db1']);
+    registerStubExecutor('db1', 0, 0, 7, 'DELETE');
+    const result = (await dispatch(
+      'visualize',
+      visualizeCmd('db1'),
+      deps,
+    )) as VisualizeResult;
+    expect(result.commandTag).toBe('DELETE');
   });
 
   test('reports a chart render failure as chartError but still returns rows', async () => {
