@@ -124,3 +124,38 @@ round-2 fix).
 **Round 3 result:** 1 fixed (minor GC hygiene), 1 deferred (negligible + risky),
 3 invalid (1 obsolete advice, 1 misread code, 1 contradicts a correct prior
 fix). Signal is dropping off — the substantive issues appear to be exhausted.
+
+---
+
+## Round 4 — model: `openrouter/z-ai/glm-5.1`
+
+Single finding; everything else verified clean.
+
+1. **`stringifyCell` renders booleans as JSON true/false, not Postgres t/f** —
+   _fixed_. Booleans fell through to `fmt.Sprintf("%v")` → `"true"`/`"false"`,
+   but `common.ExecuteQuery` scans booleans into `*string` as Postgres text
+   (`t`/`f`). So visualized boolean columns diverged from the plain `ghost_sql`
+   path, breaking the documented invariant. Added an explicit `bool` case
+   returning `t`/`f`; updated the existing test expectation.
+
+The reviewer also independently verified that all prior-round fixes (cancel
+races, JSON number mangling, unbounded pre-empted set, stale GC pointer,
+dangling timer, UI-mutation ordering, readiness check, rows_affected/command_tag)
+are correctly addressed, and found no other issues.
+
+**Round 4 result:** 1 fixed (low-severity consistency bug), rest clean.
+
+---
+
+## Convergence
+
+Across 4 rounds and 4 different reviewer models (gpt-5.5, opus-4.8,
+gemini-3.5-flash, glm-5.1), the findings went from 5 substantive bugs (round 1,
+all fixed) → 5 (round 2, all addressed) → 1 minor + mostly noise (round 3) → 1
+low-severity consistency fix (round 4). Later rounds increasingly produced false
+positives (obsolete Go-timer advice, misread code, a finding that contradicted a
+correct earlier fix). The stream of substantive issues is exhausted; stopping
+here.
+
+**Totals:** 13 fixed, 1 deferred (negligible + risky), 3 invalid.
+`./check` (Go) and `bun typecheck`/`lint`/`test` (web) all pass.
