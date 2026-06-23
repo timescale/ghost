@@ -18,6 +18,14 @@ import type {
 // agent switches the selection (it remounts on database change).
 const EXECUTOR_WAIT_MS = 15_000;
 
+// Row cap applied when reading a run's results for charting. The agent's
+// `limit` parameter bounds only the rows handed back to it (to keep its context
+// small) — it must NOT bound what the chart is fed, or a small limit (e.g. 5)
+// would render only the first few points of a larger result set. We read up to
+// this many rows for the chart (the chart caps internally too); it mirrors the
+// on-screen MAX_CHART_ROWS in useChartData so the screenshot matches the live UI.
+const CHART_ROW_LIMIT = 50_000;
+
 // DispatchDeps is everything the dispatcher needs from the app: store
 // accessors/mutators and a way to resolve a database ref (name or id) to its id.
 export interface DispatchDeps {
@@ -102,7 +110,12 @@ async function handleVisualize(
     throw new Error(outcome.error || 'query failed');
   }
 
-  const data = await executor.getRunData(outcome.runId, cmd.limit);
+  // Read the full result set (capped only at the chart's row limit), not the
+  // agent's `limit`: the chart must be fed every row, while the agent's `limit`
+  // caps only the rows returned in the response. Reading once and slicing for
+  // the agent keeps the chart and the returned rows consistent and avoids a
+  // second cache read.
+  const data = await executor.getRunData(outcome.runId, CHART_ROW_LIMIT);
   const columns = toColumns(data.columns);
 
   // Always render a chart image so the agent can inspect the data visually,
@@ -116,10 +129,14 @@ async function handleVisualize(
     data,
   );
 
+  // Cap the rows handed back to the agent to its requested limit (the chart
+  // above already rendered the full result set).
+  const agentRows = data.rows.slice(0, cmd.limit);
+
   return {
     runId: outcome.runId,
     columns,
-    rows: rowsToMatrix(data.rows, data.columns),
+    rows: rowsToMatrix(agentRows, data.columns),
     // Report the true total row count from the run, not the capped number of
     // rows read back — otherwise a query returning more than `limit` rows would
     // be reported (and summarized) as only `limit` rows, hiding truncation.
@@ -158,7 +175,7 @@ async function handleChart(
     );
   }
   // Read the full result for charting (the chart caps internally).
-  const data = await executor.getRunData(lastRun.runId, 50_000);
+  const data = await executor.getRunData(lastRun.runId, CHART_ROW_LIMIT);
   // Reuse tryRenderChart so a bad config doesn't fail the whole tool call:
   // it's reported as chartError alongside the editor diagnostics, matching the
   // ghost_sql visualize path. Many type errors don't throw at runtime but still
@@ -211,9 +228,14 @@ async function handleUIState(
       lastRun.databaseId === executor.databaseId
     ) {
       try {
-        const data = await executor.getRunData(lastRun.runId, cmd.limit);
+        // Read the full result set (capped at the chart row limit) so the chart
+        // renders every row; the agent's `limit` caps only the rows we return.
+        const data = await executor.getRunData(lastRun.runId, CHART_ROW_LIMIT);
         result.lastRun.columns = toColumns(data.columns);
-        result.lastRun.rows = rowsToMatrix(data.rows, data.columns);
+        result.lastRun.rows = rowsToMatrix(
+          data.rows.slice(0, cmd.limit),
+          data.columns,
+        );
         // Keep lastRun.rowCount as the true total reported on completion; do NOT
         // overwrite it with the capped number of rows read back here, or
         // truncation would be hidden from the agent.

@@ -6,7 +6,12 @@ import { dispatch } from './dispatch';
 import type { Executor } from './executor';
 import { registerExecutor } from './executor';
 import type { AgentLastRun } from './store';
-import type { ChartResult, VisualizeCommand, VisualizeResult } from './types';
+import type {
+  ChartResult,
+  UIStateResult,
+  VisualizeCommand,
+  VisualizeResult,
+} from './types';
 
 // Stub the diagnostics module: it loads Monaco from a CDN, which can't run in
 // the test environment. The dispatcher's diagnostics collection is best-effort
@@ -49,16 +54,20 @@ function makeDeps(known: string[]): {
 }
 
 // registerStubExecutor installs a stub executor. totalRowCount is the total the
-// run reports on completion; rowsRead is the number of rows getRunData returns
-// (the capped read), defaulting to totalRowCount when omitted. rowsAffected is
-// the Postgres command-tag count the run reports, defaulting to totalRowCount.
+// run reports on completion; getRunData honors its limit argument (returning
+// min(limit, totalRowCount) rows) like the real results-cache read, so a caller
+// that under-reads the data shows up as too few rows. rowsAffected is the
+// Postgres command-tag count the run reports, defaulting to totalRowCount. The
+// returned `getRunDataLimits` records every limit getRunData was called with, so
+// tests can assert that charting reads the full result rather than the agent's
+// (possibly smaller) row cap.
 function registerStubExecutor(
   databaseId: string,
   totalRowCount = 1,
-  rowsRead = totalRowCount,
   rowsAffected = totalRowCount,
   commandTag = 'SELECT',
-): void {
+): { getRunDataLimits: number[] } {
+  const getRunDataLimits: number[] = [];
   const executor: Executor = {
     databaseId,
     runQuery: async () => ({
@@ -68,13 +77,18 @@ function registerStubExecutor(
       rowsAffected,
       commandTag,
     }),
-    getRunData: async () => ({
-      rows: Array.from({ length: rowsRead }, (_, i) => ({ n: i + 1 })),
-      columns: [{ name: 'n', type: 'INT8' }],
-    }),
+    getRunData: async (_runId, limit) => {
+      getRunDataLimits.push(limit);
+      const count = Math.min(limit, totalRowCount);
+      return {
+        rows: Array.from({ length: count }, (_, i) => ({ n: i + 1 })),
+        columns: [{ name: 'n', type: 'INT8' }],
+      };
+    },
     cancelQuery: () => {},
   };
   registerExecutor(executor);
+  return { getRunDataLimits };
 }
 
 const visualizeCmd = (databaseRef: string): VisualizeCommand => ({
@@ -131,11 +145,11 @@ describe('dispatch visualize', () => {
   });
 
   test('reports the true total row count, not the capped number read', async () => {
-    // The run produced 10,000 rows but only 50 were read back (the cap). The
-    // result must report the total (10,000), not the capped read (50), so the
-    // agent knows the output was truncated.
+    // The run produced 10,000 rows but the command's limit is 50. The result
+    // must report the total (10,000), not the capped read (50), so the agent
+    // knows the output was truncated.
     const { deps } = makeDeps(['db1']);
-    registerStubExecutor('db1', 10_000, 50);
+    registerStubExecutor('db1', 10_000);
     const result = (await dispatch(
       'visualize',
       visualizeCmd('db1'),
@@ -145,12 +159,32 @@ describe('dispatch visualize', () => {
     expect(result.rows.length).toBe(50);
   });
 
+  test('charts the full result set even when the agent caps returned rows', async () => {
+    // Regression: the run produced 59 rows but the agent requested only 5 (to
+    // keep its context small). The 5-row cap must apply ONLY to the rows
+    // returned to the agent — the chart must still be fed all 59 rows, or the
+    // rendered image shows just the first 5 points. The chart read must request
+    // far more than the agent's row cap.
+    const { deps } = makeDeps(['db1']);
+    const { getRunDataLimits } = registerStubExecutor('db1', 59);
+    const result = (await dispatch(
+      'visualize',
+      { ...visualizeCmd('db1'), view: 'chart', limit: 5 },
+      deps,
+    )) as VisualizeResult;
+    // The agent gets only its requested 5 rows back...
+    expect(result.rows.length).toBe(5);
+    expect(result.rowCount).toBe(59);
+    // ...but the chart was fed the full result set, not the 5-row cap.
+    expect(Math.max(...getRunDataLimits)).toBeGreaterThanOrEqual(59);
+  });
+
   test('carries the command-tag rowsAffected through to the result', async () => {
     // The run's command-tag count (e.g. rows touched by a DELETE) is reported
     // separately from the total row count, and must reach the result so the
     // structured tool output's rows_affected is accurate.
     const { deps } = makeDeps(['db1']);
-    registerStubExecutor('db1', 0, 0, 7);
+    registerStubExecutor('db1', 0, 7);
     const result = (await dispatch(
       'visualize',
       visualizeCmd('db1'),
@@ -163,7 +197,7 @@ describe('dispatch visualize', () => {
     // The Postgres command tag (e.g. "DELETE") must reach the result so the
     // structured tool output's command_tag matches the server-side query path.
     const { deps } = makeDeps(['db1']);
-    registerStubExecutor('db1', 0, 0, 7, 'DELETE');
+    registerStubExecutor('db1', 0, 7, 'DELETE');
     const result = (await dispatch(
       'visualize',
       visualizeCmd('db1'),
@@ -260,5 +294,41 @@ describe('dispatch chart', () => {
     )) as ChartResult;
     expect(result.image).toBeUndefined();
     expect(result.chartError).toBeTruthy();
+  });
+});
+
+describe('dispatch uiState', () => {
+  afterEach(() => {
+    const cleanup = registerExecutor({
+      databaseId: 'reset',
+      runQuery: async () => ({
+        runId: 'r',
+        status: 'success' as const,
+        rowCount: 0,
+        rowsAffected: 0,
+        commandTag: 'SELECT',
+      }),
+      getRunData: async () => ({ rows: [], columns: [] }),
+      cancelQuery: () => {},
+    });
+    cleanup();
+  });
+
+  test('charts the full last-run result even when caps returned rows', async () => {
+    // Regression: like the visualize path, ghost_ui_state must feed the chart
+    // the full result set, not the agent's row cap. The last run produced 59
+    // rows but the agent requested only 5; the chart read must request far more
+    // than 5, while the returned rows stay capped at 5.
+    const { deps } = makeDeps(['db1']);
+    const { getRunDataLimits } = registerStubExecutor('db1', 59);
+    deps.getLastRun = () => ({ ...stubLastRun('db1'), rowCount: 59 });
+    const result = (await dispatch(
+      'uiState',
+      { limit: 5 },
+      deps,
+    )) as UIStateResult;
+    expect(result.lastRun?.rows?.length).toBe(5);
+    expect(result.lastRun?.rowCount).toBe(59);
+    expect(Math.max(...getRunDataLimits)).toBeGreaterThanOrEqual(59);
   });
 });
