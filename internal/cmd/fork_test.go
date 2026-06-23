@@ -166,7 +166,7 @@ func TestForkCmd(t *testing.T) {
 						JSONDefault:  &api.Error{Message: "compute limit has been exceeded", Code: new(api.ErrorCodeComputeLimitExceeded)},
 					}, nil)
 			},
-			wantErr: "this space has reached its compute limit, so it cannot fork a database\n\nRaise or remove the limit with 'ghost overages enable', or wait until your free\nallowance resets next cycle",
+			wantErr: "this space has reached its compute limit, so you can't fork a database\n\nRaise or remove the limit with 'ghost overages enable', or wait until your allowance\nresets next cycle",
 		},
 		{
 			name: "nil response body on fork",
