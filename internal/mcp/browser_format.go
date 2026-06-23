@@ -61,17 +61,26 @@ func browserResultSet(columns []browserColumn, rows [][]any, rowsAffected int64,
 // json.Number (the browser response is decoded with UseNumber), whose String()
 // is the exact source literal — so a large or whole number stays e.g.
 // "10000000" rather than being re-rendered in exponent form ("1e+07") as a
-// float64 would. Non-scalar values (JSON/JSONB objects and arrays, which the
-// browser decodes into maps/slices) are re-marshaled to JSON so they read as
-// valid JSON text (e.g. {"a":"b"}) rather than Go's debug format (e.g.
-// map[a:b]); the marshal can't realistically fail for a JSON-decoded value, but
-// if it did we fall back to fmt.Sprintf.
+// float64 would. Booleans render as Postgres's text representation ("t"/"f"),
+// not JSON's "true"/"false", again matching the server-side path. Non-scalar
+// values (JSON/JSONB objects and arrays, which the browser decodes into
+// maps/slices) are re-marshaled to JSON so they read as valid JSON text (e.g.
+// {"a":"b"}) rather than Go's debug format (e.g. map[a:b]); the marshal can't
+// realistically fail for a JSON-decoded value, but if it did we fall back to
+// fmt.Sprintf.
 func stringifyCell(v any) string {
 	switch val := v.(type) {
 	case nil:
 		return "NULL"
 	case string:
 		return val
+	case bool:
+		// Postgres text format for booleans is t/f (what common.ExecuteQuery
+		// returns by scanning into *string), not JSON's true/false.
+		if val {
+			return "t"
+		}
+		return "f"
 	case json.Number:
 		return val.String()
 	case map[string]any, []any:

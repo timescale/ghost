@@ -82,7 +82,10 @@ func TestStringifyCell(t *testing.T) {
 		{name: "string passes through", in: "hello", want: "hello"},
 		{name: "number is formatted", in: 42, want: "42"},
 		{name: "float is formatted", in: 1.5, want: "1.5"},
-		{name: "bool is formatted", in: true, want: "true"},
+		// Booleans render in Postgres text format (t/f), matching
+		// common.ExecuteQuery, not JSON's true/false.
+		{name: "bool true becomes t", in: true, want: "t"},
+		{name: "bool false becomes f", in: false, want: "f"},
 		// Numbers arrive as json.Number (browser response decoded with
 		// UseNumber). Its source literal must be preserved exactly — a large or
 		// whole number must NOT be re-rendered in exponent form, as a float64
