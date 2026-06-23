@@ -101,7 +101,11 @@ func (s *Server) handleUIState(ctx context.Context, req *mcp.CallToolRequest, in
 	if result.LastRun != nil {
 		output.LastRunStatus = result.LastRun.Status
 		output.LastRunError = result.LastRun.Error
-		if len(result.LastRun.Columns) > 0 || len(result.LastRun.Rows) > 0 {
+		// Emit a result set for any successful run — including a no-row/no-column
+		// run (UPDATE/DELETE/DDL) — so its command_tag and rows_affected survive
+		// in the structured output, matching the visualize path (which always
+		// emits one). A failed run carries no meaningful result set, so skip it.
+		if result.LastRun.Status == "success" {
 			output.ResultSets = []common.ResultSet{browserResultSet(result.LastRun.Columns, result.LastRun.Rows, result.LastRun.RowsAffected, result.LastRun.CommandTag)}
 		}
 	}
