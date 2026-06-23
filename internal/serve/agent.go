@@ -165,7 +165,13 @@ func (b *Bridge) removeClient(c *agentClient) {
 	if idx == -1 {
 		return
 	}
-	b.clients = append(b.clients[:idx], b.clients[idx+1:]...)
+	// Shift the tail down and clear the now-unused final slot so the departed
+	// client (and its channels) can be garbage-collected: a plain
+	// append(clients[:idx], clients[idx+1:]...) leaves the removed pointer
+	// lingering in the backing array's stale slot when removing the last element.
+	copy(b.clients[idx:], b.clients[idx+1:])
+	b.clients[len(b.clients)-1] = nil
+	b.clients = b.clients[:len(b.clients)-1]
 	close(c.done)
 
 	if b.activeID != c.id {
