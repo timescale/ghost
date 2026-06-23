@@ -32,13 +32,17 @@ export function useAgentBridge(databases: Database[]): void {
     // Only one command runs at a time (the server serializes dispatch).
     let inFlightCommandId: string | null = null;
     let inFlightAbort: AbortController | null = null;
-    // The request ID of a 'cancel' that arrived before its 'command' did. The
-    // server can resolve a request (cancel + supersede) while the command-
-    // dispatch send is still racing on its event channel, so the command can
-    // land *after* the cancel — or, when the race resolves the request instead
-    // of sending, never arrive at all. A single slot suffices because the server
-    // keeps at most one command in flight; it's overwritten by any later cancel
-    // and cleared when its command arrives, so it can't grow unbounded.
+    // The request ID of a 'cancel' that arrived before its 'command' did.
+    // Defensive: the server (see internal/serve/agent.go) now sends a cancel
+    // only from Request, and only AFTER the command has been enqueued to this
+    // same client's FIFO event channel — so a cancel can't normally overtake
+    // its command, and cancelCommand should hit the inFlightCommandId branch.
+    // This slot guards the residual case of out-of-order delivery (e.g. an
+    // EventSource/proxy reordering quirk): if a cancel still lands first,
+    // runCommand skips the abandoned command when it arrives. A single slot
+    // suffices because the server keeps at most one command in flight; it's
+    // overwritten by any later cancel and cleared when its command arrives, so
+    // it can't grow unbounded.
     let preemptedCommandId: string | null = null;
 
     const resolveDatabaseId = (ref: string): string | null => {
