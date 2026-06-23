@@ -1,12 +1,67 @@
+import type { EChartsOption } from 'echarts';
+
 import { buildChartOption } from '../components/chart/buildChartOption';
-import { getECharts } from '../components/chart/echarts';
+import { type EChartsInstance, getECharts } from '../components/chart/echarts';
 import type { ChartData } from '../components/chart/types';
+
+// The chart option we render, with animation forced off for the capture.
+type CaptureOption = EChartsOption & { animation: false };
+// ECharts' getDataURL accepts the same color shape as a config's
+// backgroundColor (a color string, or a gradient/pattern object).
+type BackgroundColor = EChartsOption['backgroundColor'];
 
 // Fixed pixel size for agent-facing chart screenshots. Rendered at 2x for a
 // crisp image the agent can inspect.
 const CHART_WIDTH = 1200;
 const CHART_HEIGHT = 800;
 const PIXEL_RATIO = 2;
+
+// Maximum time to wait for ECharts to finish rendering before capturing anyway.
+// The 'finished' event normally fires within a frame or two; this is only a
+// safety net so a chart that somehow never settles can't hang the capture (the
+// agent bridge enforces its own request timeout on top of this).
+const RENDER_TIMEOUT_MS = 10_000;
+
+// renderToDataURL applies the option and resolves with the captured PNG only
+// once ECharts has *finished* rendering. ECharts renders large series
+// progressively, across multiple animation frames (driven by the per-series
+// `progressive`/`progressiveThreshold` options, default 3000 elements), so a
+// single requestAnimationFrame tick isn't enough — getDataURL would grab a
+// partial graph. The 'finished' event fires once the chart goes idle (all
+// progressive chunks painted and any animation settled), which is the correct
+// signal that the fresh result set has been fully rendered.
+//
+// The listener is attached *before* setOption so the event can't be missed:
+// ECharts emits 'finished' asynchronously on a later frame, never synchronously
+// within setOption. A timeout fallback captures whatever is rendered rather
+// than hanging, should 'finished' never arrive.
+function renderToDataURL(
+  chart: EChartsInstance,
+  option: CaptureOption,
+  backgroundColor: BackgroundColor,
+): Promise<string> {
+  return new Promise<string>((resolve) => {
+    const capture = () =>
+      resolve(
+        chart.getDataURL({
+          type: 'png',
+          pixelRatio: PIXEL_RATIO,
+          backgroundColor,
+        }),
+      );
+    const onFinished = () => {
+      chart.off('finished', onFinished);
+      clearTimeout(timer);
+      capture();
+    };
+    const timer = setTimeout(() => {
+      chart.off('finished', onFinished);
+      capture();
+    }, RENDER_TIMEOUT_MS);
+    chart.on('finished', onFinished);
+    chart.setOption(option, { notMerge: true });
+  });
+}
 
 // renderChartImage evaluates the chart config against the data and renders it
 // to a PNG data URL, off-screen. It creates a detached, fixed-size container,
@@ -26,9 +81,13 @@ export async function renderChartImage(
   // Force animation off for the capture: ECharts animates the initial render,
   // and getDataURL grabs whatever is on the canvas at that instant — so an
   // animated chart is usually captured mid-transition (a partial graph).
-  // Disabling animation makes the first painted frame the final one. This only
-  // affects the off-screen screenshot, never the live on-screen chart.
-  const option = { ...buildChartOption(config, data), animation: false };
+  // Disabling animation removes the animation phase; we still wait for the
+  // 'finished' event (see renderToDataURL) to cover progressive rendering. This
+  // only affects the off-screen screenshot, never the live on-screen chart.
+  const option: CaptureOption = {
+    ...buildChartOption(config, data),
+    animation: false,
+  };
 
   // getDataURL's backgroundColor *overrides* the option's backgroundColor for
   // the exported image. ECharts paints a transparent background by default, so
@@ -42,7 +101,9 @@ export async function renderChartImage(
     typeof optionBackground === 'string'
       ? optionBackground !== ''
       : optionBackground != null && typeof optionBackground === 'object';
-  const backgroundColor = hasBackground ? optionBackground : '#ffffff';
+  const backgroundColor: BackgroundColor = hasBackground
+    ? optionBackground
+    : '#ffffff';
 
   const container = document.createElement('div');
   container.style.position = 'absolute';
@@ -61,18 +122,10 @@ export async function renderChartImage(
       height: CHART_HEIGHT,
     });
     try {
-      chart.setOption(option, { notMerge: true });
-      // Wait for the render to flush before capturing. ECharts renders
-      // synchronously on setOption by default, but a rAF tick ensures any
-      // deferred layout (e.g. animations disabled) has settled.
-      await new Promise((resolve) =>
-        requestAnimationFrame(() => resolve(null)),
-      );
-      return chart.getDataURL({
-        type: 'png',
-        pixelRatio: PIXEL_RATIO,
-        backgroundColor,
-      });
+      // Wait for ECharts to finish rendering (including progressive rendering
+      // of large result sets) before capturing, so the screenshot always
+      // reflects the fully-rendered fresh data rather than a partial frame.
+      return await renderToDataURL(chart, option, backgroundColor);
     } finally {
       chart.dispose();
     }

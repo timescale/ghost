@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  jest,
+  mock,
+  test,
+} from 'bun:test';
 
 import type { ChartData } from '../components/chart/types';
 
@@ -7,23 +15,49 @@ import type { ChartData } from '../components/chart/types';
 interface Capture {
   option: Record<string, unknown> | null;
   getDataURLArg: Record<string, unknown> | null;
+  // Order of lifecycle events observed on the stub chart instance, used to
+  // assert that the image is captured only after rendering has 'finished'.
+  events: string[];
 }
 
-const capture: Capture = { option: null, getDataURLArg: null };
+const capture: Capture = { option: null, getDataURLArg: null, events: [] };
 
-function installECharts(): void {
+// installECharts installs a stub ECharts global. The stub models the
+// 'finished' event: setOption schedules it on a microtask (as real ECharts
+// fires it asynchronously on a later frame, never synchronously within
+// setOption), and renderToDataURL must wait for it before calling getDataURL.
+// When fireFinished is false, the event never fires, exercising the timeout
+// fallback.
+function installECharts(fireFinished = true): void {
   (globalThis as unknown as { window: Record<string, unknown> }).window = {
     echarts: {
-      init: () => ({
-        setOption: (option: Record<string, unknown>) => {
-          capture.option = option;
-        },
-        getDataURL: (arg: Record<string, unknown>) => {
-          capture.getDataURLArg = arg;
-          return 'data:image/png;base64,STUB';
-        },
-        dispose: () => {},
-      }),
+      init: () => {
+        const listeners: Record<string, () => void> = {};
+        return {
+          on: (event: string, handler: () => void) => {
+            listeners[event] = handler;
+          },
+          off: (event: string) => {
+            delete listeners[event];
+          },
+          setOption: (option: Record<string, unknown>) => {
+            capture.option = option;
+            capture.events.push('setOption');
+            if (fireFinished) {
+              queueMicrotask(() => {
+                capture.events.push('finished');
+                listeners.finished?.();
+              });
+            }
+          },
+          getDataURL: (arg: Record<string, unknown>) => {
+            capture.getDataURLArg = arg;
+            capture.events.push('getDataURL');
+            return 'data:image/png;base64,STUB';
+          },
+          dispose: () => {},
+        };
+      },
     },
   };
 }
@@ -31,6 +65,7 @@ function installECharts(): void {
 beforeEach(() => {
   capture.option = null;
   capture.getDataURLArg = null;
+  capture.events = [];
   // Minimal DOM stubs: renderChartImage creates a detached container and
   // appends/removes it from document.body.
   (globalThis as unknown as { document: unknown }).document = {
@@ -89,5 +124,40 @@ describe('renderChartImage', () => {
     }`;
     await renderChartImage(config, data);
     expect(capture.getDataURLArg?.backgroundColor).toBe('#ffffff');
+  });
+
+  test('captures only after rendering has finished', async () => {
+    // The screenshot must reflect the fully-rendered chart. Real ECharts renders
+    // large series progressively across frames and signals completion with the
+    // 'finished' event; getDataURL must run only after it, never on setOption.
+    const { renderChartImage } = await import('./screenshot');
+    const config = `function chart(data) {
+      return { series: [] };
+    }`;
+    await renderChartImage(config, data);
+    expect(capture.events).toEqual(['setOption', 'finished', 'getDataURL']);
+  });
+
+  test('captures anyway if rendering never finishes (timeout fallback)', async () => {
+    // Should 'finished' never fire, the capture must not hang: a timeout
+    // fallback still produces an image (the latest rendered frame). Fake timers
+    // let us drive the fallback without waiting out the real timeout.
+    const { renderChartImage } = await import('./screenshot');
+    installECharts(false);
+    jest.useFakeTimers();
+    try {
+      const config = `function chart(data) {
+        return { series: [] };
+      }`;
+      const promise = renderChartImage(config, data);
+      // The timeout is registered synchronously while renderChartImage runs up
+      // to its first await; advancing past it triggers the fallback capture.
+      jest.advanceTimersByTime(10_000);
+      const image = await promise;
+      expect(image).toBe('data:image/png;base64,STUB');
+      expect(capture.events).toEqual(['setOption', 'getDataURL']);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
