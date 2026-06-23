@@ -57,17 +57,23 @@ func browserResultSet(columns []browserColumn, rows [][]any, rowsAffected int64,
 // stringifyCell renders a JSON-decoded cell value as a string. A nil cell is a
 // SQL NULL and becomes the literal "NULL" — matching common.ExecuteQuery's
 // server-side path — so ghost_sql results don't depend on whether visualize was
-// used, and a SQL NULL stays distinct from an empty string. Non-scalar values
-// (JSON/JSONB objects and arrays, which the browser decodes into maps/slices)
-// are re-marshaled to JSON so they read as valid JSON text (e.g. {"a":"b"})
-// rather than Go's debug format (e.g. map[a:b]); the marshal can't realistically
-// fail for a JSON-decoded value, but if it did we fall back to fmt.Sprintf.
+// used, and a SQL NULL stays distinct from an empty string. Numbers arrive as
+// json.Number (the browser response is decoded with UseNumber), whose String()
+// is the exact source literal — so a large or whole number stays e.g.
+// "10000000" rather than being re-rendered in exponent form ("1e+07") as a
+// float64 would. Non-scalar values (JSON/JSONB objects and arrays, which the
+// browser decodes into maps/slices) are re-marshaled to JSON so they read as
+// valid JSON text (e.g. {"a":"b"}) rather than Go's debug format (e.g.
+// map[a:b]); the marshal can't realistically fail for a JSON-decoded value, but
+// if it did we fall back to fmt.Sprintf.
 func stringifyCell(v any) string {
 	switch val := v.(type) {
 	case nil:
 		return "NULL"
 	case string:
 		return val
+	case json.Number:
+		return val.String()
 	case map[string]any, []any:
 		if b, err := json.Marshal(val); err == nil {
 			return string(b)

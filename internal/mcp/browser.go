@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -153,7 +154,13 @@ func (c *browserController) request(ctx context.Context, commandType string, pay
 		return err
 	}
 	if out != nil && len(data) > 0 {
-		if err := json.Unmarshal(data, out); err != nil {
+		// Decode numbers as json.Number, not float64, so cell values keep their
+		// exact literal text. Plain float64 decoding would re-render large or
+		// whole numbers in exponent form (e.g. 10000000 -> "1e+07") when
+		// stringified, diverging from the server-side query path's text output.
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.UseNumber()
+		if err := dec.Decode(out); err != nil {
 			return fmt.Errorf("failed to parse browser response: %w", err)
 		}
 	}

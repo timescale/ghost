@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -82,6 +83,14 @@ func TestStringifyCell(t *testing.T) {
 		{name: "number is formatted", in: 42, want: "42"},
 		{name: "float is formatted", in: 1.5, want: "1.5"},
 		{name: "bool is formatted", in: true, want: "true"},
+		// Numbers arrive as json.Number (browser response decoded with
+		// UseNumber). Its source literal must be preserved exactly — a large or
+		// whole number must NOT be re-rendered in exponent form, as a float64
+		// would (e.g. 10000000 -> "1e+07").
+		{name: "json.Number large whole stays decimal", in: json.Number("10000000"), want: "10000000"},
+		{name: "json.Number very large stays decimal", in: json.Number("1234567890123"), want: "1234567890123"},
+		{name: "json.Number tiny stays decimal", in: json.Number("0.0000001"), want: "0.0000001"},
+		{name: "json.Number float passes through", in: json.Number("1.5"), want: "1.5"},
 		// JSON/JSONB cells arrive decoded as maps/slices; they must render as
 		// valid JSON, not Go's debug format (e.g. not "map[a:b]").
 		{name: "json object is marshaled", in: map[string]any{"a": "b"}, want: `{"a":"b"}`},
