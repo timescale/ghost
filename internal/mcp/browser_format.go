@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -56,13 +57,21 @@ func browserResultSet(columns []browserColumn, rows [][]any, rowsAffected int64,
 // stringifyCell renders a JSON-decoded cell value as a string. A nil cell is a
 // SQL NULL and becomes the literal "NULL" — matching common.ExecuteQuery's
 // server-side path — so ghost_sql results don't depend on whether visualize was
-// used, and a SQL NULL stays distinct from an empty string.
+// used, and a SQL NULL stays distinct from an empty string. Non-scalar values
+// (JSON/JSONB objects and arrays, which the browser decodes into maps/slices)
+// are re-marshaled to JSON so they read as valid JSON text (e.g. {"a":"b"})
+// rather than Go's debug format (e.g. map[a:b]); the marshal can't realistically
+// fail for a JSON-decoded value, but if it did we fall back to fmt.Sprintf.
 func stringifyCell(v any) string {
-	if v == nil {
+	switch val := v.(type) {
+	case nil:
 		return "NULL"
-	}
-	if s, ok := v.(string); ok {
-		return s
+	case string:
+		return val
+	case map[string]any, []any:
+		if b, err := json.Marshal(val); err == nil {
+			return string(b)
+		}
 	}
 	return fmt.Sprintf("%v", v)
 }

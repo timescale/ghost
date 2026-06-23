@@ -82,6 +82,11 @@ func TestStringifyCell(t *testing.T) {
 		{name: "number is formatted", in: 42, want: "42"},
 		{name: "float is formatted", in: 1.5, want: "1.5"},
 		{name: "bool is formatted", in: true, want: "true"},
+		// JSON/JSONB cells arrive decoded as maps/slices; they must render as
+		// valid JSON, not Go's debug format (e.g. not "map[a:b]").
+		{name: "json object is marshaled", in: map[string]any{"a": "b"}, want: `{"a":"b"}`},
+		{name: "json array is marshaled", in: []any{1.0, "x", true}, want: `[1,"x",true]`},
+		{name: "nested json is marshaled", in: map[string]any{"k": []any{1.0, 2.0}}, want: `{"k":[1,2]}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
