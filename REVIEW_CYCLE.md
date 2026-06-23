@@ -260,5 +260,51 @@ issues that clustered tightly around the `dispatch.ts` cancel-handling area
 before drying up entirely in round 9. Per the request ("continue the loop with
 just gpt … until its findings drop off"), the cycle is complete.
 
-**Final totals:** 20 fixed, 1 deferred (negligible + risky), 3 invalid.
+**Final totals (R1–R9):** 20 fixed, 1 deferred (negligible + risky), 3 invalid.
 `./check` (Go) and `bun typecheck`/`lint`/`test` (web) all pass.
+
+---
+
+## Round 10 — model: `anthropic/claude-opus-4-8`
+
+Re-opened the loop with an opus reviewer after two post-convergence commits
+landed (`7ff1b73` screenshot long-edge cap, `78eed9a` chartConfigHistory
+persistence). Opus found **no correctness bugs** and explicitly verified the
+persistence + cancel subsystems clean; it surfaced two low-severity items, both
+addressed.
+
+1. **`awaitExecutor` not passed the abort signal** — _fixed_ (`7b60a03`).
+   `handleVisualize` awaited `awaitExecutor(databaseId, EXECUTOR_WAIT_MS)`
+   without the signal. When a visualize command switches the selected database,
+   `QueryPanel` remounts and the wait blocks until the new panel registers its
+   executor (or 15s). If the request was canceled/timed-out/superseded or the
+   SSE stream dropped during that sub-second remount window, the abort fired but
+   `awaitExecutor` kept waiting — the command only bailed once the executor
+   finally mounted (then `runQuery` sees the aborted signal) or after the full
+   timeout, during which the browser kept sending heartbeats for an abandoned
+   request. Threaded an optional `AbortSignal` into `awaitExecutor` (bail if
+   already aborted; reject promptly and drop the waiter if it aborts while
+   waiting); `handleVisualize` now passes its signal, bringing the pre-run wait
+   to parity with `handleChart`'s post-read abort re-check. Added two executor
+   tests (already-aborted, aborts-while-waiting).
+
+2. **Stale `preemptedCommandId` race comment in `useAgentBridge.ts`** — _comment
+   fixed; slot kept_ (`1cbecb8`). The comment described the pre-round-5 design
+   where `Activate`/`removeClient` issued their own best-effort cancel
+   concurrently with the command dispatch, so a cancel could race ahead of its
+   command. The round-5 refactor made `Bridge.Request` the single owner of
+   cancel delivery: `sendCancelReliably` is invoked only from `Request`, always
+   *after* the command was enqueued to the same client's FIFO event channel — so
+   a cancel can't normally overtake its command, making the `preemptedCommandId`
+   path effectively unreachable. Kept the slot as harmless defense-in-depth
+   against out-of-order delivery (e.g. an EventSource/proxy reordering quirk;
+   the reviewer itself flagged low confidence about EventSource internals, and
+   removing the safety net to save ~3 lines would re-open the class of bug
+   rounds 5/7/8 fixed), but rewrote the comment to describe current server
+   behavior and the slot's now-residual role.
+
+**Round 10 result:** 2 fixed (1 real edge-case fix, 1 stale-comment
+correction). No correctness defects found — the branch remains in very good
+shape; the findings are consistent with the narrowing trajectory.
+
+**Updated totals (R1–R10):** 22 fixed, 1 deferred, 3 invalid.
