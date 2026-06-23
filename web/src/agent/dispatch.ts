@@ -157,9 +157,12 @@ async function handleVisualize(
 }
 
 // handleChart reapplies a chart config to the last run and re-renders it.
+// `signal` aborts the command if it's canceled, superseded, or the SSE stream
+// drops — so an abandoned command can't clobber the UI after its request failed.
 async function handleChart(
   cmd: ChartCommand,
   deps: DispatchDeps,
+  signal: AbortSignal,
 ): Promise<ChartResultWire> {
   // Validate BEFORE mutating the UI: if there's no mounted executor or no
   // matching last run, this command fails, and it must not clobber the user's
@@ -189,7 +192,28 @@ async function handleChart(
   // Read the full result for charting (the chart caps internally).
   const data = await executor.getRunData(lastRun.runId, CHART_ROW_LIMIT);
 
-  // Results are readable: now apply the config and switch to the chart view.
+  // The command may have been abandoned during the read (canceled, another tab
+  // took over, or the SSE stream dropped — all of which abort the signal, and
+  // the server has already failed the request). Bail before mutating so an
+  // abandoned command can't overwrite the user's chart config or switch their
+  // view. Also re-check the executor/run still match: a database switch during
+  // the read would remount the panel, so applying now would target the wrong DB.
+  if (signal.aborted) {
+    throw new Error('the chart command was canceled');
+  }
+  const currentExecutor = getExecutor();
+  const currentRun = deps.getLastRun();
+  if (
+    currentExecutor !== executor ||
+    currentRun?.runId !== lastRun.runId ||
+    currentRun?.databaseId !== lastRun.databaseId
+  ) {
+    throw new Error(
+      'the active query run changed before the chart could apply',
+    );
+  }
+
+  // Results are readable and still current: apply the config and switch view.
   deps.setChartConfig(cmd.chartConfig);
   deps.setResultView('chart');
 
@@ -272,9 +296,10 @@ async function handleUIState(
 }
 
 // dispatch routes a command to its handler and returns the JSON-serializable
-// result the server will deliver to the MCP tool. `signal` aborts the command's
-// own in-flight query (only `visualize` runs one); `chart`/`uiState` read cached
-// data and don't start a query, so they ignore it.
+// result the server will deliver to the MCP tool. `signal` aborts the command
+// if its request is abandoned: `visualize` wires it to cancel its in-flight
+// query, and `chart` checks it before mutating the UI after its (async) results
+// read. `uiState` is read-only and short, so it ignores the signal.
 export async function dispatch(
   type: string,
   payload: unknown,
@@ -285,7 +310,7 @@ export async function dispatch(
     case 'visualize':
       return handleVisualize(payload as VisualizeCommand, deps, signal);
     case 'chart':
-      return handleChart(payload as ChartCommand, deps);
+      return handleChart(payload as ChartCommand, deps, signal);
     case 'uiState':
       return handleUIState(payload as UIStateCommand, deps);
     default:

@@ -390,6 +390,48 @@ describe('dispatch chart', () => {
     expect(resultViews).toEqual([]);
   });
 
+  test('does not mutate the UI when aborted during the results read', async () => {
+    // The command is valid, but it's abandoned (canceled / takeover / SSE drop)
+    // while getRunData is in flight. handleChart must observe the abort after
+    // the read and reject without applying the config or switching the view —
+    // otherwise an abandoned command clobbers the UI after its request failed.
+    const { deps, chartConfig, resultViews } = makeDeps(['db1']);
+    const controller = new AbortController();
+    let resolveRead:
+      | ((data: { rows: never[]; columns: never[] }) => void)
+      | null = null;
+    const executor: Executor = {
+      databaseId: 'db1',
+      runQuery: async () => ({
+        runId: 'run-1',
+        status: 'success' as const,
+        rowCount: 1,
+        rowsAffected: 1,
+        commandTag: 'SELECT',
+      }),
+      getRunData: () =>
+        new Promise((resolve) => {
+          resolveRead = resolve;
+        }),
+    };
+    registerExecutor(executor);
+    deps.getLastRun = () => stubLastRun('db1');
+
+    const promise = dispatch(
+      'chart',
+      { chartConfig: 'function chart(){}' },
+      deps,
+      controller.signal,
+    );
+    // Abort while the read is still pending, then let the read resolve.
+    controller.abort();
+    resolveRead?.({ rows: [], columns: [] });
+
+    await expect(promise).rejects.toThrow('the chart command was canceled');
+    expect(chartConfig()).toBe('');
+    expect(resultViews).toEqual([]);
+  });
+
   test('reports a render failure as chartError instead of throwing', async () => {
     // ECharts isn't loaded in the test environment, so rendering fails. Like the
     // visualize path, handleChart must surface that as chartError without
