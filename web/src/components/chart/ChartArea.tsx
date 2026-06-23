@@ -27,7 +27,9 @@ export function ChartArea({ runId, view, config, onConfigChange }: Props) {
   const { data, loading, error } = useChartData(runId);
   const chartEditorWidth = useServeStore((s) => s.chartEditorWidth);
   const setChartEditorWidth = useServeStore((s) => s.setChartEditorWidth);
-  const { recordRenderSuccess, markApplied } = useChartConfigRecorder();
+  // Seed the recorder's baseline with the config loaded at mount, so the first
+  // user-authored edit is recorded even if it happens before the first render.
+  const { recordRenderSuccess, markApplied } = useChartConfigRecorder(config);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   // Applying a config from history: mark it so the recorder doesn't treat it as

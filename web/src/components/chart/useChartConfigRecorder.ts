@@ -22,19 +22,28 @@ export interface ChartConfigRecorder {
 // useChartConfigRecorder records chart configs into history, but only ones the
 // user authored by editing — never the config that's merely loaded on startup
 // or restored from history. It works off a "baseline" (the last config that was
-// loaded/applied/recorded): the first successful render seeds the baseline
-// without recording, and afterwards a render success records the current config
-// only if it differs from the baseline. The store additionally deduplicates
-// globally, so a config matching an existing entry is promoted rather than
-// duplicated.
-export function useChartConfigRecorder(): ChartConfigRecorder {
+// loaded/applied/recorded): a render success records the current config only if
+// it differs from the baseline. The store additionally deduplicates globally,
+// so a config matching an existing entry is promoted rather than duplicated.
+//
+// `initialConfig` is the config loaded when the hook mounts (from persisted
+// state or the default). It seeds the baseline synchronously, so the very first
+// config the user authors is recorded even if they edit it before the first
+// render or within the record debounce. (Seeding lazily on the first render
+// would instead swallow that first edited config as the baseline.)
+export function useChartConfigRecorder(
+  initialConfig: string,
+): ChartConfigRecorder {
   const addChartConfigHistoryEntry = useServeStore(
     (s) => s.addChartConfigHistoryEntry,
   );
 
-  // The config we won't record (loaded/applied/just-recorded). null until the
-  // first successful render seeds it.
-  const baselineRef = useRef<string | null>(null);
+  // The config we won't record (loaded/applied/just-recorded). Seeded
+  // synchronously from the config present when the hook mounts, so a user edit
+  // made before the first render is still recognized as a change from baseline.
+  // useRef's initializer runs only on mount, so later initialConfig changes
+  // (e.g. live edits flowing back through props) don't reset the baseline.
+  const baselineRef = useRef<string>(initialConfig);
 
   const recordRenderSuccess = useMemo(
     () =>
@@ -42,11 +51,6 @@ export function useChartConfigRecorder(): ChartConfigRecorder {
       // whatever is in the store when the debounce fires — the user may have
       // edited it to something invalid/unrendered in the meantime.
       debounce((config: string) => {
-        // Seed the baseline on the first render; never record it.
-        if (baselineRef.current === null) {
-          baselineRef.current = config;
-          return;
-        }
         if (config.trim() === baselineRef.current.trim()) return;
         baselineRef.current = config;
         addChartConfigHistoryEntry(config);

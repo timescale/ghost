@@ -123,6 +123,17 @@ export function useAgentBridge(databases: Database[]): void {
       preemptedCommandId = requestId;
     };
 
+    // abortInFlightCommand aborts whatever command is currently running. Used
+    // when the SSE stream drops (or the bridge tears down): the server treats
+    // that disconnect as ErrClientDisconnected and ends the request, so no
+    // later cancel can be delivered. Aborting here cancels a long visualize
+    // query (its run rejects, and runCommand's finally stops the heartbeat) so
+    // it doesn't keep running — and can't still be mutating the UI when
+    // EventSource reconnects with a fresh client and a new command arrives.
+    const abortInFlightCommand = () => {
+      inFlightAbort?.abort();
+    };
+
     source.onopen = () => {
       // The stream is open: the backend is alive. (In plain `ghost serve` this
       // is the only signal; with an agent bridge a status event follows.)
@@ -149,11 +160,16 @@ export function useAgentBridge(databases: Database[]): void {
     source.onerror = () => {
       // EventSource auto-reconnects; reflect the dropped connection meanwhile.
       // Once it reconnects, onopen fires again and clears the disconnected
-      // state. This is what powers the "backend disconnected" banner.
+      // state. This is what powers the "backend disconnected" banner. Abort any
+      // in-flight command: the server has already ended its request on the
+      // disconnect, so finishing it would be wasted work that could still be
+      // mutating the UI when the stream reconnects with a new command.
+      abortInFlightCommand();
       useAgentStore.getState().setDisconnected();
     };
 
     return () => {
+      abortInFlightCommand();
       source.close();
       useAgentStore.getState().setDisconnected();
     };
