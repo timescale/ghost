@@ -107,7 +107,7 @@ async function handleVisualize(
   if (cmd.chartConfig) deps.setChartConfig(cmd.chartConfig);
   deps.setResultView(cmd.view);
 
-  const executor = await awaitExecutor(databaseId, EXECUTOR_WAIT_MS);
+  const executor = await awaitExecutor(databaseId, EXECUTOR_WAIT_MS, signal);
   const outcome = await executor.runQuery(cmd.sql, signal);
   if (outcome.status === 'failed') {
     throw new Error(outcome.error || 'query failed');

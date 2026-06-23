@@ -60,25 +60,41 @@ export function getExecutor(): Executor | null {
 // matching executor is already mounted it resolves immediately; otherwise it
 // waits for one to register (e.g. after the agent switches the selected
 // database and QueryPanel remounts), rejecting if `timeoutMs` elapses first.
+// If `signal` is provided and aborts while waiting, it rejects promptly (and
+// drops its waiter) so an abandoned command doesn't keep waiting for a panel
+// that may never mount — mirroring runQuery's already-aborted bail.
 export function awaitExecutor(
   databaseId: string,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<Executor> {
   if (current && current.databaseId === databaseId) {
     return Promise.resolve(current);
   }
+  if (signal?.aborted) {
+    return Promise.reject(new Error('the command was canceled'));
+  }
   return new Promise<Executor>((resolve, reject) => {
-    const timer = setTimeout(() => {
+    const cleanup = () => {
+      clearTimeout(timer);
       waiters.delete(onRegister);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
       reject(new Error('timed out waiting for the database panel to load'));
     }, timeoutMs);
+    const onAbort = () => {
+      cleanup();
+      reject(new Error('the command was canceled'));
+    };
     const onRegister = (executor: Executor) => {
       // Keep waiting until the database we want mounts.
       if (executor.databaseId !== databaseId) return;
-      clearTimeout(timer);
-      waiters.delete(onRegister);
+      cleanup();
       resolve(executor);
     };
     waiters.add(onRegister);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }

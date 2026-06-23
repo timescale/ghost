@@ -64,4 +64,26 @@ describe('executor registry', () => {
       'timed out waiting for the database panel to load',
     );
   });
+
+  test('awaitExecutor rejects immediately when the signal is already aborted', async () => {
+    const exec = makeExecutor('db2');
+    await expect(
+      awaitExecutor('db1', 1000, AbortSignal.abort()),
+    ).rejects.toThrow('the command was canceled');
+    // The waiter must not have been registered: a later matching register
+    // should not resolve the (already-rejected) promise, and getExecutor
+    // reflects only the real registration.
+    registerExecutor(exec);
+    expect(getExecutor()).toBe(exec);
+  });
+
+  test('awaitExecutor rejects promptly when the signal aborts while waiting', async () => {
+    const controller = new AbortController();
+    const promise = awaitExecutor('db2', 10_000, controller.signal);
+    controller.abort();
+    await expect(promise).rejects.toThrow('the command was canceled');
+    // Aborting must drop the waiter, so a later matching register doesn't try
+    // to resolve the already-rejected promise.
+    registerExecutor(makeExecutor('db2'));
+  });
 });
