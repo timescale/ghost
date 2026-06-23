@@ -147,15 +147,41 @@ are correctly addressed, and found no other issues.
 
 ---
 
+## Round 5 — model: `openai-codex/gpt-5.5`
+
+Both findings valid and fixed.
+
+1. **agent.go cancel can be dropped, letting an abandoned command run** —
+   _fixed_. A takeover/disconnect resolved `p.result` and best-effort
+   `sendCancel`'d the superseded client. But the dispatch `select` races
+   command-send against `p.result`: if send wins after the resolve dropped the
+   cancel (client buffer momentarily full), the command is delivered but the
+   cancel never is. Made `Request` the single, reliable owner of cancel
+   delivery: resolving paths no longer send their own cancel, and `Request`
+   sends one on every error-exit from the heartbeat loop (command already
+   delivered) via a new `sendCancelReliably` that blocks until enqueued / client
+   disconnects / short grace elapses. Regression test fills the superseded
+   client's buffer and asserts the cancel is still delivered. Verified clean
+   under `-race -count=20`.
+2. **screenshot.ts `renderToDataURL` leaks listener/timer on setOption throw** —
+   _fixed_. The promise only had a `resolve`; if `chart.setOption` threw on a
+   malformed (but object-shaped) option, the promise rejected but left the
+   `finished` listener and 10s timeout registered — and `renderChartImage` then
+   disposed the chart, so the timer would later call `getDataURL` on a disposed
+   instance. Added a `reject` path, centralized cleanup (`off` + `clearTimeout`)
+   behind a single-settle guard, and wrapped `setOption`/`getDataURL` so any
+   throw rejects cleanly. Regression test added.
+
+**Round 5 result:** 2 fixed (1 concurrency correctness bug, 1 resource leak).
+
+---
+
 ## Convergence
 
-Across 4 rounds and 4 different reviewer models (gpt-5.5, opus-4.8,
-gemini-3.5-flash, glm-5.1), the findings went from 5 substantive bugs (round 1,
-all fixed) → 5 (round 2, all addressed) → 1 minor + mostly noise (round 3) → 1
-low-severity consistency fix (round 4). Later rounds increasingly produced false
-positives (obsolete Go-timer advice, misread code, a finding that contradicted a
-correct earlier fix). The stream of substantive issues is exhausted; stopping
-here.
+Findings by round: 5 (R1) → 5 (R2) → 1 (R3) → 1 (R4) → 2 (R5). Rounds 3–4 used
+other models and trended toward noise; resuming with gpt-5.5 in round 5 surfaced
+2 more genuine issues (a real concurrency bug + a resource leak), so the loop
+continues with gpt until its findings drop off.
 
-**Totals:** 13 fixed, 1 deferred (negligible + risky), 3 invalid.
+**Running totals:** 15 fixed, 1 deferred (negligible + risky), 3 invalid.
 `./check` (Go) and `bun typecheck`/`lint`/`test` (web) all pass.
