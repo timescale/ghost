@@ -3,7 +3,6 @@ import { useEffect } from 'react';
 import type { ResultView } from '../components/chart/types';
 import { useServeStore } from '../store';
 import { type DispatchDeps, dispatch } from './dispatch';
-import { getExecutor } from './executor';
 import { useAgentStore } from './store';
 import { sendError, sendResult, startHeartbeat } from './transport';
 import type { AgentCommand, AgentServerEvent } from './types';
@@ -28,10 +27,18 @@ export function useAgentBridge(databases: Database[]): void {
   useEffect(() => {
     const source = new EventSource('/api/agent/events');
     let clientId: string | null = null;
-    // The command currently being executed, so a 'cancel' event targeting it
-    // can abort the in-flight query. Only one command runs at a time (the
-    // server serializes dispatch).
+    // The command currently being executed and its AbortController, so a
+    // 'cancel' event targeting it can abort the command's own in-flight query.
+    // Only one command runs at a time (the server serializes dispatch).
     let inFlightCommandId: string | null = null;
+    let inFlightAbort: AbortController | null = null;
+    // Request IDs whose 'cancel' arrived before the 'command' did. The server
+    // can resolve a request (cancel + supersede) while the command-dispatch send
+    // is still racing on its event channel, so the command can land *after* the
+    // cancel. Remembering pre-empted IDs lets runCommand skip a command that was
+    // already canceled, instead of running an abandoned query. Bounded: an entry
+    // is removed as soon as its (late) command arrives.
+    const preemptedCommandIds = new Set<string>();
 
     const resolveDatabaseId = (ref: string): string | null => {
       const list = databasesRef.current;
@@ -64,10 +71,21 @@ export function useAgentBridge(databases: Database[]): void {
 
     const runCommand = async (command: AgentCommand) => {
       if (!clientId) return;
+      // A cancel for this command already arrived (it raced ahead of the command
+      // on the event stream): the server has dropped the request, so don't run
+      // an abandoned query. Just clear the pre-empted marker.
+      if (preemptedCommandIds.delete(command.id)) return;
+      const abort = new AbortController();
       inFlightCommandId = command.id;
+      inFlightAbort = abort;
       const stopHeartbeat = startHeartbeat(clientId, command.id);
       try {
-        const result = await dispatch(command.type, command.payload, deps);
+        const result = await dispatch(
+          command.type,
+          command.payload,
+          deps,
+          abort.signal,
+        );
         await sendResult(clientId, command.id, result);
       } catch (err) {
         await sendError(
@@ -77,18 +95,28 @@ export function useAgentBridge(databases: Database[]): void {
         );
       } finally {
         stopHeartbeat();
-        if (inFlightCommandId === command.id) inFlightCommandId = null;
+        if (inFlightCommandId === command.id) {
+          inFlightCommandId = null;
+          inFlightAbort = null;
+        }
       }
     };
 
-    // cancelCommand aborts the in-flight query when the server signals the
+    // cancelCommand aborts the in-flight command when the server signals the
     // request should be abandoned (caller canceled, timed out, or another tab
-    // took over). The aborted run completes as 'canceled', which rejects the
-    // dispatcher's runQuery and lets runCommand finish (its sendError is then a
-    // no-op since the server already dropped the request).
+    // took over). Aborting the command's own AbortController cancels only its
+    // query (the visualize handler wires the signal to its run) — never an
+    // unrelated query the user kicked off. The aborted run completes as
+    // 'canceled', which rejects the dispatcher's runQuery and lets runCommand
+    // finish (its sendError is then a no-op since the server already dropped the
+    // request). If the cancel races ahead of the command, remember it so
+    // runCommand skips that command when it lands.
     const cancelCommand = (requestId: string) => {
-      if (inFlightCommandId !== requestId) return;
-      getExecutor()?.cancelQuery();
+      if (inFlightCommandId === requestId) {
+        inFlightAbort?.abort();
+        return;
+      }
+      preemptedCommandIds.add(requestId);
     };
 
     source.onopen = () => {

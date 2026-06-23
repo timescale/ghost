@@ -233,15 +233,6 @@ export function QueryPanel({
     [projectId, databaseId],
   );
 
-  // runQuery is the agent-facing entry point: it sets the editor SQL and runs
-  // it via the widget's imperative handle, resolving when the run completes.
-  // cancelRunningQuery aborts the in-flight run via the widget's imperative
-  // handle. The resulting 'canceled' completion resolves any pending agent run
-  // (see handleQueryComplete).
-  const cancelRunningQuery = useCallback(() => {
-    apiRef.current?.cancelQuery();
-  }, []);
-
   // When this panel unmounts (or the database changes, which remounts it), any
   // agent run still awaiting handleQueryComplete will never settle — the
   // completion handler won't fire for a torn-down instance. Reject those
@@ -268,13 +259,19 @@ export function QueryPanel({
   }, [databaseId]);
 
   const runQuery = useCallback(
-    (sql: string): Promise<QueryOutcome> => {
+    (sql: string, signal: AbortSignal): Promise<QueryOutcome> => {
       onQueryChange(sql);
       // Use a plain UUID: the serve backend parses runId as a uuid.UUID, so a
       // prefixed value (e.g. `agent-<uuid>`) fails JSON decoding with "invalid
       // JSON body", surfacing in the UI as a generic "Something went wrong".
       const runId = crypto.randomUUID();
       return new Promise<QueryOutcome>((resolve, reject) => {
+        // Already canceled before we could start (e.g. the MCP request was
+        // abandoned during awaitExecutor): don't start a query at all.
+        if (signal.aborted) {
+          reject(new Error('the query was canceled'));
+          return;
+        }
         // Defer to the next tick so the editor reflects the new SQL before the
         // widget reads it for execution. The widget is guaranteed ready here:
         // ExecutorBridge only registers this executor once the results-cache
@@ -282,12 +279,29 @@ export function QueryPanel({
         // the executor before calling runQuery. So executeQuery returning falsy
         // here genuinely means a query is already in progress.
         setTimeout(() => {
+          if (signal.aborted) {
+            reject(new Error('the query was canceled'));
+            return;
+          }
           const started = apiRef.current?.executeQuery(sql, runId);
           if (!started) {
             reject(new Error('a query is already running; try again shortly'));
             return;
           }
           pendingRuns.current.set(started, resolve);
+          // Cancel only THIS run when the agent's command is abandoned. The
+          // resulting 'canceled' completion resolves the pending run as failed
+          // (see handleQueryComplete). Scoping cancellation to the started
+          // runId — and only firing while the run is still pending — avoids
+          // aborting an unrelated query the user kicked off in the meantime.
+          signal.addEventListener(
+            'abort',
+            () => {
+              if (pendingRuns.current.has(started))
+                apiRef.current?.cancelQuery();
+            },
+            { once: true },
+          );
         }, 0);
       });
     },
@@ -298,11 +312,7 @@ export function QueryPanel({
     <TimescaleResultsCacheContextProvider baseUrl={window.location.origin}>
       <QueryWidgetProvider theme={Theme.light}>
         <ContextMenuProvider>
-          <ExecutorBridge
-            databaseId={databaseId}
-            runQuery={runQuery}
-            cancelQuery={cancelRunningQuery}
-          />
+          <ExecutorBridge databaseId={databaseId} runQuery={runQuery} />
           <div className="flex flex-auto flex-col overflow-hidden">
             <QueryWidget
               apiRef={apiRef}
@@ -373,11 +383,9 @@ export function QueryPanel({
 function ExecutorBridge({
   databaseId,
   runQuery,
-  cancelQuery,
 }: {
   databaseId: string;
-  runQuery: (sql: string) => Promise<QueryOutcome>;
-  cancelQuery: () => void;
+  runQuery: (sql: string, signal: AbortSignal) => Promise<QueryOutcome>;
 }) {
   const { client } = useContext(ResultsCacheContext) as {
     client: ResultsCacheClient | null;
@@ -395,10 +403,9 @@ function ExecutorBridge({
       databaseId,
       runQuery,
       getRunData: (runId, limit) => fetchRunData(client, runId, limit),
-      cancelQuery,
     };
     return registerExecutor(executor);
-  }, [databaseId, runQuery, cancelQuery, client]);
+  }, [databaseId, runQuery, client]);
 
   return null;
 }

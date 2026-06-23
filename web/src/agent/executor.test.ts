@@ -18,7 +18,6 @@ function makeExecutor(databaseId: string): Executor {
       commandTag: 'SELECT',
     }),
     getRunData: async () => ({ rows: [], columns: [] }),
-    cancelQuery: () => {},
   };
 }
 

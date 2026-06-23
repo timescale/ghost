@@ -22,9 +22,14 @@ mock.module('./diagnostics', () => ({
   tryGetChartConfigDiagnostics: async () => [],
 }));
 
+// A never-aborted signal for dispatch calls in tests that don't exercise
+// cancellation.
+const noSignal = (): AbortSignal => new AbortController().signal;
+
 // makeDeps builds a DispatchDeps whose resolveDatabaseId mimics the app: it
 // returns the id for refs in the (possibly empty) known list, else null. It
-// records which database id the dispatcher actually selected.
+// records which database id the dispatcher actually selected, plus the chart
+// config and result views it set (so tests can assert no UI mutation on error).
 function makeDeps(known: string[]): {
   deps: DispatchDeps;
   selected: string[];
@@ -67,6 +72,27 @@ function makeDeps(known: string[]): {
   };
 }
 
+// makeResetExecutor builds a no-op executor used to clear the registry between
+// tests (registering it then immediately unregistering).
+function makeResetExecutor(): Executor {
+  return {
+    databaseId: 'reset',
+    runQuery: async () => ({
+      runId: 'r',
+      status: 'success' as const,
+      rowCount: 0,
+      rowsAffected: 0,
+      commandTag: 'SELECT',
+    }),
+    getRunData: async () => ({ rows: [], columns: [] }),
+  };
+}
+
+function clearRegistry(): void {
+  const cleanup = registerExecutor(makeResetExecutor());
+  cleanup();
+}
+
 // registerStubExecutor installs a stub executor. totalRowCount is the total the
 // run reports on completion; getRunData honors its limit argument (returning
 // min(limit, totalRowCount) rows) like the real results-cache read, so a caller
@@ -99,7 +125,6 @@ function registerStubExecutor(
         columns: [{ name: 'n', type: 'INT8' }],
       };
     },
-    cancelQuery: () => {},
   };
   registerExecutor(executor);
   return { getRunDataLimits };
@@ -113,37 +138,8 @@ const visualizeCmd = (databaseRef: string): VisualizeCommand => ({
 });
 
 describe('dispatch visualize', () => {
-  beforeEach(() => {
-    const cleanup = registerExecutor({
-      databaseId: 'reset',
-      runQuery: async () => ({
-        runId: 'r',
-        status: 'success' as const,
-        rowCount: 0,
-        rowsAffected: 0,
-        commandTag: 'SELECT',
-      }),
-      getRunData: async () => ({ rows: [], columns: [] }),
-      cancelQuery: () => {},
-    });
-    cleanup();
-  });
-
-  afterEach(() => {
-    const cleanup = registerExecutor({
-      databaseId: 'reset',
-      runQuery: async () => ({
-        runId: 'r',
-        status: 'success' as const,
-        rowCount: 0,
-        rowsAffected: 0,
-        commandTag: 'SELECT',
-      }),
-      getRunData: async () => ({ rows: [], columns: [] }),
-      cancelQuery: () => {},
-    });
-    cleanup();
-  });
+  beforeEach(clearRegistry);
+  afterEach(clearRegistry);
 
   test('resolves a known ref to its id and selects it', async () => {
     const { deps, selected } = makeDeps(['db1']);
@@ -152,6 +148,7 @@ describe('dispatch visualize', () => {
       'visualize',
       visualizeCmd('db1'),
       deps,
+      noSignal(),
     )) as VisualizeResult;
     expect(selected).toEqual(['db1']);
     expect(result.runId).toBe('run-1');
@@ -168,6 +165,7 @@ describe('dispatch visualize', () => {
       'visualize',
       visualizeCmd('db1'),
       deps,
+      noSignal(),
     )) as VisualizeResult;
     expect(result.rowCount).toBe(10_000);
     expect(result.rows.length).toBe(50);
@@ -185,6 +183,7 @@ describe('dispatch visualize', () => {
       'visualize',
       { ...visualizeCmd('db1'), view: 'chart', limit: 5 },
       deps,
+      noSignal(),
     )) as VisualizeResult;
     // The agent gets only its requested 5 rows back...
     expect(result.rows.length).toBe(5);
@@ -203,6 +202,7 @@ describe('dispatch visualize', () => {
       'visualize',
       visualizeCmd('db1'),
       deps,
+      noSignal(),
     )) as VisualizeResult;
     expect(result.rowsAffected).toBe(7);
   });
@@ -216,8 +216,37 @@ describe('dispatch visualize', () => {
       'visualize',
       visualizeCmd('db1'),
       deps,
+      noSignal(),
     )) as VisualizeResult;
     expect(result.commandTag).toBe('DELETE');
+  });
+
+  test('forwards the abort signal to the executor run', async () => {
+    // The visualize handler must pass its command's AbortSignal down to
+    // runQuery so a canceled MCP request aborts this run's query (and only it).
+    const { deps } = makeDeps(['db1']);
+    let seenSignal: AbortSignal | undefined;
+    const executor: Executor = {
+      databaseId: 'db1',
+      runQuery: async (_sql, signal) => {
+        seenSignal = signal;
+        return {
+          runId: 'run-1',
+          status: 'success' as const,
+          rowCount: 1,
+          rowsAffected: 1,
+          commandTag: 'SELECT',
+        };
+      },
+      getRunData: async () => ({
+        rows: [{ n: 1 }],
+        columns: [{ name: 'n', type: 'INT8' }],
+      }),
+    };
+    registerExecutor(executor);
+    const controller = new AbortController();
+    await dispatch('visualize', visualizeCmd('db1'), deps, controller.signal);
+    expect(seenSignal).toBe(controller.signal);
   });
 
   test('reports a chart render failure as chartError but still returns rows', async () => {
@@ -230,6 +259,7 @@ describe('dispatch visualize', () => {
       'visualize',
       { ...visualizeCmd('db1'), view: 'chart' },
       deps,
+      noSignal(),
     )) as VisualizeResult;
     expect(result.runId).toBe('run-1');
     expect(result.rowCount).toBe(1);
@@ -246,6 +276,7 @@ describe('dispatch visualize', () => {
       'visualize',
       visualizeCmd('db-unlisted'),
       deps,
+      noSignal(),
     )) as VisualizeResult;
     expect(selected).toEqual(['db-unlisted']);
     expect(result.runId).toBe('run-1');
@@ -262,26 +293,17 @@ const stubLastRun = (databaseId: string): AgentLastRun => ({
 });
 
 describe('dispatch chart', () => {
-  afterEach(() => {
-    const cleanup = registerExecutor({
-      databaseId: 'reset',
-      runQuery: async () => ({
-        runId: 'r',
-        status: 'success' as const,
-        rowCount: 0,
-        rowsAffected: 0,
-        commandTag: 'SELECT',
-      }),
-      getRunData: async () => ({ rows: [], columns: [] }),
-      cancelQuery: () => {},
-    });
-    cleanup();
-  });
+  afterEach(clearRegistry);
 
   test('throws when no executor is mounted', async () => {
     const { deps } = makeDeps(['db1']);
     expect(
-      dispatch('chart', { chartConfig: 'function chart(){}' }, deps),
+      dispatch(
+        'chart',
+        { chartConfig: 'function chart(){}' },
+        deps,
+        noSignal(),
+      ),
     ).rejects.toThrow('no database panel is mounted');
   });
 
@@ -290,7 +312,12 @@ describe('dispatch chart', () => {
     registerStubExecutor('db1');
     deps.getLastRun = () => stubLastRun('db2');
     expect(
-      dispatch('chart', { chartConfig: 'function chart(){}' }, deps),
+      dispatch(
+        'chart',
+        { chartConfig: 'function chart(){}' },
+        deps,
+        noSignal(),
+      ),
     ).rejects.toThrow('no completed query run to chart');
   });
 
@@ -301,7 +328,12 @@ describe('dispatch chart', () => {
     registerStubExecutor('db1');
     deps.getLastRun = () => stubLastRun('db2');
     await expect(
-      dispatch('chart', { chartConfig: 'function chart(){}' }, deps),
+      dispatch(
+        'chart',
+        { chartConfig: 'function chart(){}' },
+        deps,
+        noSignal(),
+      ),
     ).rejects.toThrow('no completed query run to chart');
     expect(chartConfig()).toBe('');
     expect(resultViews).toEqual([]);
@@ -318,6 +350,7 @@ describe('dispatch chart', () => {
       'chart',
       { chartConfig: 'function chart(){}' },
       deps,
+      noSignal(),
     )) as ChartResult;
     expect(result.image).toBeUndefined();
     expect(result.chartError).toBeTruthy();
@@ -325,21 +358,7 @@ describe('dispatch chart', () => {
 });
 
 describe('dispatch uiState', () => {
-  afterEach(() => {
-    const cleanup = registerExecutor({
-      databaseId: 'reset',
-      runQuery: async () => ({
-        runId: 'r',
-        status: 'success' as const,
-        rowCount: 0,
-        rowsAffected: 0,
-        commandTag: 'SELECT',
-      }),
-      getRunData: async () => ({ rows: [], columns: [] }),
-      cancelQuery: () => {},
-    });
-    cleanup();
-  });
+  afterEach(clearRegistry);
 
   test('charts the full last-run result even when caps returned rows', async () => {
     // Regression: like the visualize path, ghost_ui_state must feed the chart
@@ -353,6 +372,7 @@ describe('dispatch uiState', () => {
       'uiState',
       { limit: 5 },
       deps,
+      noSignal(),
     )) as UIStateResult;
     expect(result.lastRun?.rows?.length).toBe(5);
     expect(result.lastRun?.rowCount).toBe(59);

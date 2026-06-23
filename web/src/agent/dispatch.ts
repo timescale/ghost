@@ -83,10 +83,13 @@ async function tryRenderChart(
 }
 
 // handleVisualize runs a query in the browser, syncing the live UI, and (for
-// the chart view) renders a screenshot of the result.
+// the chart view) renders a screenshot of the result. `signal` aborts this
+// command's own query (and only it) if the MCP request is canceled, times out,
+// or is superseded.
 async function handleVisualize(
   cmd: VisualizeCommand,
   deps: DispatchDeps,
+  signal: AbortSignal,
 ): Promise<VisualizeResult> {
   // Trust the agent-supplied database ref instead of validating it against the
   // loaded database list: resolve it to a known id when the list is already
@@ -105,7 +108,7 @@ async function handleVisualize(
   deps.setResultView(cmd.view);
 
   const executor = await awaitExecutor(databaseId, EXECUTOR_WAIT_MS);
-  const outcome = await executor.runQuery(cmd.sql);
+  const outcome = await executor.runQuery(cmd.sql, signal);
   if (outcome.status === 'failed') {
     throw new Error(outcome.error || 'query failed');
   }
@@ -259,15 +262,18 @@ async function handleUIState(
 }
 
 // dispatch routes a command to its handler and returns the JSON-serializable
-// result the server will deliver to the MCP tool.
+// result the server will deliver to the MCP tool. `signal` aborts the command's
+// own in-flight query (only `visualize` runs one); `chart`/`uiState` read cached
+// data and don't start a query, so they ignore it.
 export async function dispatch(
   type: string,
   payload: unknown,
   deps: DispatchDeps,
+  signal: AbortSignal,
 ): Promise<unknown> {
   switch (type) {
     case 'visualize':
-      return handleVisualize(payload as VisualizeCommand, deps);
+      return handleVisualize(payload as VisualizeCommand, deps, signal);
     case 'chart':
       return handleChart(payload as ChartCommand, deps);
     case 'uiState':

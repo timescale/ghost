@@ -28,12 +28,12 @@ export interface QueryOutcome {
 export interface Executor {
   databaseId: string;
   // Run the given SQL, resolving once the run completes (success or failure).
-  runQuery(sql: string): Promise<QueryOutcome>;
+  // Aborting `signal` cancels this run's in-flight query — and only this run's,
+  // never an unrelated query — rejecting the returned promise. Used when the
+  // agent bridge signals the MCP request was canceled, timed out, or superseded.
+  runQuery(sql: string, signal: AbortSignal): Promise<QueryOutcome>;
   // Read the cached results for a completed run, capped at `limit` rows.
   getRunData(runId: string, limit: number): Promise<ChartData>;
-  // Abort the query currently running (if any). Used when the agent bridge
-  // signals that the MCP caller canceled, timed out, or another tab took over.
-  cancelQuery(): void;
 }
 
 let current: Executor | null = null;
