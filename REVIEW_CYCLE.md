@@ -176,12 +176,35 @@ Both findings valid and fixed.
 
 ---
 
+## Round 6 — model: `openai-codex/gpt-5.5`
+
+Both findings valid and fixed (both in `dispatch.ts`/its test).
+
+1. **`ghost_chart` charts failed/uncached last runs and mutates UI first** —
+   _fixed_. Round 1 reordered validation before mutation, but two gaps
+   remained: (a) `handleChart` accepted any last run for the current database,
+   including a *failed* one (recorded with `status: 'failed'`, no cached
+   results); (b) it still mutated the UI (`setChartConfig`/`setResultView`)
+   before `getRunData` proved results were readable, so an evicted-cache run
+   would clobber config/view then error. Added a `status === 'success'` check
+   and moved the UI mutation to after the `getRunData` read. Regression tests
+   for both the failed-run and cache-miss paths.
+2. **Two chart tests' `.rejects.toThrow()` not awaited** — _fixed_. Two tests
+   called `expect(dispatch(...)).rejects.toThrow(...)` without `await`, creating
+   a floating promise that could let the test pass without verifying the
+   rejection. Added `await` to both (matching the sibling test).
+
+**Round 6 result:** 2 fixed (1 UI-correctness gap left by round 1's partial fix,
+1 test-reliability bug).
+
+---
+
 ## Convergence
 
-Findings by round: 5 (R1) → 5 (R2) → 1 (R3) → 1 (R4) → 2 (R5). Rounds 3–4 used
-other models and trended toward noise; resuming with gpt-5.5 in round 5 surfaced
-2 more genuine issues (a real concurrency bug + a resource leak), so the loop
-continues with gpt until its findings drop off.
+Findings by round: 5 (R1) → 5 (R2) → 1 (R3) → 1 (R4) → 2 (R5) → 2 (R6). Rounds
+3–4 used other models and trended toward noise; running gpt-5.5 from round 5 on
+keeps surfacing genuine (if increasingly narrow) issues, so the loop continues
+with gpt until its findings drop off.
 
-**Running totals:** 15 fixed, 1 deferred (negligible + risky), 3 invalid.
+**Running totals:** 17 fixed, 1 deferred (negligible + risky), 3 invalid.
 `./check` (Go) and `bun typecheck`/`lint`/`test` (web) all pass.
