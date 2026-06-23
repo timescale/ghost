@@ -40,26 +40,52 @@ function renderToDataURL(
   option: CaptureOption,
   backgroundColor: BackgroundColor,
 ): Promise<string> {
-  return new Promise<string>((resolve) => {
-    const capture = () =>
-      resolve(
-        chart.getDataURL({
-          type: 'png',
-          pixelRatio: PIXEL_RATIO,
-          backgroundColor,
-        }),
-      );
-    const onFinished = () => {
+  return new Promise<string>((resolve, reject) => {
+    let settled = false;
+    const onFinished = () => finish();
+    const timer = setTimeout(() => finish(), RENDER_TIMEOUT_MS);
+
+    // Tear down the listener and timeout on every settle path, so neither
+    // lingers after the promise resolves/rejects. Without this, a fast resolve
+    // would leave the 10s timer armed, and an early reject (e.g. setOption
+    // throwing below) would leave it to later fire getDataURL on a chart the
+    // caller has already disposed — an unhandled async exception.
+    const cleanup = () => {
       chart.off('finished', onFinished);
       clearTimeout(timer);
-      capture();
     };
-    const timer = setTimeout(() => {
-      chart.off('finished', onFinished);
-      capture();
-    }, RENDER_TIMEOUT_MS);
+    // finish runs once (whichever of 'finished' or the timeout wins). A throw
+    // from getDataURL (e.g. a tainted canvas) rejects rather than escaping.
+    function finish() {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try {
+        resolve(
+          chart.getDataURL({
+            type: 'png',
+            pixelRatio: PIXEL_RATIO,
+            backgroundColor,
+          }),
+        );
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    }
+
     chart.on('finished', onFinished);
-    chart.setOption(option, { notMerge: true });
+    try {
+      chart.setOption(option, { notMerge: true });
+    } catch (err) {
+      // setOption can throw on a malformed (but object-shaped) option that
+      // buildChartOption couldn't catch. Reject cleanly instead of leaving the
+      // listener/timer dangling.
+      if (!settled) {
+        settled = true;
+        cleanup();
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    }
   });
 }
 

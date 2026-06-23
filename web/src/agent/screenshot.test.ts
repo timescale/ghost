@@ -28,7 +28,7 @@ const capture: Capture = { option: null, getDataURLArg: null, events: [] };
 // setOption), and renderToDataURL must wait for it before calling getDataURL.
 // When fireFinished is false, the event never fires, exercising the timeout
 // fallback.
-function installECharts(fireFinished = true): void {
+function installECharts(fireFinished = true, setOptionThrows = false): void {
   (globalThis as unknown as { window: Record<string, unknown> }).window = {
     echarts: {
       init: () => {
@@ -41,8 +41,11 @@ function installECharts(fireFinished = true): void {
             delete listeners[event];
           },
           setOption: (option: Record<string, unknown>) => {
-            capture.option = option;
             capture.events.push('setOption');
+            if (setOptionThrows) {
+              throw new Error('bad option');
+            }
+            capture.option = option;
             if (fireFinished) {
               queueMicrotask(() => {
                 capture.events.push('finished');
@@ -55,7 +58,9 @@ function installECharts(fireFinished = true): void {
             capture.events.push('getDataURL');
             return 'data:image/png;base64,STUB';
           },
-          dispose: () => {},
+          dispose: () => {
+            capture.events.push('dispose');
+          },
         };
       },
     },
@@ -135,7 +140,38 @@ describe('renderChartImage', () => {
       return { series: [] };
     }`;
     await renderChartImage(config, data);
-    expect(capture.events).toEqual(['setOption', 'finished', 'getDataURL']);
+    expect(capture.events).toEqual([
+      'setOption',
+      'finished',
+      'getDataURL',
+      'dispose',
+    ]);
+  });
+
+  test('rejects and tears down cleanly if setOption throws', async () => {
+    // A malformed (but object-shaped) option can make ECharts' setOption throw
+    // after buildChartOption succeeds. renderToDataURL must reject without
+    // leaving its 'finished' listener or 10s timeout dangling — otherwise the
+    // timer would later fire getDataURL on a chart the caller already disposed.
+    const { renderChartImage } = await import('./screenshot');
+    installECharts(true, true);
+    jest.useFakeTimers();
+    try {
+      const config = `function chart(data) {
+        return { series: [] };
+      }`;
+      await expect(renderChartImage(config, data)).rejects.toThrow(
+        'bad option',
+      );
+      // The chart was disposed by renderChartImage's finally...
+      expect(capture.events).toEqual(['setOption', 'dispose']);
+      // ...and advancing past the render timeout must NOT fire a late capture
+      // (no getDataURL on the disposed instance), proving the timer was cleared.
+      jest.advanceTimersByTime(10_000);
+      expect(capture.events).toEqual(['setOption', 'dispose']);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('captures anyway if rendering never finishes (timeout fallback)', async () => {
@@ -155,7 +191,7 @@ describe('renderChartImage', () => {
       jest.advanceTimersByTime(10_000);
       const image = await promise;
       expect(image).toBe('data:image/png;base64,STUB');
-      expect(capture.events).toEqual(['setOption', 'getDataURL']);
+      expect(capture.events).toEqual(['setOption', 'getDataURL', 'dispose']);
     } finally {
       jest.useRealTimers();
     }
