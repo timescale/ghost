@@ -199,12 +199,38 @@ Both findings valid and fixed (both in `dispatch.ts`/its test).
 
 ---
 
+## Round 7 — model: `openai-codex/gpt-5.5`
+
+Both findings valid and fixed.
+
+1. **SSE drop doesn't abort the in-flight command** — _fixed_. On `onerror`,
+   the browser only updated the banner; the server had already ended the
+   request (`ErrClientDisconnected`), so no later cancel could reach the
+   browser, yet a long `visualize` query kept running and could still be
+   mutating the UI when EventSource reconnected with a fresh client and a new
+   command. Factored an `abortInFlightCommand` helper, called from `onerror` and
+   the effect cleanup.
+2. **Chart recorder swallows the user's first authored config** — _fixed_.
+   `useChartConfigRecorder` seeded its baseline lazily on the *first successful
+   render*. If the user edited before any render (no data yet) or within the
+   1.5s record debounce, that first edited config became the baseline and was
+   never recorded. Seed the baseline synchronously from the mount-time config
+   (passed in from `ChartArea`) so the first edit is always recognized as a
+   change. (No unit test added: the project has no React-hook test infra, and
+   pulling in `@testing-library/react` for this one hook would be
+   disproportionate — the fix is a small, self-evident reordering and the
+   store-level recording/dedup is already covered by `store.test.ts`.)
+
+**Round 7 result:** 2 fixed (1 lifecycle/UI-race bug, 1 history-recording bug).
+
+---
+
 ## Convergence
 
-Findings by round: 5 (R1) → 5 (R2) → 1 (R3) → 1 (R4) → 2 (R5) → 2 (R6). Rounds
-3–4 used other models and trended toward noise; running gpt-5.5 from round 5 on
-keeps surfacing genuine (if increasingly narrow) issues, so the loop continues
-with gpt until its findings drop off.
+Findings by round: 5 (R1) → 5 (R2) → 1 (R3) → 1 (R4) → 2 (R5) → 2 (R6) → 2 (R7).
+Rounds 3–4 used other models and trended toward noise; running gpt-5.5 from
+round 5 on keeps surfacing genuine (if increasingly narrow) issues, so the loop
+continues with gpt until its findings drop off.
 
-**Running totals:** 17 fixed, 1 deferred (negligible + risky), 3 invalid.
+**Running totals:** 19 fixed, 1 deferred (negligible + risky), 3 invalid.
 `./check` (Go) and `bun typecheck`/`lint`/`test` (web) all pass.
