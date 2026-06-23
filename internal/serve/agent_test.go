@@ -163,20 +163,31 @@ func TestBridgeRequestErrorFromClient(t *testing.T) {
 	}
 }
 
-// drainCancel reads the next event off a client's stream, asserting it is a
-// "cancel" event for the expected request ID.
+// drainCancel waits for a "cancel" event for the expected request ID on the
+// client's stream, skipping any interleaved status events. The cancel is sent
+// asynchronously by the dispatching Request goroutine once it observes the
+// failed result, so it can arrive before or after the takeover's status
+// broadcast — the relative order is not guaranteed (and doesn't matter, since
+// the browser handles status and cancel independently).
 func drainCancel(t *testing.T, c *agentClient, requestID string) {
 	t.Helper()
-	select {
-	case ev := <-c.events:
-		if ev.Type != "cancel" {
-			t.Fatalf("expected cancel event, got %+v", ev)
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-c.events:
+			if ev.Type == "status" {
+				continue
+			}
+			if ev.Type != "cancel" {
+				t.Fatalf("expected cancel event, got %+v", ev)
+			}
+			if ev.RequestID != requestID {
+				t.Fatalf("expected cancel for %q, got %q", requestID, ev.RequestID)
+			}
+			return
+		case <-deadline:
+			t.Fatal("timed out waiting for cancel event")
 		}
-		if ev.RequestID != requestID {
-			t.Fatalf("expected cancel for %q, got %q", requestID, ev.RequestID)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for cancel event")
 	}
 }
 
@@ -229,8 +240,8 @@ func TestBridgeSupersedeCancelsBrowser(t *testing.T) {
 	cmd := waitForCommand(t, c1)
 	b.Activate(c2.id)
 
-	// c1 receives a cancel for the in-flight command (then status events from
-	// the takeover broadcast follow on the stream).
+	// c1 receives a cancel for the in-flight command, interleaved with the
+	// takeover's status broadcast (drainCancel skips status events).
 	drainCancel(t, c1, cmd.ID)
 	select {
 	case err := <-errCh:
@@ -345,6 +356,71 @@ full:
 		}
 	case <-time.After(time.Second):
 		t.Fatal("request wedged on a full client buffer")
+	}
+}
+
+// TestBridgeSupersedeCancelSurvivesFullBuffer verifies that the cancel sent to
+// a superseded client is delivered reliably even when that client's outbound
+// buffer was full at supersede time. A best-effort (droppable) cancel would be
+// lost here, letting the browser run an abandoned command once its buffer
+// drained and the already-queued command was delivered; sendCancelReliably
+// blocks until the cancel is enqueued instead.
+func TestBridgeSupersedeCancelSurvivesFullBuffer(t *testing.T) {
+	b := NewBridge()
+	c1 := b.addClient()
+	drainStatus(t, c1)
+	c2 := b.addClient()
+	drainStatus(t, c2)
+	drainStatus(t, c1)
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := b.Request(context.Background(), "visualize", nil)
+		errCh <- err
+	}()
+
+	cmd := waitForCommand(t, c1)
+
+	// Fill c1's buffer to capacity so a best-effort cancel would be dropped.
+	for {
+		select {
+		case c1.events <- agentServerEvent{Type: "status"}:
+		default:
+			goto full
+		}
+	}
+full:
+	// Take over: the request fails and Request must reliably hand c1 a cancel.
+	b.Activate(c2.id)
+
+	// Drain c1's stream while awaiting the failed result. Both must be done
+	// concurrently: Request's goroutine blocks in sendCancelReliably until c1's
+	// (full) buffer makes room, so it can't report the error until this drain
+	// loop — standing in for the SSE handler — consumes events. A best-effort
+	// cancel would have been dropped at supersede time; here it must appear.
+	deadline := time.After(2 * time.Second)
+	var gotErr error
+	var gotCancel bool
+	for !(gotCancel && gotErr != nil) {
+		select {
+		case ev := <-c1.events:
+			if ev.Type == "cancel" {
+				if ev.RequestID != cmd.ID {
+					t.Fatalf("cancel for %q, want %q", ev.RequestID, cmd.ID)
+				}
+				gotCancel = true
+			}
+		case err := <-errCh:
+			gotErr = err
+		case <-deadline:
+			if !gotCancel {
+				t.Fatal("cancel was dropped: never delivered to the superseded client")
+			}
+			t.Fatal("request did not fail on supersede")
+		}
+	}
+	if !errors.Is(gotErr, ErrClientSuperseded) {
+		t.Fatalf("expected ErrClientSuperseded, got %v", gotErr)
 	}
 }
 

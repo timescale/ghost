@@ -22,6 +22,13 @@ const agentIdleTimeout = 60 * time.Second
 // events and commands are tiny and infrequent, so a small buffer is plenty.
 const agentClientBufferSize = 8
 
+// agentCancelGrace bounds how long sendCancelReliably waits to hand a cancel to
+// a live client before giving up. The SSE handler drains the client channel
+// continuously, so a healthy client accepts the cancel almost immediately; this
+// only caps the wait for a wedged stream (a dead client cleaned up on
+// disconnect), so the dispatching goroutine can't block on it indefinitely.
+const agentCancelGrace = 5 * time.Second
+
 // Bridge errors surfaced to MCP tools (and ultimately the agent).
 var (
 	// ErrNoActiveClient is returned when a request is attempted but no browser
@@ -55,18 +62,26 @@ type agentServerEvent struct {
 	RequestID string `json:"requestId,omitempty"`
 }
 
-// sendCancel best-effort notifies a client to abort the in-flight command with
-// the given request ID. The send is non-blocking: if the client's outbound
-// buffer is full (its SSE stream is stuck), the cancel is dropped — such a
-// client is already unreachable and will be cleaned up on disconnect. Safe to
-// call without holding b.mu (it only sends on the client's channel).
-func sendCancel(c *agentClient, requestID string) {
+// sendCancelReliably notifies a client to abort the in-flight command with the
+// given request ID, blocking until the cancel is enqueued, the client
+// disconnects, or agentCancelGrace elapses. Unlike a best-effort (droppable)
+// send, this guarantees delivery to a live client: the agent bridge relies on
+// the cancel to stop an already-dispatched command, and a dropped cancel would
+// let the browser run an abandoned command after its request had failed. The
+// SSE handler drains the client's channel continuously, so this returns almost
+// immediately in practice; the grace bound only protects against a wedged
+// stream (such a client is dead and will be cleaned up on disconnect anyway).
+// Must NOT be called while holding b.mu (it can block on the client channel).
+func sendCancelReliably(c *agentClient, requestID string) {
 	if c == nil {
 		return
 	}
+	t := time.NewTimer(agentCancelGrace)
+	defer t.Stop()
 	select {
 	case c.events <- agentServerEvent{Type: "cancel", RequestID: requestID}:
-	default:
+	case <-c.done:
+	case <-t.C:
 	}
 }
 
@@ -215,9 +230,12 @@ func (b *Bridge) Activate(clientID string) bool {
 	}
 	b.activeID = clientID
 	if b.pending != nil && b.pending.clientID == old {
-		// The superseded client is still connected (just deactivated), so tell
-		// it to abort the work it was doing for the now-abandoned request.
-		sendCancel(b.clientByIDLocked(old), b.pending.id)
+		// Fail the request; the dispatching Request goroutine reliably tells the
+		// (still-connected) superseded client to abort the now-abandoned command
+		// once it observes this result. Doing the cancel there — rather than a
+		// best-effort send here — guarantees it isn't dropped if the client's
+		// buffer is momentarily full, which would otherwise let the browser run
+		// a command whose request already failed.
 		b.resolveLocked(b.pending, pendingResult{err: ErrClientSuperseded})
 	}
 	b.broadcastStatusLocked()
@@ -320,9 +338,21 @@ func (b *Bridge) Request(ctx context.Context, commandType string, payload any) (
 		return nil, ctx.Err()
 	}
 
+	// Past this point the command has been delivered to the client, so every
+	// failure path must reliably tell the browser to abort it — otherwise the
+	// browser would run a command whose request has already failed. This
+	// includes p.result errors (a takeover or disconnect resolved the request):
+	// the resolving path no longer sends its own cancel, leaving Request the
+	// single, reliable owner of cancel delivery.
 	for {
 		select {
 		case res := <-p.result:
+			// A result (success) needs no cancel. A failure (takeover/disconnect)
+			// means the command was abandoned; tell the client to abort it. On a
+			// genuine disconnect the send returns promptly via client.done.
+			if res.err != nil {
+				sendCancelReliably(client, cmd.ID)
+			}
 			return res.data, res.err
 		case <-p.beat:
 			timer.Reset(agentIdleTimeout)
@@ -331,11 +361,11 @@ func (b *Bridge) Request(ctx context.Context, commandType string, payload any) (
 		case <-timer.C:
 			// The command was dispatched and the browser may still be running it
 			// (e.g. a long query); tell it to abort before we give up.
-			sendCancel(client, cmd.ID)
+			sendCancelReliably(client, cmd.ID)
 			return nil, ErrAgentIdleTimeout
 		case <-ctx.Done():
 			// The MCP caller canceled/disconnected; stop the browser's work.
-			sendCancel(client, cmd.ID)
+			sendCancelReliably(client, cmd.ID)
 			return nil, ctx.Err()
 		}
 	}
