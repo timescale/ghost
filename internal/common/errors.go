@@ -74,7 +74,7 @@ func IsComputeLimitExceeded(apiErr *api.Error) bool {
 // for this condition.
 func ComputeLimitExceededError(action string) error {
 	return ExitWithCode(ExitInvalidParameters,
-		fmt.Errorf("this space has reached its compute limit, so it cannot %s\n\nRaise or remove the limit with 'ghost overages enable', or wait until your\nfree allowance resets next cycle", action))
+		fmt.Errorf("this space has reached its compute limit, so it cannot %s\n\nRaise or remove the limit with 'ghost overages enable', or wait until your free\nallowance resets next cycle", action))
 }
 
 // ExitWithErrorFromStatusCode maps HTTP status codes to CLI exit codes
