@@ -158,9 +158,9 @@ async function handleChart(
   cmd: ChartCommand,
   deps: DispatchDeps,
 ): Promise<ChartResultWire> {
-  deps.setChartConfig(cmd.chartConfig);
-  deps.setResultView('chart');
-
+  // Validate BEFORE mutating the UI: if there's no mounted executor or no
+  // matching last run, this command fails, and it must not clobber the user's
+  // chart config or switch their view as a side effect of an error.
   const executor = getExecutor();
   if (!executor) {
     throw new Error('no database panel is mounted to read results from');
@@ -174,6 +174,10 @@ async function handleChart(
       'no completed query run to chart for the current database; run a query first (e.g. ghost_sql with visualize)',
     );
   }
+
+  // Validation passed: now apply the config and switch to the chart view.
+  deps.setChartConfig(cmd.chartConfig);
+  deps.setResultView('chart');
   // Read the full result for charting (the chart caps internally).
   const data = await executor.getRunData(lastRun.runId, CHART_ROW_LIMIT);
   // Reuse tryRenderChart so a bad config doesn't fail the whole tool call:

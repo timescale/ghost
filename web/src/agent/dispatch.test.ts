@@ -29,16 +29,20 @@ function makeDeps(known: string[]): {
   deps: DispatchDeps;
   selected: string[];
   editorSql: () => string;
+  chartConfig: () => string;
+  resultViews: ResultView[];
 } {
   const selected: string[] = [];
   let editorSql = '';
+  let chartConfig = '';
+  const resultViews: ResultView[] = [];
   const deps: DispatchDeps = {
     resolveDatabaseId: (ref) => (known.includes(ref) ? ref : null),
     getState: () => ({
       selectedDatabaseId: selected.at(-1) ?? null,
       editorSql,
-      chartConfig: '',
-      resultView: 'table' as ResultView,
+      chartConfig,
+      resultView: resultViews.at(-1) ?? ('table' as ResultView),
     }),
     setSelectedDatabaseId: (id) => {
       selected.push(id);
@@ -46,11 +50,21 @@ function makeDeps(known: string[]): {
     setEditorSql: (sql) => {
       editorSql = sql;
     },
-    setResultView: () => {},
-    setChartConfig: () => {},
+    setResultView: (view) => {
+      resultViews.push(view);
+    },
+    setChartConfig: (config) => {
+      chartConfig = config;
+    },
     getLastRun: () => null,
   };
-  return { deps, selected, editorSql: () => editorSql };
+  return {
+    deps,
+    selected,
+    editorSql: () => editorSql,
+    chartConfig: () => chartConfig,
+    resultViews,
+  };
 }
 
 // registerStubExecutor installs a stub executor. totalRowCount is the total the
@@ -278,6 +292,19 @@ describe('dispatch chart', () => {
     expect(
       dispatch('chart', { chartConfig: 'function chart(){}' }, deps),
     ).rejects.toThrow('no completed query run to chart');
+  });
+
+  test('does not mutate the UI when validation fails', async () => {
+    // A failed chart command (no matching run) must not clobber the user's
+    // chart config or switch their view: validation happens before any mutation.
+    const { deps, chartConfig, resultViews } = makeDeps(['db1']);
+    registerStubExecutor('db1');
+    deps.getLastRun = () => stubLastRun('db2');
+    await expect(
+      dispatch('chart', { chartConfig: 'function chart(){}' }, deps),
+    ).rejects.toThrow('no completed query run to chart');
+    expect(chartConfig()).toBe('');
+    expect(resultViews).toEqual([]);
   });
 
   test('reports a render failure as chartError instead of throwing', async () => {
