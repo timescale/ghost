@@ -151,10 +151,20 @@ func (s *Server) handleSQLVisualize(ctx context.Context, client api.ClientWithRe
 	// and the URL would show the name. The backend always has the API client to
 	// resolve this reliably, whereas the frontend's database list may not be
 	// loaded yet.
-	databaseID, err := resolveDatabaseID(ctx, client, projectID, input.Ref)
+	database, err := resolveDatabase(ctx, client, projectID, input.Ref)
 	if err != nil {
 		return nil, SQLOutput{}, err
 	}
+
+	// Fail fast on a database that can't accept connections, with the same
+	// friendly guidance as the server-side path — rather than opening a browser,
+	// waiting for a client, and surfacing a raw connection failure as a generic
+	// "visualization failed". The in-process serve handler also checks this, but
+	// only after we've dispatched the command.
+	if err := common.CheckReady(database); err != nil {
+		return nil, SQLOutput{}, handleDatabaseError(err)
+	}
+	databaseID := database.Id
 
 	var result visualizeResult
 	err = s.browser.request(ctx, commandVisualize, visualizeCommand{

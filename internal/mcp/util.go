@@ -14,22 +14,23 @@ import (
 	"github.com/timescale/ghost/internal/common"
 )
 
-// resolveDatabaseID fetches the database by ref (which may be a name or an id)
-// and returns its canonical id. Use this when a downstream consumer needs the
-// id specifically rather than an arbitrary ref — for example the web UI, which
-// selects the database by id and reflects it in the URL.
-func resolveDatabaseID(ctx context.Context, client api.ClientWithResponsesInterface, projectID, databaseRef string) (string, error) {
+// resolveDatabase fetches the database by ref (which may be a name or an id)
+// and returns it. Callers that need the canonical id (e.g. the web UI, which
+// selects the database by id and reflects it in the URL) read database.Id;
+// callers that connect to the database can also run common.CheckReady on the
+// returned value before proceeding.
+func resolveDatabase(ctx context.Context, client api.ClientWithResponsesInterface, projectID, databaseRef string) (api.Database, error) {
 	resp, err := client.GetDatabaseWithResponse(ctx, projectID, databaseRef)
 	if err != nil {
-		return "", fmt.Errorf("failed to get database: %w", err)
+		return api.Database{}, fmt.Errorf("failed to get database: %w", err)
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return "", common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
+		return api.Database{}, common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
 	}
 	if resp.JSON200 == nil {
-		return "", errors.New("empty response from API")
+		return api.Database{}, errors.New("empty response from API")
 	}
-	return resp.JSON200.Id, nil
+	return *resp.JSON200, nil
 }
 
 // structuredOutputContent serializes a tool's structured output to a JSON
