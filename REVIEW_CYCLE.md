@@ -225,12 +225,32 @@ Both findings valid and fixed.
 
 ---
 
+## Round 8 — model: `openai-codex/gpt-5.5`
+
+Single finding, valid and fixed.
+
+1. **`ghost_chart` ignores the abort signal, mutating UI after abandonment** —
+   _fixed_. `handleChart` received no signal: it validated the run, awaited
+   `getRunData`, then unconditionally applied the chart config + view. If the
+   command was canceled/superseded or the SSE stream dropped during that read
+   (all of which abort the signal and end the server request), or the user
+   switched databases (remounting the panel), the abandoned command still
+   clobbered the UI. Threaded the signal into `handleChart`; after the read it
+   bails if aborted or if the executor/last-run no longer match, before
+   mutating. Regression test with a deferred `getRunData` + mid-read abort.
+
+**Round 8 result:** 1 fixed (completes the cancel-safety story for the chart
+path, mirroring the visualize path's signal handling).
+
+---
+
 ## Convergence
 
-Findings by round: 5 (R1) → 5 (R2) → 1 (R3) → 1 (R4) → 2 (R5) → 2 (R6) → 2 (R7).
-Rounds 3–4 used other models and trended toward noise; running gpt-5.5 from
-round 5 on keeps surfacing genuine (if increasingly narrow) issues, so the loop
-continues with gpt until its findings drop off.
+Findings by round: 5 (R1) → 5 (R2) → 1 (R3) → 1 (R4) → 2 (R5) → 2 (R6) → 2 (R7)
+→ 1 (R8). Rounds 3–4 used other models and trended toward noise; running gpt-5.5
+from round 5 on keeps surfacing genuine (if increasingly narrow) issues — now
+clustering tightly around the `dispatch.ts` cancel-handling area, a sign the
+broader surface is exhausted. Continuing with gpt until it returns nothing.
 
-**Running totals:** 19 fixed, 1 deferred (negligible + risky), 3 invalid.
+**Running totals:** 20 fixed, 1 deferred (negligible + risky), 3 invalid.
 `./check` (Go) and `bun typecheck`/`lint`/`test` (web) all pass.
