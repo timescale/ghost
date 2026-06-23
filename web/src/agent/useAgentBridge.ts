@@ -32,13 +32,14 @@ export function useAgentBridge(databases: Database[]): void {
     // Only one command runs at a time (the server serializes dispatch).
     let inFlightCommandId: string | null = null;
     let inFlightAbort: AbortController | null = null;
-    // Request IDs whose 'cancel' arrived before the 'command' did. The server
-    // can resolve a request (cancel + supersede) while the command-dispatch send
-    // is still racing on its event channel, so the command can land *after* the
-    // cancel. Remembering pre-empted IDs lets runCommand skip a command that was
-    // already canceled, instead of running an abandoned query. Bounded: an entry
-    // is removed as soon as its (late) command arrives.
-    const preemptedCommandIds = new Set<string>();
+    // The request ID of a 'cancel' that arrived before its 'command' did. The
+    // server can resolve a request (cancel + supersede) while the command-
+    // dispatch send is still racing on its event channel, so the command can
+    // land *after* the cancel — or, when the race resolves the request instead
+    // of sending, never arrive at all. A single slot suffices because the server
+    // keeps at most one command in flight; it's overwritten by any later cancel
+    // and cleared when its command arrives, so it can't grow unbounded.
+    let preemptedCommandId: string | null = null;
 
     const resolveDatabaseId = (ref: string): string | null => {
       const list = databasesRef.current;
@@ -74,7 +75,10 @@ export function useAgentBridge(databases: Database[]): void {
       // A cancel for this command already arrived (it raced ahead of the command
       // on the event stream): the server has dropped the request, so don't run
       // an abandoned query. Just clear the pre-empted marker.
-      if (preemptedCommandIds.delete(command.id)) return;
+      if (preemptedCommandId === command.id) {
+        preemptedCommandId = null;
+        return;
+      }
       const abort = new AbortController();
       inFlightCommandId = command.id;
       inFlightAbort = abort;
@@ -116,7 +120,7 @@ export function useAgentBridge(databases: Database[]): void {
         inFlightAbort?.abort();
         return;
       }
-      preemptedCommandIds.add(requestId);
+      preemptedCommandId = requestId;
     };
 
     source.onopen = () => {
