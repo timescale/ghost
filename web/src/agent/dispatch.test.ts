@@ -297,7 +297,7 @@ describe('dispatch chart', () => {
 
   test('throws when no executor is mounted', async () => {
     const { deps } = makeDeps(['db1']);
-    expect(
+    await expect(
       dispatch(
         'chart',
         { chartConfig: 'function chart(){}' },
@@ -311,7 +311,7 @@ describe('dispatch chart', () => {
     const { deps } = makeDeps(['db1']);
     registerStubExecutor('db1');
     deps.getLastRun = () => stubLastRun('db2');
-    expect(
+    await expect(
       dispatch(
         'chart',
         { chartConfig: 'function chart(){}' },
@@ -319,6 +319,25 @@ describe('dispatch chart', () => {
         noSignal(),
       ),
     ).rejects.toThrow('no completed query run to chart');
+  });
+
+  test('throws when the last run failed (no readable results)', async () => {
+    // A failed last run is recorded for the current database but has no cached
+    // results to chart; charting it must reject (and not mutate the UI), not
+    // attempt a read of a run that produced nothing.
+    const { deps, chartConfig, resultViews } = makeDeps(['db1']);
+    registerStubExecutor('db1');
+    deps.getLastRun = () => ({ ...stubLastRun('db1'), status: 'failed' });
+    await expect(
+      dispatch(
+        'chart',
+        { chartConfig: 'function chart(){}' },
+        deps,
+        noSignal(),
+      ),
+    ).rejects.toThrow('no completed query run to chart');
+    expect(chartConfig()).toBe('');
+    expect(resultViews).toEqual([]);
   });
 
   test('does not mutate the UI when validation fails', async () => {
@@ -335,6 +354,38 @@ describe('dispatch chart', () => {
         noSignal(),
       ),
     ).rejects.toThrow('no completed query run to chart');
+    expect(chartConfig()).toBe('');
+    expect(resultViews).toEqual([]);
+  });
+
+  test('does not mutate the UI when the results read fails', async () => {
+    // The run is a valid success for the current database, but its cached
+    // results are gone (e.g. evicted), so getRunData rejects. The UI must be
+    // left untouched — config/view are applied only after the read succeeds.
+    const { deps, chartConfig, resultViews } = makeDeps(['db1']);
+    const executor: Executor = {
+      databaseId: 'db1',
+      runQuery: async () => ({
+        runId: 'run-1',
+        status: 'success' as const,
+        rowCount: 1,
+        rowsAffected: 1,
+        commandTag: 'SELECT',
+      }),
+      getRunData: async () => {
+        throw new Error('results no longer cached');
+      },
+    };
+    registerExecutor(executor);
+    deps.getLastRun = () => stubLastRun('db1');
+    await expect(
+      dispatch(
+        'chart',
+        { chartConfig: 'function chart(){}' },
+        deps,
+        noSignal(),
+      ),
+    ).rejects.toThrow('results no longer cached');
     expect(chartConfig()).toBe('');
     expect(resultViews).toEqual([]);
   });

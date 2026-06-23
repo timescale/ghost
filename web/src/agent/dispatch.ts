@@ -168,21 +168,31 @@ async function handleChart(
   if (!executor) {
     throw new Error('no database panel is mounted to read results from');
   }
-  // Only chart a run that belongs to the currently-mounted database. A run
-  // recorded against a different database (before a database switch) must not be
-  // read through this executor.
+  // Only chart a successful run that belongs to the currently-mounted database.
+  // A run recorded against a different database (before a database switch) must
+  // not be read through this executor; a failed run has no readable results in
+  // the cache, so charting it would mutate the UI and then error.
   const lastRun = deps.getLastRun();
-  if (!lastRun || lastRun.databaseId !== executor.databaseId) {
+  if (
+    !lastRun ||
+    lastRun.databaseId !== executor.databaseId ||
+    lastRun.status !== 'success'
+  ) {
     throw new Error(
       'no completed query run to chart for the current database; run a query first (e.g. ghost_sql with visualize)',
     );
   }
 
-  // Validation passed: now apply the config and switch to the chart view.
-  deps.setChartConfig(cmd.chartConfig);
-  deps.setResultView('chart');
+  // Read the run's results BEFORE mutating the UI: if the cache entry is gone
+  // (e.g. evicted), this rejects, and we must not have clobbered the user's
+  // chart config or switched their view as a side effect of a failed command.
   // Read the full result for charting (the chart caps internally).
   const data = await executor.getRunData(lastRun.runId, CHART_ROW_LIMIT);
+
+  // Results are readable: now apply the config and switch to the chart view.
+  deps.setChartConfig(cmd.chartConfig);
+  deps.setResultView('chart');
+
   // Reuse tryRenderChart so a bad config doesn't fail the whole tool call:
   // it's reported as chartError alongside the editor diagnostics, matching the
   // ghost_sql visualize path. Many type errors don't throw at runtime but still
