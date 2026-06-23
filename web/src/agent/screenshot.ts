@@ -10,11 +10,19 @@ type CaptureOption = EChartsOption & { animation: false };
 // backgroundColor (a color string, or a gradient/pattern object).
 type BackgroundColor = EChartsOption['backgroundColor'];
 
-// Fixed pixel size for agent-facing chart screenshots. Rendered at 2x for a
-// crisp image the agent can inspect.
+// Fixed logical size for agent-facing chart screenshots, plus the export scale
+// factor. The exported PNG is CHART_WIDTH*PIXEL_RATIO x CHART_HEIGHT*PIXEL_RATIO
+// (1920x1280). pixelRatio is a layout-zoom factor, not a sharpness knob: ECharts
+// lays the chart out in these logical pixels (font sizes, axis spacing, label
+// thinning) and scales the result on export. The long edge must stay <= 2000 px:
+// Anthropic's vision API drops its per-image dimension cap from 8000 to 2000 px
+// once a request carries more than 20 images ("many-image requests"), and a
+// chart-heavy agent session easily exceeds that, so a larger image is rejected
+// with an invalid_request_error mid-conversation. 1920 leaves margin under 2000
+// while staying close to the model's native resolution (no wasted detail).
 const CHART_WIDTH = 1200;
 const CHART_HEIGHT = 800;
-const PIXEL_RATIO = 2;
+const PIXEL_RATIO = 1.6;
 
 // Maximum time to wait for ECharts to finish rendering before capturing anyway.
 // The 'finished' event normally fires within a frame or two; this is only a
