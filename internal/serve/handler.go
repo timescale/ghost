@@ -320,6 +320,10 @@ type State struct {
 	// QueryHistory is the list of previously run queries, newest first. Each PUT
 	// replaces it wholesale; the web client owns dedup and capping.
 	QueryHistory []QueryHistoryEntry `json:"queryHistory,omitempty"`
+	// ChartConfigHistory is the list of previously used chart configs, newest
+	// first. Like QueryHistory, each PUT replaces it wholesale; the web client
+	// owns dedup and capping.
+	ChartConfigHistory []ChartConfigHistoryEntry `json:"chartConfigHistory,omitempty"`
 }
 
 // QueryRun records a single execution of a query: when it completed (epoch
@@ -337,6 +341,14 @@ type QueryHistoryEntry struct {
 	Timestamp      int64      `json:"ts"`
 	Success        bool       `json:"success"`
 	AdditionalRuns []QueryRun `json:"additionalRuns,omitempty"`
+}
+
+// ChartConfigHistoryEntry is one entry in the chart config history: the full
+// chart config source and when it was last recorded (epoch milliseconds). The
+// web client owns dedup (identical configs are promoted, not duplicated).
+type ChartConfigHistoryEntry struct {
+	Config    string `json:"config"`
+	Timestamp int64  `json:"ts"`
 }
 
 // GetStateResponse is the response body of the GET /api/state endpoint.
