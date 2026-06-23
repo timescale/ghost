@@ -244,13 +244,21 @@ path, mirroring the visualize path's signal handling).
 
 ---
 
+## Round 9 — model: `openai-codex/gpt-5.5`
+
+**No issues found.** gpt reviewed the full diff and returned exactly "No issues
+found" — its stream of substantive findings has dropped off. Loop converged.
+
+---
+
 ## Convergence
 
 Findings by round: 5 (R1) → 5 (R2) → 1 (R3) → 1 (R4) → 2 (R5) → 2 (R6) → 2 (R7)
-→ 1 (R8). Rounds 3–4 used other models and trended toward noise; running gpt-5.5
-from round 5 on keeps surfacing genuine (if increasingly narrow) issues — now
-clustering tightly around the `dispatch.ts` cancel-handling area, a sign the
-broader surface is exhausted. Continuing with gpt until it returns nothing.
+→ 1 (R8) → 0 (R9). Rounds 3–4 used other models and trended toward noise;
+running gpt-5.5 from round 5 on kept surfacing genuine (if increasingly narrow)
+issues that clustered tightly around the `dispatch.ts` cancel-handling area
+before drying up entirely in round 9. Per the request ("continue the loop with
+just gpt … until its findings drop off"), the cycle is complete.
 
-**Running totals:** 20 fixed, 1 deferred (negligible + risky), 3 invalid.
+**Final totals:** 20 fixed, 1 deferred (negligible + risky), 3 invalid.
 `./check` (Go) and `bun typecheck`/`lint`/`test` (web) all pass.
