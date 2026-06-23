@@ -73,7 +73,7 @@ func TestCreateCmd(t *testing.T) {
 						JSONDefault:  &api.Error{Message: "compute limit has been exceeded", Code: new(api.ErrorCodeComputeLimitExceeded)},
 					}, nil)
 			},
-			wantErr: "this space has reached its compute limit, so it cannot create a database\n\nRaise or remove the limit with 'ghost overages enable', or wait until your free allowance resets next cycle",
+			wantErr: "this space has reached its compute limit, so it cannot create a database\n\nRaise or remove the limit with 'ghost overages enable', or wait until your\nfree allowance resets next cycle",
 		},
 		{
 			name: "nil response body",
