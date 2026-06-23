@@ -283,7 +283,22 @@ export function QueryPanel({
             reject(new Error('the query was canceled'));
             return;
           }
-          const started = apiRef.current?.executeQuery(sql, runId);
+          // The panel was torn down (e.g. a database switch remounted it)
+          // between scheduling this tick and running it: there's no widget to
+          // run against. Reject with the real cause rather than the misleading
+          // "a query is already running" below. (The unmount-cleanup effect
+          // also rejects already-pending runs; this covers the gap before a run
+          // becomes pending.)
+          const api = apiRef.current;
+          if (!api) {
+            reject(
+              new Error(
+                'the database panel was torn down before the query could start',
+              ),
+            );
+            return;
+          }
+          const started = api.executeQuery(sql, runId);
           if (!started) {
             reject(new Error('a query is already running; try again shortly'));
             return;

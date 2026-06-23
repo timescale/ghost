@@ -90,14 +90,19 @@ const DIAGNOSTICS_TIMEOUT_MS = 5000;
 export async function tryGetChartConfigDiagnostics(
   config: string,
 ): Promise<ChartConfigDiagnostic[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       getChartConfigDiagnostics(config),
-      new Promise<ChartConfigDiagnostic[]>((resolve) =>
-        setTimeout(() => resolve([]), DIAGNOSTICS_TIMEOUT_MS),
-      ),
+      new Promise<ChartConfigDiagnostic[]>((resolve) => {
+        timer = setTimeout(() => resolve([]), DIAGNOSTICS_TIMEOUT_MS);
+      }),
     ]);
   } catch {
     return [];
+  } finally {
+    // Clear the timeout once the race settles so a fast diagnostics result
+    // doesn't leave a 5s timer (and its microtask) dangling per call.
+    clearTimeout(timer);
   }
 }
