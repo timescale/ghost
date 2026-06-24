@@ -14,6 +14,7 @@ func TestMCPListCmd(t *testing.T) {
 		"prompt  migrate-postgres-tables-to-hypertables  \n" +
 		"prompt  pgvector-semantic-search                \n" +
 		"prompt  postgres                                \n" +
+		"prompt  postgres-database-migration             \n" +
 		"prompt  postgres-hybrid-text-search             \n" +
 		"prompt  setup-timescaledb-hypertables           \n" +
 		"tool    ghost_connect                           \n" +
