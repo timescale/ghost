@@ -52,7 +52,7 @@ const (
 	defaultAPIURL       = "https://api.ghost.build/v0"
 	defaultAnalytics    = true
 	defaultColor        = true
-	defaultDocsMCPURL   = "https://mcp.tigerdata.com/docs?disabled_skills=ghost-database"
+	defaultDocsMCPURL   = "https://mcp.tigerdata.com/docs?disabled_skills=ghost-database&disabled_prompts=ghost-database"
 	defaultKeyring      = true
 	defaultReadOnly     = false
 	defaultReleasesURL  = "https://install.ghost.build"

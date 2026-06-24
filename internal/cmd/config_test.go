@@ -68,15 +68,15 @@ version_check: true
 		{
 			name: "all flag text output",
 			args: []string{"config", "--all"},
-			wantStdout: "analytics      true                                                           \n" +
-				"color          true                                                           \n" +
-				"read_only      false                                                          \n" +
-				"version_check  true                                                           \n" +
-				"api_url        https://api.ghost.build/v0                                     \n" +
-				"docs_mcp_url   https://mcp.tigerdata.com/docs?disabled_skills=ghost-database  \n" +
-				"keyring        true                                                           \n" +
-				"releases_url   https://install.ghost.build                                    \n" +
-				"share_url      https://ghost.build/share                                      \n",
+			wantStdout: "analytics      true                                                                                           \n" +
+				"color          true                                                                                           \n" +
+				"read_only      false                                                                                          \n" +
+				"version_check  true                                                                                           \n" +
+				"api_url        https://api.ghost.build/v0                                                                     \n" +
+				"docs_mcp_url   https://mcp.tigerdata.com/docs?disabled_skills=ghost-database&disabled_prompts=ghost-database  \n" +
+				"keyring        true                                                                                           \n" +
+				"releases_url   https://install.ghost.build                                                                    \n" +
+				"share_url      https://ghost.build/share                                                                      \n",
 		},
 		{
 			name: "all flag json output",
@@ -85,7 +85,7 @@ version_check: true
   "api_url": "https://api.ghost.build/v0",
   "analytics": true,
   "color": true,
-  "docs_mcp_url": "https://mcp.tigerdata.com/docs?disabled_skills=ghost-database",
+  "docs_mcp_url": "https://mcp.tigerdata.com/docs?disabled_skills=ghost-database\u0026disabled_prompts=ghost-database",
   "keyring": true,
   "read_only": false,
   "releases_url": "https://install.ghost.build",
@@ -100,7 +100,7 @@ version_check: true
 			wantStdout: `analytics: true
 api_url: https://api.ghost.build/v0
 color: true
-docs_mcp_url: https://mcp.tigerdata.com/docs?disabled_skills=ghost-database
+docs_mcp_url: https://mcp.tigerdata.com/docs?disabled_skills=ghost-database&disabled_prompts=ghost-database
 keyring: true
 read_only: false
 releases_url: https://install.ghost.build
@@ -112,15 +112,15 @@ version_check: true
 			name: "env and all flags text output",
 			args: []string{"config", "--env", "--all"},
 			opts: []runOption{withEnv("GHOST_COLOR", "false")},
-			wantStdout: "analytics      true                                                           \n" +
-				"color          false                                                          \n" +
-				"read_only      false                                                          \n" +
-				"version_check  true                                                           \n" +
-				"api_url        https://api.ghost.build/v0                                     \n" +
-				"docs_mcp_url   https://mcp.tigerdata.com/docs?disabled_skills=ghost-database  \n" +
-				"keyring        true                                                           \n" +
-				"releases_url   https://install.ghost.build                                    \n" +
-				"share_url      https://ghost.build/share                                      \n",
+			wantStdout: "analytics      true                                                                                           \n" +
+				"color          false                                                                                          \n" +
+				"read_only      false                                                                                          \n" +
+				"version_check  true                                                                                           \n" +
+				"api_url        https://api.ghost.build/v0                                                                     \n" +
+				"docs_mcp_url   https://mcp.tigerdata.com/docs?disabled_skills=ghost-database&disabled_prompts=ghost-database  \n" +
+				"keyring        true                                                                                           \n" +
+				"releases_url   https://install.ghost.build                                                                    \n" +
+				"share_url      https://ghost.build/share                                                                      \n",
 		},
 		{
 			name: "env and all flags json output",
@@ -130,7 +130,7 @@ version_check: true
   "api_url": "https://api.ghost.build/v0",
   "analytics": true,
   "color": false,
-  "docs_mcp_url": "https://mcp.tigerdata.com/docs?disabled_skills=ghost-database",
+  "docs_mcp_url": "https://mcp.tigerdata.com/docs?disabled_skills=ghost-database\u0026disabled_prompts=ghost-database",
   "keyring": true,
   "read_only": false,
   "releases_url": "https://install.ghost.build",
@@ -146,7 +146,7 @@ version_check: true
 			wantStdout: `analytics: true
 api_url: https://api.ghost.build/v0
 color: false
-docs_mcp_url: https://mcp.tigerdata.com/docs?disabled_skills=ghost-database
+docs_mcp_url: https://mcp.tigerdata.com/docs?disabled_skills=ghost-database&disabled_prompts=ghost-database
 keyring: true
 read_only: false
 releases_url: https://install.ghost.build

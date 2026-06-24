@@ -283,9 +283,7 @@ func (p *ProxyClient) RegisterPrompts(ctx context.Context, server *mcp.Server) e
 
 	// Register each remote prompt as a proxy prompt
 	for _, prompt := range promptsResp.Prompts {
-		// Skip the ghost-database prompt: Ghost's own tools already cover
-		// database management, so the remote prompt is redundant here.
-		if prompt.Name == "" || prompt.Name == "ghost-database" {
+		if prompt.Name == "" {
 			continue
 		}
 
