@@ -37,11 +37,11 @@ func (SQLInput) Schema() *jsonschema.Schema {
 	schema.Properties["query"].Description = "SQL query to execute. Multi-statement queries are supported when no parameters are provided. Exactly one of 'query' or 'file' must be provided."
 	schema.Properties["file"].Description = "Path to a SQL file on disk to execute. Multi-statement files are supported when no parameters are provided. Exactly one of 'query' or 'file' must be provided."
 	schema.Properties["parameters"].Description = "Query parameters. Values are substituted for $1, $2, etc. placeholders in the query. Only supported for single-statement queries"
-	schema.Properties["limit"].Description = fmt.Sprintf("Maximum number of result rows to return to you (the caller). Defaults to %d. This caps how much data is returned to avoid overwhelming the context window — it does NOT add a LIMIT to your SQL, so aggregate or add LIMIT in the query itself if you need to bound what the database computes. Raise this only when you genuinely need more rows.", defaultRowLimit)
+	schema.Properties["limit"].Description = fmt.Sprintf("Maximum number of result rows returned to you (the caller). Defaults to %d to conserve token usage. This only caps the rows returned in the response; it does NOT add a LIMIT to your SQL, so the database still computes the full result. Prefer aggregating, filtering, or adding LIMIT in the query itself. Raise this only when you genuinely need more rows.", defaultRowLimit)
 	schema.Properties["limit"].Default = json.RawMessage(fmt.Sprintf("%d", defaultRowLimit))
 	schema.Properties["visualize"].Description = "Render the results in the local web UI instead of (or in addition to) returning them as text. 'table' shows the rows in a table; 'chart' renders a chart (provide chart_config) as the active view. In BOTH cases the response includes a PNG image of the rendered chart so you can inspect the data visually; if the chart can't be rendered, the query still succeeds and 'chart_error' explains why. When set, the query runs in the browser and the live UI is updated so the user sees exactly what you ran. Opens a browser if one isn't already connected. Omit to just run server-side and return rows as text (no image)."
 	schema.Properties["visualize"].Enum = []any{"table", "chart"}
-	schema.Properties["chart_config"].Description = "JavaScript source defining a function `chart(data)` that returns an Apache ECharts option object. `data` provides `data.rows` (array of row objects keyed by column name) and `data.columns` ([{name, type}]). Used with either visualize view to render the returned chart image; with visualize='chart' it also becomes the active view. Applied to the chart and shown in the UI's config editor (overwriting any existing config). If omitted, a sensible default chart config is used."
+	schema.Properties["chart_config"].Description = "JavaScript source defining a function `chart(data)` that returns an Apache ECharts option object. `data` provides `data.rows` (array of row objects keyed by column name) and `data.columns` ([{name, type}]). Used with either visualize view to render the returned chart image; with visualize='chart' it also becomes the active view. Applied to the chart and shown in the UI's config editor (overwriting any existing config). If omitted, the previous or default chart config is used."
 	return schema
 }
 
@@ -65,7 +65,7 @@ func newSQLTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:         "ghost_sql",
 		Title:        "Execute SQL",
-		Description:  "Execute a SQL query against a database. If the connection fails, the database may not be running - use ghost_list to check its status.",
+		Description:  fmt.Sprintf("Execute a SQL query against a database. Results are limited to %d rows by default to conserve token usage (override with `limit`); perform aggregations, filtering, or add a LIMIT in SQL whenever possible rather than returning large result sets. Use the `visualize` option to convey large amounts of data to the user. If the connection fails, the database may not be running - use ghost_list to check its status.", defaultRowLimit),
 		InputSchema:  SQLInput{}.Schema(),
 		OutputSchema: SQLOutput{}.Schema(),
 		Annotations: &mcp.ToolAnnotations{
