@@ -50,7 +50,8 @@ export function ChartHistoryModal({
   const activeIndex = Math.min(selectedIndex, Math.max(0, history.length - 1));
   const selected = history[activeIndex];
 
-  // Recompute "now" once per render so all relative times share a reference.
+  // Capture "now" once per mount so all relative times share a single
+  // reference for the lifetime of this (short-lived) modal.
   const now = useMemo(() => Date.now(), []);
 
   const handleRemove = (index: number) => {
