@@ -235,10 +235,10 @@ export function QueryPanel({
 
   // When this panel unmounts (or the database changes, which remounts it), any
   // agent run still awaiting handleQueryComplete will never settle — the
-  // completion handler won't fire for a torn-down instance. Reject those
-  // pending runs and abort the in-flight query so the agent dispatcher's
-  // runQuery promise rejects (and its heartbeat stops), instead of hanging the
-  // MCP tool call indefinitely.
+  // completion handler won't fire for a torn-down instance. Settle those
+  // pending runs (resolving with status: 'failed') and abort the in-flight
+  // query so the agent dispatcher's runQuery promise resolves (and its
+  // heartbeat stops), instead of hanging the MCP tool call indefinitely.
   // biome-ignore lint/correctness/useExhaustiveDependencies: databaseId is the reset trigger (panel re-targets on DB change), not read in the body
   useEffect(() => {
     const pending = pendingRuns.current;

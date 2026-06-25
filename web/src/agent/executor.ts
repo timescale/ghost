@@ -29,8 +29,12 @@ export interface Executor {
   databaseId: string;
   // Run the given SQL, resolving once the run completes (success or failure).
   // Aborting `signal` cancels this run's in-flight query — and only this run's,
-  // never an unrelated query — rejecting the returned promise. Used when the
-  // agent bridge signals the MCP request was canceled, timed out, or superseded.
+  // never an unrelated query. Once a run has started, cancellation settles the
+  // promise by *resolving* it with `{status: 'failed', error: 'the query was
+  // canceled'}` (the canceled completion), not by rejecting; the promise only
+  // rejects in pre-start paths (already aborted, or the panel torn down / a
+  // query already running before this one starts). Used when the agent bridge
+  // signals the MCP request was canceled, timed out, or superseded.
   runQuery(sql: string, signal: AbortSignal): Promise<QueryOutcome>;
   // Read the cached results for a completed run, capped at `limit` rows.
   getRunData(runId: string, limit: number): Promise<ChartData>;
