@@ -169,3 +169,19 @@ func TestHandleSQLVisualizeRequiresBrowser(t *testing.T) {
 		t.Fatalf("err = %v, want visualization-not-available error", err)
 	}
 }
+
+// TestHandleSQLVisualizeRejectsInvalidValue verifies that a visualize value
+// outside the schema enum is rejected with a clear error, defending against a
+// client that bypasses JSON schema validation.
+func TestHandleSQLVisualizeRejectsInvalidValue(t *testing.T) {
+	s := &Server{app: newTestApp(t, nil)}
+
+	_, _, err := s.handleSQL(context.Background(), nil, SQLInput{
+		Ref:       "db",
+		Query:     "SELECT 1",
+		Visualize: "bogus",
+	})
+	if err == nil || !strings.Contains(err.Error(), `invalid visualize value "bogus"`) {
+		t.Fatalf("err = %v, want invalid-visualize-value error", err)
+	}
+}

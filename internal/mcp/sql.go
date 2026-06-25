@@ -106,6 +106,12 @@ func (s *Server) handleSQL(ctx context.Context, req *mcp.CallToolRequest, input 
 	// UI reflects exactly what the agent ran, and the chart can be rendered and
 	// screenshotted. Gated to local (stdio) mode where a browser can be opened.
 	if input.Visualize != "" {
+		// Defend against a client that bypasses JSON schema enum validation: an
+		// unexpected value would otherwise fail later and less clearly in the
+		// browser/bridge. Reject it here with an explicit message.
+		if input.Visualize != "table" && input.Visualize != "chart" {
+			return nil, SQLOutput{}, fmt.Errorf("invalid visualize value %q: must be 'table' or 'chart'", input.Visualize)
+		}
 		if s.browser == nil {
 			return nil, SQLOutput{}, errors.New("visualization is only available when running the MCP server locally (stdio transport)")
 		}
