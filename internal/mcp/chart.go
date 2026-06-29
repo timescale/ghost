@@ -57,6 +57,12 @@ func (s *Server) handleChart(ctx context.Context, req *mcp.CallToolRequest, inpu
 	}
 
 	var result chartResult
+	// chartCommand and ChartInput hold the same field but with different JSON
+	// tags — the browser's camelCase wire format (chartConfig) vs the MCP input
+	// convention (chart_config) — so they're deliberately distinct types. Go
+	// ignores struct tags when converting, so the cast re-tags the value for the
+	// browser wire format (staticcheck S1016 prefers this over a field-by-field
+	// literal).
 	if err := s.browser.request(ctx, commandChart, chartCommand(input), &result); err != nil {
 		return nil, nil, fmt.Errorf("charting failed: %w", err)
 	}
