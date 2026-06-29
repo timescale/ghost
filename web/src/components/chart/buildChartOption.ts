@@ -13,7 +13,7 @@ import type { ChartData } from './types';
 // thrown to the caller, which surfaces them in the chart pane.
 //
 // Note: with the MCP agent bridge, a `chart_config` can also originate from an
-// AI agent (via `ghost_sql`/`ghost_chart`) rather than being hand-authored by
+// AI agent (via `ghost_visualize`) rather than being hand-authored by
 // the operator. This is a deliberate, accepted trade-off: the whole stack runs
 // on localhost, driven by an MCP server the operator chose to connect to a
 // model they trust, and that model can already issue arbitrary SQL. So an

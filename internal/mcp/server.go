@@ -161,7 +161,7 @@ func (s *Server) registerTools(ctx context.Context) {
 
 	// Register browser-backed visualization tools (local/stdio mode only).
 	if s.browser != nil {
-		mcp.AddTool(s.mcpServer, newChartTool(), s.handleChart)
+		mcp.AddTool(s.mcpServer, newVisualizeTool(), s.handleVisualize)
 		mcp.AddTool(s.mcpServer, newUIStateTool(), s.handleUIState)
 	}
 }

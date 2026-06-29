@@ -13,89 +13,6 @@ import (
 	"github.com/timescale/ghost/internal/config"
 )
 
-func TestCapResultSetRows(t *testing.T) {
-	rows := func(n int) [][]string {
-		out := make([][]string, n)
-		for i := range out {
-			out[i] = []string{"v"}
-		}
-		return out
-	}
-
-	tests := []struct {
-		name     string
-		sets     []common.ResultSet
-		limit    int
-		wantRows []int
-	}{
-		{
-			name:     "no sets",
-			sets:     nil,
-			limit:    50,
-			wantRows: nil,
-		},
-		{
-			name:     "under limit is untouched",
-			sets:     []common.ResultSet{{Rows: rows(3)}},
-			limit:    50,
-			wantRows: []int{3},
-		},
-		{
-			name:     "exactly at limit is untouched",
-			sets:     []common.ResultSet{{Rows: rows(50)}},
-			limit:    50,
-			wantRows: []int{50},
-		},
-		{
-			name:     "over limit is truncated",
-			sets:     []common.ResultSet{{Rows: rows(120)}},
-			limit:    50,
-			wantRows: []int{50},
-		},
-		{
-			name: "each set capped independently",
-			sets: []common.ResultSet{
-				{Rows: rows(2)},
-				{Rows: rows(75)},
-			},
-			limit:    50,
-			wantRows: []int{2, 50},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			capResultSetRows(tt.sets, tt.limit)
-			if len(tt.sets) != len(tt.wantRows) {
-				t.Fatalf("set count = %d, want %d", len(tt.sets), len(tt.wantRows))
-			}
-			for i := range tt.sets {
-				if got := len(tt.sets[i].Rows); got != tt.wantRows[i] {
-					t.Errorf("set %d rows = %d, want %d", i, got, tt.wantRows[i])
-				}
-			}
-		})
-	}
-}
-
-// TestCapResultSetRowsPreservesRowsAffected ensures truncating returned rows
-// does not overwrite RowsAffected, which reflects the Postgres command tag
-// (e.g. rows touched by an UPDATE/DELETE), not the count of rows returned.
-func TestCapResultSetRowsPreservesRowsAffected(t *testing.T) {
-	sets := []common.ResultSet{{
-		Rows:         make([][]string, 100),
-		RowsAffected: 100,
-	}}
-	capResultSetRows(sets, 10)
-
-	if got := len(sets[0].Rows); got != 10 {
-		t.Errorf("rows = %d, want 10", got)
-	}
-	if sets[0].RowsAffected != 100 {
-		t.Errorf("RowsAffected = %d, want 100 (must not be overwritten by truncation)", sets[0].RowsAffected)
-	}
-}
-
 // newTestApp returns a *common.App loaded against an isolated temp config dir,
 // with the API client provided by clientFactory (which may be nil to simulate
 // the user not being logged in — GetAll/GetClient then surface clientErr).
@@ -151,37 +68,5 @@ func TestHandleSQLQueryFileValidation(t *testing.T) {
 				t.Fatalf("err = %v, want containing %q", err, tt.wantErr)
 			}
 		})
-	}
-}
-
-// TestHandleSQLVisualizeRequiresBrowser verifies that requesting visualization
-// without a browser-backed server (i.e. not local/stdio mode, where s.browser
-// is nil) fails fast with a clear error rather than attempting to connect.
-func TestHandleSQLVisualizeRequiresBrowser(t *testing.T) {
-	s := &Server{app: newTestApp(t, nil)} // browser is nil (remote mode)
-
-	_, _, err := s.handleSQL(context.Background(), nil, SQLInput{
-		Ref:       "db",
-		Query:     "SELECT 1",
-		Visualize: "table",
-	})
-	if err == nil || !strings.Contains(err.Error(), "visualization is only available when running the MCP server locally") {
-		t.Fatalf("err = %v, want visualization-not-available error", err)
-	}
-}
-
-// TestHandleSQLVisualizeRejectsInvalidValue verifies that a visualize value
-// outside the schema enum is rejected with a clear error, defending against a
-// client that bypasses JSON schema validation.
-func TestHandleSQLVisualizeRejectsInvalidValue(t *testing.T) {
-	s := &Server{app: newTestApp(t, nil)}
-
-	_, _, err := s.handleSQL(context.Background(), nil, SQLInput{
-		Ref:       "db",
-		Query:     "SELECT 1",
-		Visualize: "bogus",
-	})
-	if err == nil || !strings.Contains(err.Error(), `invalid visualize value "bogus"`) {
-		t.Fatalf("err = %v, want invalid-visualize-value error", err)
 	}
 }

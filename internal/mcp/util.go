@@ -14,6 +14,13 @@ import (
 	"github.com/timescale/ghost/internal/common"
 )
 
+// defaultRowLimit caps how many result rows the browser-backed tools
+// (ghost_visualize, ghost_ui_state) return to the agent. This prevents a large
+// result set (potentially millions of rows) from being dumped into the LLM's
+// context. The full result is still computed and charted in the browser;
+// callers can raise it via the limit parameter.
+const defaultRowLimit = 50
+
 // resolveDatabase fetches the database by ref (which may be a name or an id)
 // and returns it. Callers that need the canonical id (e.g. the web UI, which
 // selects the database by id and reflects it in the URL) read database.Id;

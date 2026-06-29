@@ -182,7 +182,7 @@ async function handleChart(
     lastRun.status !== 'success'
   ) {
     throw new Error(
-      'no completed query run to chart for the current database; run a query first (e.g. ghost_sql with visualize)',
+      'no completed query run to chart for the current database; run a query first (e.g. ghost_visualize with sql)',
     );
   }
 
