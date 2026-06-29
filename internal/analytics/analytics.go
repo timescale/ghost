@@ -28,7 +28,6 @@ var ignore = []string{
 	"message",
 	"share_token",
 	"from_share",
-	"chart_config",
 }
 
 type Analytics struct {
