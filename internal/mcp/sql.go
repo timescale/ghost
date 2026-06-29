@@ -41,7 +41,7 @@ func (SQLInput) Schema() *jsonschema.Schema {
 	schema.Properties["limit"].Default = json.RawMessage(fmt.Sprintf("%d", defaultRowLimit))
 	schema.Properties["visualize"].Description = "Render the results in the local web UI instead of (or in addition to) returning them as text. 'table' shows the rows in a table; 'chart' renders a chart (using `chart_config`) as the active view. The response includes a PNG image of the rendered chart so you can inspect the data visually whenever a chart was requested — i.e. when 'chart' is used, or when 'table' is used together with `chart_config`. With 'table' and no `chart_config`, no image is returned. If a requested chart can't be rendered, the query still succeeds and 'chart_error' explains why. When set, the query runs in the browser and the live UI is updated so the user sees exactly what you ran. Opens a browser if one isn't already connected. Omit to just run server-side and return rows as text (no image)."
 	schema.Properties["visualize"].Enum = []any{"table", "chart"}
-	schema.Properties["chart_config"].Description = "JavaScript source defining a function `chart(data)` that returns an Apache ECharts option object. `data` provides `data.rows` (array of row objects keyed by column name) and `data.columns` ([{name, type}]). Used with either `visualize` view to render the query data as a chart. If omitted, the previous or default chart config is used."
+	schema.Properties["chart_config"].Description = chartConfigDescriptionPrefix + "Used with either `visualize` view to render the query data as a chart. If omitted, the previous or default chart config is used."
 	return schema
 }
 

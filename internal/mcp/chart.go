@@ -11,6 +11,15 @@ import (
 	"github.com/timescale/ghost/internal/util"
 )
 
+// chartConfigDescriptionPrefix is the shared lead-in for the chart_config
+// parameter description on both ghost_chart and ghost_sql. It documents the
+// expected function shape, the `data` contract, and points to the ECharts
+// option reference so less capable models have the info they need (frontier
+// models generally know ECharts already). The config is type-checked against
+// the `EChartsOption` type in the UI's editor, and any issues are returned as
+// chart_diagnostics, so the model gets corrective feedback after a first attempt.
+const chartConfigDescriptionPrefix = "JavaScript source defining a function `chart(data)` that returns an Apache ECharts option object (see the ECharts option reference at https://echarts.apache.org/en/option.html). `data` provides `data.rows` (array of row objects keyed by column name) and `data.columns` ([{name, type}]). The UI's editor type-checks the config against the `EChartsOption` type and any issues are reported back as chart_diagnostics. "
+
 // ChartInput represents input for ghost_chart
 type ChartInput struct {
 	ChartConfig string `json:"chart_config"`
@@ -18,7 +27,7 @@ type ChartInput struct {
 
 func (ChartInput) Schema() *jsonschema.Schema {
 	schema := util.Must(jsonschema.For[ChartInput](nil))
-	schema.Properties["chart_config"].Description = "JavaScript source defining a function `chart(data)` that returns an Apache ECharts option object. `data` provides `data.rows` (array of row objects keyed by column name) and `data.columns` ([{name, type}]). Applied to the most recent query run's results — it does NOT run a query (use ghost_sql with visualize='chart' to run a query and chart it). The config is shown in the UI's editor (overwriting any existing config), and the response includes a PNG image of the rendered chart so you can verify its appearance."
+	schema.Properties["chart_config"].Description = chartConfigDescriptionPrefix + "Applied to the most recent query run's results — it does NOT run a query (use ghost_sql with visualize='chart' to run a query and chart it). The config is shown in the UI's editor (overwriting any existing config), and the response includes a PNG image of the rendered chart so you can verify its appearance."
 	return schema
 }
 
