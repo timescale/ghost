@@ -92,8 +92,9 @@ func formatVisualizeSummary(result visualizeResult, limit int) string {
 	// structured output's chart_error field, so repeating it in the prose summary
 	// would duplicate it in the tool result content.
 	if diag := formatChartDiagnostics(result.ChartDiagnostics); diag != "" {
+		// formatChartDiagnostics already returns a newline-free block, and it's
+		// the last thing appended, so no trailing newline to add here.
 		b.WriteString(diag)
-		b.WriteByte('\n')
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
