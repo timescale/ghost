@@ -4,11 +4,14 @@ package mcp
 // the browser over the agent bridge. The web orchestrator (web/src/agent/)
 // mirrors these JSON shapes — keep them in sync.
 
+// browserCommand identifies an agent command type dispatched to the browser.
+type browserCommand string
+
 // Agent command types dispatched to the browser.
 const (
-	commandVisualize = "visualize"
-	commandChart     = "chart"
-	commandUIState   = "uiState"
+	commandVisualize browserCommand = "visualize"
+	commandChart     browserCommand = "chart"
+	commandUIState   browserCommand = "uiState"
 )
 
 // visualizeCommand runs a query in the browser, syncs the live UI, and

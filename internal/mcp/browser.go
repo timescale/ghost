@@ -143,13 +143,13 @@ func (c *browserController) ensureClient(ctx context.Context) (*serve.Bridge, er
 
 // request dispatches a command to the active browser client and unmarshals the
 // JSON response into out (which may be nil to ignore the response body).
-func (c *browserController) request(ctx context.Context, commandType string, payload any, out any) error {
+func (c *browserController) request(ctx context.Context, commandType browserCommand, payload any, out any) error {
 	bridge, err := c.ensureClient(ctx)
 	if err != nil {
 		return err
 	}
 
-	data, err := bridge.Request(ctx, commandType, payload)
+	data, err := bridge.Request(ctx, string(commandType), payload)
 	if err != nil {
 		return err
 	}
