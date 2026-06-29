@@ -67,7 +67,7 @@ func newVisualizeTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:         "ghost_visualize",
 		Title:        "Visualize Query",
-		Description:  "Run a SQL query and/or render a chart in the local web UI, returning the result rows and a rendered chart image. Provide `sql` to run a query (and chart it); provide `chart_config` without `sql` to re-chart the most recent run with a new appearance (without re-running it). Prefer this over ghost_sql when you want to convey user-facing tabular data or charts, since the user sees exactly what you ran in a live browser UI. Requires the local web UI (opens a browser if needed).",
+		Description:  "Run a SQL query and/or render a chart in the local web UI, returning the result rows and a rendered chart image. Provide `sql` to run a query (and chart it); provide `chart_config` without `sql` to re-chart the most recent run with a new appearance (without re-running it). Use this when you want the user to see the results — it runs in a live browser UI showing exactly what you ran, with the rows and a chart. For non-user-facing queries (e.g. autonomous work where the user doesn't need to watch), use ghost_sql instead. Requires the local web UI (opens a browser if needed).",
 		InputSchema:  VisualizeInput{}.Schema(),
 		OutputSchema: VisualizeOutput{}.Schema(),
 		Annotations: &mcp.ToolAnnotations{
