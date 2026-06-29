@@ -74,6 +74,16 @@ func newBrowserController(app *common.App, logger *slog.Logger) *browserControll
 // ephemeral loopback port) and returns the bridge. Subsequent calls return the
 // already-running instance.
 func (c *browserController) ensureStarted(ctx context.Context) (*serve.Bridge, error) {
+	// Verify the API client is available before starting the server or opening
+	// the browser. Without this, a logged-out user gets an opaque "no browser
+	// connected" timeout: the web app fails /api/bootstrap and never connects an
+	// active client, instead of the real auth/config error surfacing here. This
+	// runs on every call (before the already-started early-return) so expired
+	// credentials are caught too.
+	if _, _, err := c.app.GetClient(); err != nil {
+		return nil, err
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
