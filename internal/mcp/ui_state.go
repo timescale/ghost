@@ -76,13 +76,12 @@ func (s *Server) handleUIState(ctx context.Context, req *mcp.CallToolRequest, in
 	// is started or the browser opened, so a logged-out user gets the real
 	// auth/config error rather than an opaque "no browser connected" timeout.
 
-	limit := input.Limit
-	if limit <= 0 {
-		limit = defaultRowLimit
-	}
-
+	// input.Limit is guaranteed non-zero by the schema default the SDK applies
+	// before this handler runs, so no manual fallback is needed. The cast
+	// re-tags the value for the browser wire format (staticcheck S1016 prefers
+	// it over a field-by-field literal).
 	var result uiStateResult
-	if err := s.browser.request(ctx, commandUIState, uiStateCommand{Limit: limit}, &result); err != nil {
+	if err := s.browser.request(ctx, commandUIState, uiStateCommand(input), &result); err != nil {
 		return nil, UIStateOutput{}, fmt.Errorf("failed to read UI state: %w", err)
 	}
 

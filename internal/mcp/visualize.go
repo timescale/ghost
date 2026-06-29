@@ -108,14 +108,9 @@ func (s *Server) handleVisualizeQuery(ctx context.Context, input VisualizeInput)
 		return nil, VisualizeOutput{}, errors.New("'name_or_id' is required when running a query")
 	}
 
-	limit := input.Limit
-	if limit <= 0 {
-		limit = defaultRowLimit
-	}
-	view := input.View
-	if view == "" {
-		view = "chart"
-	}
+	// limit and view are guaranteed non-zero/non-empty by the schema defaults
+	// the SDK applies before this handler runs (it calls ApplyDefaults on the
+	// raw arguments), so no manual fallback is needed here.
 
 	// Resolve the ref (which may be a database name or id) to the canonical
 	// database id before dispatching to the browser. The web UI selects the
@@ -142,9 +137,9 @@ func (s *Server) handleVisualizeQuery(ctx context.Context, input VisualizeInput)
 	err = s.browser.request(ctx, commandVisualize, visualizeCommand{
 		DatabaseRef: database.Id,
 		SQL:         input.SQL,
-		View:        view,
+		View:        input.View,
 		ChartConfig: input.ChartConfig,
-		Limit:       limit,
+		Limit:       input.Limit,
 	}, &result)
 	if err != nil {
 		return nil, VisualizeOutput{}, fmt.Errorf("visualization failed: %w", err)
@@ -166,7 +161,7 @@ func (s *Server) handleVisualizeQuery(ctx context.Context, input VisualizeInput)
 		return nil, VisualizeOutput{}, err
 	}
 	content := []mcp.Content{
-		&mcp.TextContent{Text: formatVisualizeSummary(result, limit)},
+		&mcp.TextContent{Text: formatVisualizeSummary(result, input.Limit)},
 		structured,
 	}
 	if result.Image != "" {
