@@ -8,28 +8,6 @@ import (
 	"github.com/timescale/ghost/internal/common"
 )
 
-// ChartDiagnostic is one type/syntax issue the web UI's config editor reports
-// for a chart config, surfaced in structured tool output.
-type ChartDiagnostic struct {
-	Line     int    `json:"line"`
-	Column   int    `json:"column"`
-	Message  string `json:"message"`
-	Severity string `json:"severity"`
-}
-
-// toChartDiagnostics converts the browser's wire diagnostics into the structured
-// output type, returning nil when there are none.
-func toChartDiagnostics(diagnostics []chartDiagnostic) []ChartDiagnostic {
-	if len(diagnostics) == 0 {
-		return nil
-	}
-	out := make([]ChartDiagnostic, len(diagnostics))
-	for i, d := range diagnostics {
-		out[i] = ChartDiagnostic(d)
-	}
-	return out
-}
-
 // browserResultSet converts the browser's column/row representation into a
 // [common.ResultSet] for the structured tool output. Cell values are stringified
 // to match the server-side query path's [][]string row shape. rowsAffected is
@@ -124,7 +102,7 @@ func formatVisualizeSummary(result visualizeResult, limit int) string {
 // and syntax errors) as a short block for the agent, or "" if there are none.
 // These are the same issues a human sees as squiggles in the config editor and
 // often explain a wrong-looking chart that still rendered without throwing.
-func formatChartDiagnostics(diagnostics []chartDiagnostic) string {
+func formatChartDiagnostics(diagnostics []ChartDiagnostic) string {
 	if len(diagnostics) == 0 {
 		return ""
 	}
@@ -142,7 +120,7 @@ func formatChartDiagnostics(diagnostics []chartDiagnostic) string {
 
 // chartDiagnosticsSuffix returns a leading-newline-prefixed diagnostics block to
 // append to a summary line, or "" if there are no diagnostics.
-func chartDiagnosticsSuffix(diagnostics []chartDiagnostic) string {
+func chartDiagnosticsSuffix(diagnostics []ChartDiagnostic) string {
 	if diag := formatChartDiagnostics(diagnostics); diag != "" {
 		return "\n" + diag
 	}

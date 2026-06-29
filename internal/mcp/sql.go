@@ -202,7 +202,7 @@ func (s *Server) handleSQLVisualize(ctx context.Context, client api.ClientWithRe
 	}
 	if chartRequested {
 		output.ChartError = result.ChartError
-		output.ChartDiagnostics = toChartDiagnostics(result.ChartDiagnostics)
+		output.ChartDiagnostics = result.ChartDiagnostics
 	}
 
 	// We set Content explicitly (a human-readable summary plus, optionally, the

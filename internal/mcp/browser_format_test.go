@@ -9,7 +9,7 @@ import (
 func TestFormatChartDiagnostics(t *testing.T) {
 	tests := []struct {
 		name        string
-		diagnostics []chartDiagnostic
+		diagnostics []ChartDiagnostic
 		want        string
 	}{
 		{
@@ -19,7 +19,7 @@ func TestFormatChartDiagnostics(t *testing.T) {
 		},
 		{
 			name: "single error",
-			diagnostics: []chartDiagnostic{
+			diagnostics: []ChartDiagnostic{
 				{Line: 2, Column: 5, Message: "Property 'seriess' does not exist", Severity: "error"},
 			},
 			want: "Chart config has 1 issue(s) reported by the editor (these may explain an unexpected chart even if it rendered):\n" +
@@ -27,7 +27,7 @@ func TestFormatChartDiagnostics(t *testing.T) {
 		},
 		{
 			name: "multiple with empty severity defaults to error",
-			diagnostics: []chartDiagnostic{
+			diagnostics: []ChartDiagnostic{
 				{Line: 1, Column: 1, Message: "a", Severity: "warning"},
 				{Line: 3, Column: 2, Message: "b"},
 			},
@@ -51,21 +51,9 @@ func TestChartDiagnosticsSuffix(t *testing.T) {
 	if got := chartDiagnosticsSuffix(nil); got != "" {
 		t.Errorf("chartDiagnosticsSuffix(nil) = %q, want empty", got)
 	}
-	got := chartDiagnosticsSuffix([]chartDiagnostic{{Line: 1, Column: 1, Message: "x", Severity: "error"}})
+	got := chartDiagnosticsSuffix([]ChartDiagnostic{{Line: 1, Column: 1, Message: "x", Severity: "error"}})
 	if !strings.HasPrefix(got, "\n") {
 		t.Errorf("chartDiagnosticsSuffix() = %q, want leading newline", got)
-	}
-}
-
-func TestToChartDiagnostics(t *testing.T) {
-	if got := toChartDiagnostics(nil); got != nil {
-		t.Errorf("toChartDiagnostics(nil) = %v, want nil", got)
-	}
-	in := []chartDiagnostic{{Line: 4, Column: 7, Message: "msg", Severity: "warning"}}
-	got := toChartDiagnostics(in)
-	want := ChartDiagnostic{Line: 4, Column: 7, Message: "msg", Severity: "warning"}
-	if len(got) != 1 || got[0] != want {
-		t.Errorf("toChartDiagnostics() = %+v, want [%+v]", got, want)
 	}
 }
 
@@ -148,7 +136,7 @@ func TestFormatVisualizeSummary_WithDiagnostics(t *testing.T) {
 		Rows:     [][]any{{1}},
 		RowCount: 1,
 		Image:    "data:image/png;base64,aGk=",
-		ChartDiagnostics: []chartDiagnostic{
+		ChartDiagnostics: []ChartDiagnostic{
 			{Line: 1, Column: 1, Message: "bad key", Severity: "error"},
 		},
 	}

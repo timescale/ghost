@@ -40,9 +40,11 @@ type browserColumn struct {
 	Type string `json:"type,omitempty"`
 }
 
-// chartDiagnostic is one type/syntax issue reported by the editor's language
+// ChartDiagnostic is one type/syntax issue reported by the editor's language
 // service for a chart config (the same squiggles a human sees in the editor).
-type chartDiagnostic struct {
+// It is both the browser's wire shape and the type surfaced in structured tool
+// output — the JSON tags happen to match, so no conversion is needed.
+type ChartDiagnostic struct {
 	Line     int    `json:"line"`
 	Column   int    `json:"column"`
 	Message  string `json:"message"`
@@ -73,7 +75,7 @@ type visualizeResult struct {
 	ChartError string `json:"chartError,omitempty"`
 	// ChartDiagnostics are type/syntax issues the editor's language service
 	// found in the chart config. May be present even when the chart rendered.
-	ChartDiagnostics []chartDiagnostic `json:"chartDiagnostics,omitempty"`
+	ChartDiagnostics []ChartDiagnostic `json:"chartDiagnostics,omitempty"`
 }
 
 // chartResult is the browser's response to a chart command.
@@ -84,7 +86,7 @@ type chartResult struct {
 	// ChartError explains why the chart couldn't be rendered (bad config or
 	// unplottable data). Mutually exclusive with Image.
 	ChartError       string            `json:"chartError,omitempty"`
-	ChartDiagnostics []chartDiagnostic `json:"chartDiagnostics,omitempty"`
+	ChartDiagnostics []ChartDiagnostic `json:"chartDiagnostics,omitempty"`
 }
 
 // lastRunState describes the most recent query run in the browser UI.
@@ -118,5 +120,5 @@ type uiStateResult struct {
 	ChartError string `json:"chartError,omitempty"`
 	// ChartDiagnostics are type/syntax issues the editor's language service
 	// found in the chart config.
-	ChartDiagnostics []chartDiagnostic `json:"chartDiagnostics,omitempty"`
+	ChartDiagnostics []ChartDiagnostic `json:"chartDiagnostics,omitempty"`
 }

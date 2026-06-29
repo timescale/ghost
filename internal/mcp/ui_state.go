@@ -96,7 +96,7 @@ func (s *Server) handleUIState(ctx context.Context, req *mcp.CallToolRequest, in
 		ChartConfig:        result.ChartConfig,
 		ResultView:         result.ResultView,
 		ChartError:         result.ChartError,
-		ChartDiagnostics:   toChartDiagnostics(result.ChartDiagnostics),
+		ChartDiagnostics:   result.ChartDiagnostics,
 	}
 	if result.LastRun != nil {
 		output.LastRunStatus = result.LastRun.Status
