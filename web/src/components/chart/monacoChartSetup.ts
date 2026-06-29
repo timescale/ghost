@@ -21,8 +21,14 @@ declare global {
   }
   /** The query result passed to the chart function. */
   interface ChartData {
-    /** Result rows as objects keyed by column name. */
-    rows: Record<string, unknown>[];
+    /**
+     * Result rows as objects keyed by column name. Values are typed as 'any'
+     * (not 'unknown') so a config can use a column directly as ECharts axis
+     * data or in arithmetic (e.g. data.rows.map((r) => r.year)) without a type
+     * error on every access. The valuable check -- the returned EChartsOption
+     * shape -- is preserved via the @returns annotation in CONFIG_HEADER.
+     */
+    rows: Record<string, any>[];
     /** Ordered column metadata. */
     columns: ChartColumn[];
   }
