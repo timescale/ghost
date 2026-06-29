@@ -82,10 +82,10 @@ async function tryRenderChart(
   };
 }
 
-// handleVisualize runs a query in the browser, syncing the live UI, and (for
-// the chart view) renders a screenshot of the result. `signal` aborts this
-// command's own query (and only it) if the MCP request is canceled, times out,
-// or is superseded.
+// handleVisualize runs a query in the browser, syncing the live UI, and renders
+// a screenshot of the result (off-screen, regardless of the active view).
+// `signal` aborts this command's own query (and only it) if the MCP request is
+// canceled, times out, or is superseded.
 async function handleVisualize(
   cmd: VisualizeCommand,
   deps: DispatchDeps,
@@ -99,13 +99,18 @@ async function handleVisualize(
   // invalid ref as a real error.
   const databaseId = deps.resolveDatabaseId(cmd.databaseRef) ?? cmd.databaseRef;
 
-  // Sync the UI: select the database, set the editor SQL, and switch views.
+  // Sync the UI: select the database and set the editor SQL. When a chart
+  // config is supplied, apply it and switch to the chart view so the user sees
+  // it; otherwise leave the active view unchanged (the agent didn't ask to
+  // chart, and a chart image is still returned to it off-screen regardless).
   if (deps.getState().selectedDatabaseId !== databaseId) {
     deps.setSelectedDatabaseId(databaseId);
   }
   deps.setEditorSql(cmd.sql);
-  if (cmd.chartConfig) deps.setChartConfig(cmd.chartConfig);
-  deps.setResultView(cmd.view);
+  if (cmd.chartConfig) {
+    deps.setChartConfig(cmd.chartConfig);
+    deps.setResultView('chart');
+  }
 
   const executor = await awaitExecutor(databaseId, EXECUTOR_WAIT_MS, signal);
   const outcome = await executor.runQuery(cmd.sql, signal);

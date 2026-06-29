@@ -130,7 +130,6 @@ function registerStubExecutor(
 const visualizeCmd = (databaseRef: string): VisualizeCommand => ({
   databaseRef,
   sql: 'SELECT 1 AS n',
-  view: 'table',
   limit: 50,
 });
 
@@ -178,7 +177,7 @@ describe('dispatch visualize', () => {
     const { getRunDataLimits } = registerStubExecutor('db1', 59);
     const result = (await dispatch(
       'visualize',
-      { ...visualizeCmd('db1'), view: 'chart', limit: 5 },
+      { ...visualizeCmd('db1'), limit: 5 },
       deps,
       noSignal(),
     )) as VisualizeResult;
@@ -239,7 +238,7 @@ describe('dispatch visualize', () => {
     registerStubExecutor('db1');
     const result = (await dispatch(
       'visualize',
-      { ...visualizeCmd('db1'), view: 'chart' },
+      visualizeCmd('db1'),
       deps,
       noSignal(),
     )) as VisualizeResult;

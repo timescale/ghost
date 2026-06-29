@@ -27,7 +27,6 @@ type VisualizeInput struct {
 	Ref         string `json:"name_or_id,omitempty"`
 	SQL         string `json:"sql,omitempty"`
 	ChartConfig string `json:"chart_config,omitempty"`
-	View        string `json:"view,omitempty"`
 	Limit       int    `json:"limit,omitempty"`
 }
 
@@ -35,10 +34,7 @@ func (VisualizeInput) Schema() *jsonschema.Schema {
 	schema := util.Must(jsonschema.For[VisualizeInput](nil))
 	schema.Properties["name_or_id"].Description = "Database name or identifier to run the query against. Required when `sql` is provided; ignored when re-charting the previous run (no `sql`)."
 	schema.Properties["sql"].Description = "SQL query to run in the local web UI. When provided, the query runs in the browser, the live UI updates so the user sees exactly what you ran, and the response includes the result rows (capped at `limit`) plus a rendered chart image. Omit to re-chart the most recent run with a new `chart_config` (without re-running the query). Multi-statement queries are supported; query parameters are not."
-	schema.Properties["chart_config"].Description = chartConfigDescriptionPrefix + "When provided, it's applied to the run and the chart re-rendered. When omitted with `sql`, the previous or default config is used. You must provide at least one of `sql` or `chart_config`."
-	schema.Properties["view"].Description = "Which view to show below the editor in the live UI. 'chart' renders the chart as the active view; 'table' shows the rows in a table. A chart image is returned regardless of the view (it's drawn off-screen). Defaults to 'chart'. Only applies when running a query (`sql`)."
-	schema.Properties["view"].Enum = []any{"table", "chart"}
-	schema.Properties["view"].Default = json.RawMessage(`"chart"`)
+	schema.Properties["chart_config"].Description = chartConfigDescriptionPrefix + "When provided, it's applied to the run, the chart is re-rendered, and the live UI switches to the chart view. When omitted with `sql`, the previous or default config is used and the active view is left unchanged. You must provide at least one of `sql` or `chart_config`."
 	schema.Properties["limit"].Description = fmt.Sprintf("Maximum number of result rows returned to you (the caller). Defaults to %d to conserve token usage. This caps only the rows returned in the response; the full result set is still computed and charted in the browser, so a small limit doesn't truncate the chart. Only applies when running a query (`sql`).", defaultRowLimit)
 	schema.Properties["limit"].Default = json.RawMessage(fmt.Sprintf("%d", defaultRowLimit))
 	return schema
@@ -108,9 +104,9 @@ func (s *Server) handleVisualizeQuery(ctx context.Context, input VisualizeInput)
 		return nil, VisualizeOutput{}, errors.New("'name_or_id' is required when running a query")
 	}
 
-	// limit and view are guaranteed non-zero/non-empty by the schema defaults
-	// the SDK applies before this handler runs (it calls ApplyDefaults on the
-	// raw arguments), so no manual fallback is needed here.
+	// input.Limit is guaranteed non-zero by the schema default the SDK applies
+	// before this handler runs (it calls ApplyDefaults on the raw arguments), so
+	// no manual fallback is needed here.
 
 	// Resolve the ref (which may be a database name or id) to the canonical
 	// database id before dispatching to the browser. The web UI selects the
@@ -137,7 +133,6 @@ func (s *Server) handleVisualizeQuery(ctx context.Context, input VisualizeInput)
 	err = s.browser.request(ctx, commandVisualize, visualizeCommand{
 		DatabaseRef: database.Id,
 		SQL:         input.SQL,
-		View:        input.View,
 		ChartConfig: input.ChartConfig,
 		Limit:       input.Limit,
 	}, &result)

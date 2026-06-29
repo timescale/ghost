@@ -26,7 +26,6 @@ export interface AgentCommand {
 export interface VisualizeCommand {
   databaseRef: string;
   sql: string;
-  view: Extract<ResultView, 'table' | 'chart'>;
   chartConfig?: string;
   limit: number;
 }

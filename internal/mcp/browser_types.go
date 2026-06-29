@@ -19,7 +19,6 @@ const (
 type visualizeCommand struct {
 	DatabaseRef string `json:"databaseRef"`
 	SQL         string `json:"sql"`
-	View        string `json:"view"` // "table" | "chart"
 	ChartConfig string `json:"chartConfig,omitempty"`
 	Limit       int    `json:"limit"`
 }
