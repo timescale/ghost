@@ -63,9 +63,6 @@ type visualizeResult struct {
 	// command, or rows returned by a SELECT), matching common.ExecuteQuery's
 	// server-side semantics.
 	RowsAffected int64 `json:"rowsAffected"`
-	// CommandTag is the Postgres command tag (e.g. "SELECT"), matching
-	// common.ResultSet.CommandTag from the server-side path.
-	CommandTag string `json:"commandTag"`
 	// Image is a data URL (e.g. "data:image/png;base64,...") of the rendered
 	// chart. Present when the chart rendered successfully.
 	Image string `json:"image,omitempty"`
@@ -97,12 +94,10 @@ type lastRunState struct {
 	// of any row cap applied when reading Rows back for the agent.
 	RowCount int `json:"rowCount"`
 	// RowsAffected is the Postgres command-tag count (see visualizeResult).
-	RowsAffected int64 `json:"rowsAffected"`
-	// CommandTag is the Postgres command tag (see visualizeResult).
-	CommandTag string          `json:"commandTag"`
-	Columns    []browserColumn `json:"columns,omitempty"`
-	Rows       [][]any         `json:"rows,omitempty"`
-	Error      string          `json:"error,omitempty"`
+	RowsAffected int64           `json:"rowsAffected"`
+	Columns      []browserColumn `json:"columns,omitempty"`
+	Rows         [][]any         `json:"rows,omitempty"`
+	Error        string          `json:"error,omitempty"`
 }
 
 // uiStateResult is the browser's response to a uiState command.

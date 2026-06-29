@@ -55,9 +55,6 @@ export interface VisualizeResult {
   // Postgres command-tag count for the run (rows touched by a DML command, or
   // rows returned by a SELECT). Mirrors Go's common.ExecuteQuery RowsAffected.
   rowsAffected: number;
-  // Postgres command tag for the run (e.g. "SELECT"). Mirrors Go's
-  // common.ResultSet.CommandTag.
-  commandTag: string;
   // Data URL of the rendered chart. Present when the chart rendered
   // successfully; mutually exclusive with chartError.
   image?: string;
@@ -87,8 +84,6 @@ export interface LastRunState {
   rowCount: number;
   // Postgres command-tag count for the run (see VisualizeResult).
   rowsAffected: number;
-  // Postgres command tag for the run (see VisualizeResult).
-  commandTag: string;
   columns?: AgentColumn[];
   rows?: unknown[][];
   error?: string;

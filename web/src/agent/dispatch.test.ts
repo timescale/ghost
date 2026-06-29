@@ -82,7 +82,6 @@ function makeResetExecutor(): Executor {
       status: 'success' as const,
       rowCount: 0,
       rowsAffected: 0,
-      commandTag: 'SELECT',
     }),
     getRunData: async () => ({ rows: [], columns: [] }),
   };
@@ -105,7 +104,6 @@ function registerStubExecutor(
   databaseId: string,
   totalRowCount = 1,
   rowsAffected = totalRowCount,
-  commandTag = 'SELECT',
 ): { getRunDataLimits: number[] } {
   const getRunDataLimits: number[] = [];
   const executor: Executor = {
@@ -115,7 +113,6 @@ function registerStubExecutor(
       status: 'success' as const,
       rowCount: totalRowCount,
       rowsAffected,
-      commandTag,
     }),
     getRunData: async (_runId, limit) => {
       getRunDataLimits.push(limit);
@@ -207,20 +204,6 @@ describe('dispatch visualize', () => {
     expect(result.rowsAffected).toBe(7);
   });
 
-  test('carries the command tag through to the result', async () => {
-    // The Postgres command tag (e.g. "DELETE") must reach the result so the
-    // structured tool output's command_tag matches the server-side query path.
-    const { deps } = makeDeps(['db1']);
-    registerStubExecutor('db1', 0, 7, 'DELETE');
-    const result = (await dispatch(
-      'visualize',
-      visualizeCmd('db1'),
-      deps,
-      noSignal(),
-    )) as VisualizeResult;
-    expect(result.commandTag).toBe('DELETE');
-  });
-
   test('forwards the abort signal to the executor run', async () => {
     // The visualize handler must pass its command's AbortSignal down to
     // runQuery so a canceled MCP request aborts this run's query (and only it).
@@ -235,7 +218,6 @@ describe('dispatch visualize', () => {
           status: 'success' as const,
           rowCount: 1,
           rowsAffected: 1,
-          commandTag: 'SELECT',
         };
       },
       getRunData: async () => ({
@@ -289,7 +271,6 @@ const stubLastRun = (databaseId: string): AgentLastRun => ({
   status: 'success',
   rowCount: 1,
   rowsAffected: 1,
-  commandTag: 'SELECT',
 });
 
 describe('dispatch chart', () => {
@@ -370,7 +351,6 @@ describe('dispatch chart', () => {
         status: 'success' as const,
         rowCount: 1,
         rowsAffected: 1,
-        commandTag: 'SELECT',
       }),
       getRunData: async () => {
         throw new Error('results no longer cached');
@@ -407,7 +387,6 @@ describe('dispatch chart', () => {
         status: 'success' as const,
         rowCount: 1,
         rowsAffected: 1,
-        commandTag: 'SELECT',
       }),
       getRunData: () =>
         new Promise((resolve) => {

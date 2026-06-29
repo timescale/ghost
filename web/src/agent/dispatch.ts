@@ -147,9 +147,6 @@ async function handleVisualize(
     // The Postgres command-tag count, surfaced in the structured tool output's
     // rows_affected (matching the server-side ghost_sql path).
     rowsAffected: outcome.rowsAffected,
-    // The Postgres command tag (e.g. "SELECT"), surfaced in the structured
-    // tool output's command_tag (matching the server-side ghost_sql path).
-    commandTag: outcome.commandTag,
     image,
     chartError,
     chartDiagnostics,
@@ -255,7 +252,6 @@ async function handleUIState(
       status: lastRun.status,
       rowCount: lastRun.rowCount,
       rowsAffected: lastRun.rowsAffected,
-      commandTag: lastRun.commandTag,
       error: lastRun.error,
     };
     const executor = getExecutor();

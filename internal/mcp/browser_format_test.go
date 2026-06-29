@@ -50,7 +50,7 @@ func TestBrowserResultSet(t *testing.T) {
 	columns := []browserColumn{{Name: "id", Type: "INT8"}, {Name: "name", Type: "TEXT"}}
 	rows := [][]any{{1, "a"}, {2, nil}}
 
-	got := browserResultSet(columns, rows, 5, "SELECT")
+	got := browserResultSet(columns, rows, 5)
 
 	if len(got.Columns) != 2 || got.Columns[0].Name != "id" || got.Columns[0].Type != "INT8" {
 		t.Fatalf("unexpected columns: %+v", got.Columns)
@@ -60,10 +60,11 @@ func TestBrowserResultSet(t *testing.T) {
 	if got.RowsAffected != 5 {
 		t.Errorf("RowsAffected = %d, want 5", got.RowsAffected)
 	}
-	// commandTag must be carried through so visualized results report the same
-	// command_tag as the server-side query path.
-	if got.CommandTag != "SELECT" {
-		t.Errorf("CommandTag = %q, want %q", got.CommandTag, "SELECT")
+	// The command-tag string is intentionally not carried for the browser path
+	// (only a client-derived verb is available), so it stays empty rather than
+	// being populated with a value that wouldn't match the server-side tag.
+	if got.CommandTag != "" {
+		t.Errorf("CommandTag = %q, want empty", got.CommandTag)
 	}
 	wantRows := [][]string{{"1", "a"}, {"2", "NULL"}}
 	if len(got.Rows) != len(wantRows) {

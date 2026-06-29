@@ -151,7 +151,7 @@ func (s *Server) handleVisualizeQuery(ctx context.Context, input VisualizeInput)
 	}
 
 	output := VisualizeOutput{
-		ResultSets:       []common.ResultSet{browserResultSet(result.Columns, result.Rows, result.RowsAffected, result.CommandTag)},
+		ResultSets:       []common.ResultSet{browserResultSet(result.Columns, result.Rows, result.RowsAffected)},
 		ChartError:       result.ChartError,
 		ChartDiagnostics: result.ChartDiagnostics,
 	}

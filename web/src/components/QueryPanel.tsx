@@ -130,10 +130,6 @@ export function QueryPanel({
       // returned by a SELECT) is only carried on the success branch; it's zero
       // for a failed/canceled run.
       const rowsAffected = succeeded ? args.rowsAffected : 0;
-      // The Postgres command tag (e.g. "SELECT", "INSERT"). The widget defaults
-      // it to "UNKNOWN" on a failed/canceled run, which isn't a real tag, so we
-      // only carry it for a successful run (matching rowsAffected's semantics).
-      const commandTag = succeeded ? args.command : '';
       // Resolve any agent run awaiting this completion, and record the run as
       // the latest for the agent's uiState/chart tools.
       const failed = 'error' in args;
@@ -144,7 +140,6 @@ export function QueryPanel({
           status: succeeded ? 'success' : 'failed',
           rowCount: args.rowCount ?? 0,
           rowsAffected,
-          commandTag,
           error: failed ? args.error : undefined,
         });
       }
@@ -162,7 +157,6 @@ export function QueryPanel({
           // independent of any cap applied when reading rows back for the agent.
           rowCount: args.rowCount ?? 0,
           rowsAffected,
-          commandTag,
           error: failed
             ? args.error
             : succeeded
@@ -250,7 +244,6 @@ export function QueryPanel({
           status: 'failed',
           rowCount: 0,
           rowsAffected: 0,
-          commandTag: '',
           error: 'the database panel was torn down before the query completed',
         });
       }
