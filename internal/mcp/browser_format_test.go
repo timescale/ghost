@@ -6,57 +6,6 @@ import (
 	"testing"
 )
 
-func TestFormatChartDiagnostics(t *testing.T) {
-	tests := []struct {
-		name        string
-		diagnostics []ChartDiagnostic
-		want        string
-	}{
-		{
-			name:        "none returns empty",
-			diagnostics: nil,
-			want:        "",
-		},
-		{
-			name: "single error",
-			diagnostics: []ChartDiagnostic{
-				{Line: 2, Column: 5, Message: "Property 'seriess' does not exist", Severity: "error"},
-			},
-			want: "Chart config has 1 issue(s) reported by the editor (these may explain an unexpected chart even if it rendered):\n" +
-				"  [error] line 2, col 5: Property 'seriess' does not exist",
-		},
-		{
-			name: "multiple with empty severity defaults to error",
-			diagnostics: []ChartDiagnostic{
-				{Line: 1, Column: 1, Message: "a", Severity: "warning"},
-				{Line: 3, Column: 2, Message: "b"},
-			},
-			want: "Chart config has 2 issue(s) reported by the editor (these may explain an unexpected chart even if it rendered):\n" +
-				"  [warning] line 1, col 1: a\n" +
-				"  [error] line 3, col 2: b",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := formatChartDiagnostics(tt.diagnostics)
-			if got != tt.want {
-				t.Errorf("formatChartDiagnostics() =\n%q\nwant\n%q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestChartDiagnosticsSuffix(t *testing.T) {
-	if got := chartDiagnosticsSuffix(nil); got != "" {
-		t.Errorf("chartDiagnosticsSuffix(nil) = %q, want empty", got)
-	}
-	got := chartDiagnosticsSuffix([]ChartDiagnostic{{Line: 1, Column: 1, Message: "x", Severity: "error"}})
-	if !strings.HasPrefix(got, "\n") {
-		t.Errorf("chartDiagnosticsSuffix() = %q, want leading newline", got)
-	}
-}
-
 func TestStringifyCell(t *testing.T) {
 	tests := []struct {
 		name string
@@ -129,7 +78,7 @@ func TestBrowserResultSet(t *testing.T) {
 	}
 }
 
-func TestFormatVisualizeSummary_WithDiagnostics(t *testing.T) {
+func TestFormatVisualizeSummary_OmitsDiagnostics(t *testing.T) {
 	result := visualizeResult{
 		RunID:    "r1",
 		Columns:  []browserColumn{{Name: "n"}},
@@ -144,7 +93,10 @@ func TestFormatVisualizeSummary_WithDiagnostics(t *testing.T) {
 	if !strings.Contains(got, "A rendered chart image is attached below.") {
 		t.Errorf("summary missing image line:\n%s", got)
 	}
-	if !strings.Contains(got, "[error] line 1, col 1: bad key") {
-		t.Errorf("summary missing diagnostics:\n%s", got)
+	// Diagnostics belong in the structured output (chart_diagnostics) and its
+	// equivalent JSON text block, not the prose summary — echoing them here would
+	// duplicate them in the tool result content.
+	if strings.Contains(got, "bad key") {
+		t.Errorf("summary should not echo diagnostics:\n%s", got)
 	}
 }

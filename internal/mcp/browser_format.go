@@ -73,57 +73,23 @@ func stringifyCell(v any) string {
 // the row count, the columns, and whether (and how many of) the rows were
 // returned.
 func formatVisualizeSummary(result visualizeResult, limit int) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Ran query in the browser UI: %d row(s) returned.\n", result.RowCount)
+	lines := []string{fmt.Sprintf("Ran query in the browser UI: %d row(s) returned.", result.RowCount)}
 	if len(result.Columns) > 0 {
 		names := make([]string, len(result.Columns))
 		for i, c := range result.Columns {
 			names[i] = c.Name
 		}
-		fmt.Fprintf(&b, "Columns: %s\n", strings.Join(names, ", "))
+		lines = append(lines, fmt.Sprintf("Columns: %s", strings.Join(names, ", ")))
 	}
 	if result.RowCount > len(result.Rows) {
-		fmt.Fprintf(&b, "Showing the first %d row(s); raise 'limit' (currently %d) or aggregate in SQL for more.\n", len(result.Rows), limit)
+		lines = append(lines, fmt.Sprintf("Showing the first %d row(s); raise 'limit' (currently %d) or aggregate in SQL for more.", len(result.Rows), limit))
 	}
 	if result.Image != "" {
-		b.WriteString("A rendered chart image is attached below.\n")
+		lines = append(lines, "A rendered chart image is attached below.")
 	}
-	// The chart error is intentionally not echoed here: it's carried in the
-	// structured output's chart_error field, so repeating it in the prose summary
-	// would duplicate it in the tool result content.
-	if diag := formatChartDiagnostics(result.ChartDiagnostics); diag != "" {
-		// formatChartDiagnostics already returns a newline-free block, and it's
-		// the last thing appended, so no trailing newline to add here.
-		b.WriteString(diag)
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-// formatChartDiagnostics renders the chart config's editor diagnostics (type
-// and syntax errors) as a short block for the agent, or "" if there are none.
-// These are the same issues a human sees as squiggles in the config editor and
-// often explain a wrong-looking chart that still rendered without throwing.
-func formatChartDiagnostics(diagnostics []ChartDiagnostic) string {
-	if len(diagnostics) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "Chart config has %d issue(s) reported by the editor (these may explain an unexpected chart even if it rendered):\n", len(diagnostics))
-	for _, d := range diagnostics {
-		severity := d.Severity
-		if severity == "" {
-			severity = "error"
-		}
-		fmt.Fprintf(&b, "  [%s] line %d, col %d: %s\n", severity, d.Line, d.Column, d.Message)
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-// chartDiagnosticsSuffix returns a leading-newline-prefixed diagnostics block to
-// append to a summary line, or "" if there are no diagnostics.
-func chartDiagnosticsSuffix(diagnostics []ChartDiagnostic) string {
-	if diag := formatChartDiagnostics(diagnostics); diag != "" {
-		return "\n" + diag
-	}
-	return ""
+	// The chart error and diagnostics are intentionally not echoed here: they're
+	// carried in the structured output's chart_error/chart_diagnostics fields
+	// (and the equivalent JSON text block), so repeating them in the prose
+	// summary would duplicate them in the tool result content.
+	return strings.Join(lines, "\n")
 }

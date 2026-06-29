@@ -116,7 +116,7 @@ func (s *Server) handleUIState(ctx context.Context, req *mcp.CallToolRequest, in
 		return nil, UIStateOutput{}, err
 	}
 	content := []mcp.Content{
-		&mcp.TextContent{Text: formatUIStateSummary(result) + chartDiagnosticsSuffix(result.ChartDiagnostics)},
+		&mcp.TextContent{Text: formatUIStateSummary(result)},
 		structured,
 	}
 	if result.Image != "" {
