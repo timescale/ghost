@@ -65,8 +65,18 @@ export function configureMonacoForCharts(monaco: Monaco): Promise<void> {
       lib: ['esnext', 'dom'],
     });
     ts.javascriptDefaults.setDiagnosticsOptions({
-      noSemanticValidation: false,
-      noSyntaxValidation: false,
+      // Turn OFF Monaco's automatic in-model validation. The chart config is
+      // plain JS whose `chart(data)` function is usually written WITHOUT the
+      // JSDoc that types `data`/the return value (e.g. agent-supplied configs),
+      // so validating the model text as-is would either miss the EChartsOption
+      // type errors entirely or, worse, double-mark against the wrong source.
+      // Instead the editor paints markers itself via getChartConfigMarkers,
+      // which type-checks the header-augmented source — identical to the
+      // headless agent path — so the human sees exactly the squiggles the agent
+      // receives. The TS worker the headless path drives is unaffected by these
+      // flags (it calls getSemantic/SyntacticDiagnostics directly).
+      noSemanticValidation: true,
+      noSyntaxValidation: true,
       // Suggestions (e.g. "this could be a const") would be noisy here.
       noSuggestionDiagnostics: true,
     });
