@@ -126,16 +126,16 @@ async function handleVisualize(
   const data = await executor.getRunData(outcome.runId, CHART_ROW_LIMIT);
   const columns = toColumns(data.columns);
 
-  // Always render a chart image so the agent can inspect the data visually,
-  // regardless of which view the user is looking at — the screenshot is drawn
-  // off-screen and doesn't depend on the visible pane. A render failure (e.g. a
-  // bad chart config, or data the config can't plot) never fails the call: it's
+  // Render a chart image only when the agent supplied a chart_config — that's
+  // its signal that it wants the data charted. Without one, return just the
+  // rows (no image/chartError/diagnostics), so a plain query isn't surprised
+  // with a default-config chart it never asked for. When a config is given, the
+  // screenshot is drawn off-screen (independent of the visible pane), and a
+  // render failure (bad config or unplottable data) never fails the call — it's
   // reported as chartError alongside the run data.
-  const config = cmd.chartConfig || deps.getState().chartConfig;
-  const { image, chartError, chartDiagnostics } = await tryRenderChart(
-    config,
-    data,
-  );
+  const chart = cmd.chartConfig
+    ? await tryRenderChart(cmd.chartConfig, data)
+    : {};
 
   // Cap the rows handed back to the agent to its requested limit (the chart
   // above already rendered the full result set).
@@ -152,9 +152,9 @@ async function handleVisualize(
     // The Postgres command-tag count, surfaced in the structured tool output's
     // rows_affected (matching the server-side ghost_sql path).
     rowsAffected: outcome.rowsAffected,
-    image,
-    chartError,
-    chartDiagnostics,
+    image: chart.image,
+    chartError: chart.chartError,
+    chartDiagnostics: chart.chartDiagnostics,
   };
 }
 

@@ -231,14 +231,14 @@ describe('dispatch visualize', () => {
   });
 
   test('reports a chart render failure as chartError but still returns rows', async () => {
-    // ECharts isn't loaded in the test environment, so rendering fails. The
-    // dispatcher must surface that as chartError without failing the call or
-    // dropping the run data.
+    // ECharts isn't loaded in the test environment, so rendering fails. With a
+    // chart_config supplied, the dispatcher must surface that as chartError
+    // without failing the call or dropping the run data.
     const { deps } = makeDeps(['db1']);
     registerStubExecutor('db1');
     const result = (await dispatch(
       'visualize',
-      visualizeCmd('db1'),
+      { ...visualizeCmd('db1'), chartConfig: 'function chart(){ return {}; }' },
       deps,
       noSignal(),
     )) as VisualizeResult;
@@ -246,6 +246,41 @@ describe('dispatch visualize', () => {
     expect(result.rowCount).toBe(1);
     expect(result.image).toBeUndefined();
     expect(result.chartError).toBeTruthy();
+  });
+
+  test('renders no chart when no chart_config is provided', async () => {
+    // Without a chart_config the agent didn't ask to chart, so the result
+    // carries only the rows — no image, chartError, or diagnostics — rather than
+    // a surprise default-config chart.
+    const { deps, resultViews } = makeDeps(['db1']);
+    registerStubExecutor('db1');
+    const result = (await dispatch(
+      'visualize',
+      visualizeCmd('db1'),
+      deps,
+      noSignal(),
+    )) as VisualizeResult;
+    expect(result.rowCount).toBe(1);
+    expect(result.image).toBeUndefined();
+    expect(result.chartError).toBeUndefined();
+    expect(result.chartDiagnostics).toBeUndefined();
+    // The active view is left unchanged when no config is given.
+    expect(resultViews).toEqual([]);
+  });
+
+  test('switches to the chart view when a chart_config is provided', async () => {
+    // Supplying a chart_config is the signal to chart: apply the config and
+    // switch the live UI to the chart view.
+    const { deps, chartConfig, resultViews } = makeDeps(['db1']);
+    registerStubExecutor('db1');
+    await dispatch(
+      'visualize',
+      { ...visualizeCmd('db1'), chartConfig: 'function chart(){ return {}; }' },
+      deps,
+      noSignal(),
+    );
+    expect(chartConfig()).toBe('function chart(){ return {}; }');
+    expect(resultViews).toEqual(['chart']);
   });
 
   test('passes an unresolved ref through without throwing (list not loaded)', async () => {
