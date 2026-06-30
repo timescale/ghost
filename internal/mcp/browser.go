@@ -33,10 +33,15 @@ func decodeImageDataURL(dataURL string) (*mcp.ImageContent, error) {
 		return nil, errors.New("malformed image data URL")
 	}
 	meta := dataURL[len(prefix):comma]
-	mimeType, isBase64, _ := strings.Cut(meta, ";")
-	if isBase64 != "base64" {
+	// The metadata is the MIME type followed by optional ";"-separated
+	// parameters, with ";base64" (when present) as the final token. Inspect the
+	// last token rather than assuming base64 is the second one, so URLs carrying
+	// extra parameters (e.g. "data:image/png;charset=utf-8;base64,...") aren't
+	// wrongly rejected.
+	if !strings.HasSuffix(meta, ";base64") {
 		return nil, errors.New("image data URL is not base64-encoded")
 	}
+	mimeType := strings.TrimSuffix(meta, ";base64")
 	data, err := base64.StdEncoding.DecodeString(dataURL[comma+1:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode image data: %w", err)

@@ -25,6 +25,12 @@ func TestDecodeImageDataURL(t *testing.T) {
 			wantBytes: "hello",
 		},
 		{
+			name:      "data url with extra mime parameter",
+			input:     "data:image/png;charset=utf-8;base64,aGVsbG8=",
+			wantMIME:  "image/png;charset=utf-8",
+			wantBytes: "hello",
+		},
+		{
 			name:    "not a data url",
 			input:   "http://example.com/x.png",
 			wantErr: true,
