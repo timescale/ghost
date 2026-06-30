@@ -39,10 +39,15 @@ func TestServeCmd(t *testing.T) {
 			wantErr: "authentication required: no credentials found",
 		},
 		{
-			name:          "port already in use returns bind error",
-			preBindHost:   "127.0.0.1",
-			args:          []string{"serve", "--no-open", "--port", "%PORT%"},
-			wantErrPrefix: "listen on localhost:",
+			name:        "port already in use returns bind error",
+			preBindHost: "127.0.0.1",
+			// Pin --host to the same IP literal we pre-bound. The default
+			// host is "localhost", which resolves to both 127.0.0.1 and ::1;
+			// Go would fall back to binding [::1]:PORT when 127.0.0.1:PORT is
+			// taken, so the server would start instead of failing. Binding the
+			// IP literal directly forces the expected bind conflict.
+			args:          []string{"serve", "--no-open", "--host", "127.0.0.1", "--port", "%PORT%"},
+			wantErrPrefix: "listen on 127.0.0.1:",
 		},
 		{
 			name:           "non-loopback host emits warning before bind",
