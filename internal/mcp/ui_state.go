@@ -46,7 +46,7 @@ func (UIStateOutput) Schema() *jsonschema.Schema {
 	schema.Properties["result_view"].Description = "Which view is active below the sql editor"
 	schema.Properties["result_view"].Enum = []any{"table", "chart", "chart_editor"}
 	schema.Properties["last_run_status"].Description = "Status of the most recent query run"
-	schema.Properties["last_run_status"].Examples = []any{"success", "failed", "running"}
+	schema.Properties["last_run_status"].Enum = []any{"success", "failed"}
 	schema.Properties["last_run_error"].Description = "Error message from the most recent query run, if it failed"
 	schema.Properties["chart_error"].Description = "Set when the last run's chart could not be rendered (e.g. an invalid chart config or data it can't plot). The run results are still returned; fix the chart config and retry to get an image."
 	schema.Properties["chart_diagnostics"].Description = "Type and syntax issues the config editor found in the current chart config (the same errors a human sees as red squiggles). Each item has line, column, message, and severity ('error' or 'warning')."
