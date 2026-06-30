@@ -71,15 +71,28 @@ func (h *Handler) agentEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// agentResponseType identifies what a browser is posting back to
+// POST /api/agent/respond for an in-flight command.
+type agentResponseType string
+
+const (
+	// agentResponseHeartbeat keeps the request alive while the browser works.
+	agentResponseHeartbeat agentResponseType = "heartbeat"
+	// agentResponseResult delivers a successful command result.
+	agentResponseResult agentResponseType = "result"
+	// agentResponseError reports that the command failed in the browser.
+	agentResponseError agentResponseType = "error"
+)
+
 // AgentRespondRequest is the request body of POST /api/agent/respond. The
 // browser posts heartbeats, command results, and errors back over this
 // endpoint, keyed by the originating client and request IDs.
 type AgentRespondRequest struct {
-	ClientID  string          `json:"clientId"`
-	RequestID string          `json:"requestId"`
-	Type      string          `json:"type"` // "heartbeat" | "result" | "error"
-	Data      json.RawMessage `json:"data,omitempty"`
-	Error     string          `json:"error,omitempty"`
+	ClientID  string            `json:"clientId"`
+	RequestID string            `json:"requestId"`
+	Type      agentResponseType `json:"type"`
+	Data      json.RawMessage   `json:"data,omitempty"`
+	Error     string            `json:"error,omitempty"`
 }
 
 // Validate returns an error if a required field is missing.

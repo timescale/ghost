@@ -361,7 +361,7 @@ func (b *Bridge) Request(ctx context.Context, commandType string, payload any) (
 // to the in-flight request. Messages are only accepted from the client the
 // pending request was dispatched to. Heartbeats reset the idle timer; results
 // and errors resolve the request.
-func (b *Bridge) deliver(clientID, requestID, msgType string, data json.RawMessage, errMsg string) error {
+func (b *Bridge) deliver(clientID, requestID string, msgType agentResponseType, data json.RawMessage, errMsg string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -371,14 +371,14 @@ func (b *Bridge) deliver(clientID, requestID, msgType string, data json.RawMessa
 	}
 
 	switch msgType {
-	case "heartbeat":
+	case agentResponseHeartbeat:
 		select {
 		case p.beat <- struct{}{}:
 		default:
 		}
-	case "result":
+	case agentResponseResult:
 		b.resolveLocked(p, pendingResult{data: data})
-	case "error":
+	case agentResponseError:
 		msg := errMsg
 		if msg == "" {
 			msg = "browser reported an error"
