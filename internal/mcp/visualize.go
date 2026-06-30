@@ -97,6 +97,16 @@ func (s *Server) handleVisualize(ctx context.Context, req *mcp.CallToolRequest, 
 // rows (capped at limit) plus a rendered chart image (and any
 // chart_error/chart_diagnostics).
 func (s *Server) handleVisualizeQuery(ctx context.Context, input VisualizeInput) (*mcp.CallToolResult, VisualizeOutput, error) {
+	// Note on read-only enforcement: although ghost_visualize is annotated
+	// DestructiveHint (it can run write queries), we intentionally do NOT call
+	// checkReadOnly here. Like ghost_sql, this tool runs arbitrary SQL, including
+	// the SELECTs that are its whole point — read-only users must still be able
+	// to visualize query results. A blanket checkReadOnly would reject every
+	// query in read-only mode. Instead, writes are blocked at the connection
+	// level: the query runs through the browser -> in-process serve handler,
+	// whose connectionStringForService builds the DSN with the immutable
+	// read_only connection GUC (ReadOnly: cfg.ReadOnly). That allows SELECTs and
+	// rejects writes, matching ghost_sql, so cfg is not needed here.
 	_, client, projectID, err := s.app.GetAll()
 	if err != nil {
 		return nil, VisualizeOutput{}, err
