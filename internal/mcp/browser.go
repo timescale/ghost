@@ -57,10 +57,11 @@ type browserController struct {
 	app    *common.App
 	logger *slog.Logger
 
-	mu     sync.Mutex
-	bridge *serve.Bridge
-	store  *serve.Store
-	server *serve.Server
+	mu        sync.Mutex
+	bridge    *serve.Bridge
+	store     *serve.Store
+	server    *serve.Server
+	stopWatch chan struct{}
 }
 
 func newBrowserController(app *common.App, logger *slog.Logger) *browserController {
@@ -106,9 +107,30 @@ func (c *browserController) ensureStarted(ctx context.Context) (*serve.Bridge, e
 		return nil, fmt.Errorf("failed to start web server: %w", err)
 	}
 
+	// Drain the server's error channel. The send in [serve.Server.Start]'s
+	// goroutine is unbuffered, so without a reader a real serving error would
+	// block that goroutine forever (a leak) and the failure would never surface
+	// here — subsequent tool calls would just time out with an opaque "no browser
+	// connected" instead of the real cause. The watcher exits on the first error
+	// (the goroutine sends at most one) or when [browserController.Close] closes
+	// stopWatch on clean shutdown (where Serve returns http.ErrServerClosed and
+	// never sends).
+	errs := server.Errors()
+	stop := make(chan struct{})
+	go func() {
+		select {
+		case err := <-errs:
+			if err != nil {
+				c.logger.Error("web UI server stopped unexpectedly", slog.Any("error", err))
+			}
+		case <-stop:
+		}
+	}()
+
 	c.bridge = bridge
 	c.store = store
 	c.server = server
+	c.stopWatch = stop
 	c.logger.Info("Started in-process web UI for agent visualization", slog.String("url", server.URL()))
 	return bridge, nil
 }
@@ -186,6 +208,10 @@ func (c *browserController) Close() error {
 	if c.server == nil {
 		return nil
 	}
+	// Stop the error watcher before closing the server: Close makes Serve return
+	// http.ErrServerClosed (no send on the error channel), so the watcher would
+	// otherwise block forever.
+	close(c.stopWatch)
 	err := c.server.Close()
 	// Store.Close() returns no error — it logs any session-teardown failures
 	// internally.
@@ -193,5 +219,6 @@ func (c *browserController) Close() error {
 	c.server = nil
 	c.store = nil
 	c.bridge = nil
+	c.stopWatch = nil
 	return err
 }
