@@ -37,6 +37,7 @@ func (VisualizeInput) Schema() *jsonschema.Schema {
 	schema.Properties["chart_config"].Description = chartConfigDescriptionPrefix + "When provided, it's applied to the run, the chart is rendered (the response includes a PNG image), and the live UI switches to the chart view. When omitted, no chart is rendered and the active view is left unchanged — just the rows are returned. You must provide at least one of `sql` or `chart_config`."
 	schema.Properties["limit"].Description = fmt.Sprintf("Maximum number of result rows returned to you (the caller). Defaults to %d to conserve token usage. This caps only the rows returned in the response; the full result set is still computed in the browser (and charted, if a `chart_config` is given), so a small limit doesn't truncate the chart. Only applies when running a query (`sql`).", defaultRowLimit)
 	schema.Properties["limit"].Default = json.RawMessage(fmt.Sprintf("%d", defaultRowLimit))
+	schema.Properties["limit"].Minimum = new(0.0)
 	return schema
 }
 

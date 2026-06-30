@@ -22,6 +22,7 @@ func (UIStateInput) Schema() *jsonschema.Schema {
 	schema := util.Must(jsonschema.For[UIStateInput](nil))
 	schema.Properties["limit"].Description = fmt.Sprintf("Maximum number of result rows to return from the last query run. Defaults to %d.", defaultRowLimit)
 	schema.Properties["limit"].Default = json.RawMessage(fmt.Sprintf("%d", defaultRowLimit))
+	schema.Properties["limit"].Minimum = new(0.0)
 	return schema
 }
 
