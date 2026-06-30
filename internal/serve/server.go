@@ -26,7 +26,7 @@ type Server struct {
 
 // NewServer creates a new instance of [Server]. The host may be empty to bind
 // all interfaces, though callers should generally pass a loopback address
-// (e.g. "127.0.0.1"). To start the server, call [Server.Start].
+// (e.g. "localhost"). To start the server, call [Server.Start].
 func NewServer(host string, port int, handler http.Handler, logger *slog.Logger) *Server {
 	return &Server{
 		host:    host,

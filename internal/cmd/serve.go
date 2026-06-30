@@ -43,7 +43,7 @@ of this command — press Ctrl+C to stop it.`,
 			logger := log.NewWithLevel(cmd.ErrOrStderr(), logLevel)
 
 			if host != "127.0.0.1" && host != "localhost" && host != "::1" {
-				logger.Warn("Binding to a non-loopback address exposes the SQL UI to your network; consider using 127.0.0.1",
+				logger.Warn("Binding to a non-loopback address exposes the SQL UI to your network; consider using localhost",
 					slog.String("host", host),
 				)
 			}
@@ -92,7 +92,7 @@ of this command — press Ctrl+C to stop it.`,
 	}
 
 	cmd.Flags().IntVarP(&port, "port", "p", 0, "TCP port to listen on (0 = auto)")
-	cmd.Flags().StringVar(&host, "host", "127.0.0.1", "interface to bind (loopback by default)")
+	cmd.Flags().StringVar(&host, "host", "localhost", "interface to bind (loopback by default)")
 	cmd.Flags().BoolVarP(&noOpen, "no-open", "n", false, "do not open the browser")
 	cmd.Flags().TextVar(&logLevel, "log-level", slog.LevelInfo, "log level: debug, info, warn, or error")
 

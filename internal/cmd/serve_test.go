@@ -42,7 +42,7 @@ func TestServeCmd(t *testing.T) {
 			name:          "port already in use returns bind error",
 			preBindHost:   "127.0.0.1",
 			args:          []string{"serve", "--no-open", "--port", "%PORT%"},
-			wantErrPrefix: "listen on 127.0.0.1:",
+			wantErrPrefix: "listen on localhost:",
 		},
 		{
 			name:           "non-loopback host emits warning before bind",
@@ -53,7 +53,13 @@ func TestServeCmd(t *testing.T) {
 		},
 		{
 			name: "no-open skips browser",
-			args: []string{"serve", "--no-open"},
+			// Pin the host to an IP literal: this case relies on a
+			// pre-cancelled context to make Start return immediately, but a
+			// hostname like "localhost" forces a DNS lookup that honors the
+			// context and fails before the listener is created. An IP literal
+			// skips the resolver, so the listen succeeds and the cancelled
+			// context instead unblocks the post-Start select.
+			args: []string{"serve", "--no-open", "--host", "127.0.0.1"},
 			opts: func(t *testing.T) []runOption {
 				// Cancel the context before runCommand executes so srv.Serve
 				// returns immediately instead of blocking on a real listener.

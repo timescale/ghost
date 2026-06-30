@@ -100,7 +100,7 @@ func (c *browserController) ensureStarted(ctx context.Context) (*serve.Bridge, e
 		Logger: c.logger,
 		Bridge: bridge,
 	})
-	server := serve.NewServer("127.0.0.1", 0, handler.Handler(), c.logger)
+	server := serve.NewServer("localhost", 0, handler.Handler(), c.logger)
 	if err := server.Start(ctx); err != nil {
 		store.Close()
 		return nil, fmt.Errorf("failed to start web server: %w", err)

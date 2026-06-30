@@ -25,11 +25,11 @@ export default defineConfig({
     strictPort: false,
     proxy: {
       '/api': {
-        target: `http://127.0.0.1:${ghostServePort}`,
+        target: `http://localhost:${ghostServePort}`,
         changeOrigin: true,
       },
       '/health': {
-        target: `http://127.0.0.1:${ghostServePort}`,
+        target: `http://localhost:${ghostServePort}`,
         changeOrigin: true,
       },
     },

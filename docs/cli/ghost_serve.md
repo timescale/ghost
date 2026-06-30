@@ -32,7 +32,7 @@ ghost serve [flags]
 
 ```
   -h, --help          help for serve
-      --host string   interface to bind (loopback by default) (default "127.0.0.1")
+      --host string   interface to bind (loopback by default) (default "localhost")
       --log-level     log level: debug, info, warn, or error (default INFO)
   -n, --no-open       do not open the browser
   -p, --port int      TCP port to listen on (0 = auto)
