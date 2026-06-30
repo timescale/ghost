@@ -222,6 +222,14 @@ func TestBridgeRequestErrorFromClient(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("request did not complete")
 	}
+
+	// The browser reported the error itself, so it's already done with the
+	// command — no cancel should be sent back to it.
+	select {
+	case ev := <-c.events:
+		t.Fatalf("expected no cancel after a browser-reported error, got %+v", ev)
+	case <-time.After(50 * time.Millisecond):
+	}
 }
 
 // drainCancel waits for a "cancel" event for the expected request ID on the

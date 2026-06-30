@@ -115,6 +115,12 @@ type pendingRequest struct {
 type pendingResult struct {
 	data json.RawMessage
 	err  error
+	// cancelBrowser is set when the request was abandoned while the browser is
+	// still connected and may still be running the command (i.e. a takeover),
+	// so Request must actively tell that client to abort. It is false when the
+	// browser already delivered an outcome (success or error) or disconnected
+	// (in which case there's nothing live to cancel).
+	cancelBrowser bool
 }
 
 // Bridge is the communication channel between MCP tools (server side) and the
@@ -198,11 +204,10 @@ func (b *Bridge) removeClient(c *agentClient) {
 		return
 	}
 
-	// The active client departed: fail any in-flight request it owned, then
-	// promote the most-recently-connected remaining client (if any).
-	if b.pending != nil && b.pending.clientID == c.id {
-		b.resolveLocked(b.pending, pendingResult{err: ErrClientDisconnected})
-	}
+	// The active client departed. Any in-flight request it owned is failed by
+	// Request's own select on client.done (closed above) — that's the single
+	// disconnect signal, so we don't resolve p.result here. Promote the
+	// most-recently-connected remaining client (if any).
 	if len(b.clients) > 0 {
 		b.activeID = b.clients[len(b.clients)-1].id
 		b.signalActivatedLocked()
@@ -232,13 +237,14 @@ func (b *Bridge) Activate(clientID string) bool {
 	b.activeID = clientID
 	b.signalActivatedLocked()
 	if b.pending != nil && b.pending.clientID == old {
-		// Fail the request; the dispatching Request goroutine reliably tells the
-		// (still-connected) superseded client to abort the now-abandoned command
-		// once it observes this result. Doing the cancel there — rather than a
+		// Fail the request and flag it for browser cancellation: the superseded
+		// client is still connected and may still be running the command, so the
+		// dispatching Request goroutine reliably tells it to abort once it
+		// observes this result. Doing the cancel there — rather than a
 		// best-effort send here — guarantees it isn't dropped if the client's
 		// buffer is momentarily full, which would otherwise let the browser run
 		// a command whose request already failed.
-		b.resolveLocked(b.pending, pendingResult{err: ErrClientSuperseded})
+		b.resolveLocked(b.pending, pendingResult{err: ErrClientSuperseded, cancelBrowser: true})
 	}
 	b.broadcastStatusLocked()
 	return true
@@ -344,19 +350,18 @@ func (b *Bridge) Request(ctx context.Context, commandType string, payload any) (
 		return nil, ctx.Err()
 	}
 
-	// Past this point the command has been delivered to the client, so every
-	// failure path must reliably tell the browser to abort it — otherwise the
-	// browser would run a command whose request has already failed. This
-	// includes p.result errors (a takeover or disconnect resolved the request):
-	// the resolving path no longer sends its own cancel, leaving Request the
-	// single, reliable owner of cancel delivery.
+	// Past this point the command has been delivered to the client, so a path
+	// that abandons it while the browser is still running it must reliably tell
+	// the browser to abort — otherwise the browser would run a command whose
+	// request has already failed. Request is the single owner of cancel
+	// delivery; the resolving paths never send their own cancel.
 	for {
 		select {
 		case res := <-p.result:
-			// A result (success) needs no cancel. A failure (takeover/disconnect)
-			// means the command was abandoned; tell the client to abort it. On a
-			// genuine disconnect the send returns promptly via client.done.
-			if res.err != nil {
+			// A browser-delivered outcome (success or error) needs no cancel —
+			// the browser is already done. Only a takeover (cancelBrowser) leaves
+			// the still-connected client running an abandoned command, so abort it.
+			if res.cancelBrowser {
 				sendCancelReliably(client, cmd.ID)
 			}
 			return res.data, res.err
