@@ -130,13 +130,12 @@ func (s *Server) handleVisualizeQuery(ctx context.Context, input VisualizeInput)
 	}
 
 	var result visualizeResult
-	err = s.browser.request(ctx, commandVisualize, visualizeCommand{
+	if err := s.browser.request(ctx, commandVisualize, visualizeCommand{
 		DatabaseRef: database.Id,
 		SQL:         input.SQL,
 		ChartConfig: input.ChartConfig,
 		Limit:       input.Limit,
-	}, &result)
-	if err != nil {
+	}, &result); err != nil {
 		return nil, VisualizeOutput{}, fmt.Errorf("visualization failed: %w", err)
 	}
 
