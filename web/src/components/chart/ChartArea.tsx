@@ -13,7 +13,7 @@ import { useChartData } from './useChartData';
 interface Props {
   // The runId of the most recent successful query run, or null if none yet.
   runId: string | null;
-  // 'editor' shows the config editor beside a live preview; any other value
+  // 'chart_editor' shows the config editor beside a live preview; any other value
   // ('chart') renders the chart full-bleed. ('table' is handled upstream.)
   view: ResultView;
   config: string;
@@ -67,7 +67,7 @@ export function ChartArea({ runId, view, config, onConfigChange }: Props) {
     <>
       <SplitPane
         className="mt-4 flex flex-auto overflow-hidden rounded-lg border border-slate-200 bg-white"
-        showLeft={view === 'editor'}
+        showLeft={view === 'chart_editor'}
         leftWidth={chartEditorWidth}
         minLeftWidth={280}
         minRightWidth={300}

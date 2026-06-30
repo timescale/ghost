@@ -21,4 +21,4 @@ export interface ChartData {
 // the rendered chart, or the chart config editor. Defined here (free of any
 // component imports) so non-UI modules like the store can reference it without
 // pulling in React components.
-export type ResultView = 'table' | 'chart' | 'editor';
+export type ResultView = 'table' | 'chart' | 'chart_editor';

@@ -4,7 +4,7 @@ import type { ResultView } from './types';
 const OPTIONS: { value: ResultView; label: string; icon: IconName }[] = [
   { value: 'table', label: 'Table', icon: 'table' },
   { value: 'chart', label: 'Chart', icon: 'chart' },
-  { value: 'editor', label: 'Edit', icon: 'code' },
+  { value: 'chart_editor', label: 'Edit', icon: 'code' },
 ];
 
 interface Props {
