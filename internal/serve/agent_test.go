@@ -88,6 +88,67 @@ func TestBridgePromotionOnDisconnect(t *testing.T) {
 	}
 }
 
+func TestBridgeWaitForActiveClientAlreadyActive(t *testing.T) {
+	b := NewBridge()
+	c := b.addClient()
+	drainStatus(t, c)
+
+	// A client is already active, so the wait returns immediately.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := b.WaitForActiveClient(ctx); err != nil {
+		t.Fatalf("WaitForActiveClient = %v, want nil", err)
+	}
+}
+
+func TestBridgeWaitForActiveClientBecomesActive(t *testing.T) {
+	b := NewBridge()
+
+	// No client yet; the wait blocks until one connects and becomes active.
+	done := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		done <- b.WaitForActiveClient(ctx)
+	}()
+
+	// Give the waiter a moment to block on the activation channel, then connect.
+	time.Sleep(20 * time.Millisecond)
+	c := b.addClient()
+	drainStatus(t, c)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("WaitForActiveClient = %v, want nil", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("WaitForActiveClient did not return after a client became active")
+	}
+}
+
+func TestBridgeWaitForActiveClientContextCanceled(t *testing.T) {
+	b := NewBridge()
+
+	// No client ever connects; the wait unblocks when the context is canceled
+	// (rather than blocking until the much longer idle timeout).
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- b.WaitForActiveClient(ctx) }()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("WaitForActiveClient = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("WaitForActiveClient did not return after context cancellation")
+	}
+}
+
 func TestBridgeRequestRoundTrip(t *testing.T) {
 	b := NewBridge()
 	c := b.addClient()

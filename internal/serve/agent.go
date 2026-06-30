@@ -131,6 +131,10 @@ type Bridge struct {
 	activeID string
 	pending  *pendingRequest
 
+	// activated is closed (and replaced) whenever a client becomes active, so
+	// waiters in WaitForActiveClient wake without polling. Guarded by mu.
+	activated chan struct{}
+
 	// sem serializes Request calls to one in-flight command at a time.
 	sem chan struct{}
 }
@@ -138,8 +142,17 @@ type Bridge struct {
 // NewBridge creates an empty [Bridge].
 func NewBridge() *Bridge {
 	return &Bridge{
-		sem: make(chan struct{}, 1),
+		activated: make(chan struct{}),
+		sem:       make(chan struct{}, 1),
 	}
+}
+
+// signalActivatedLocked wakes any WaitForActiveClient waiters by closing the
+// current activation channel and installing a fresh one. Must be called with
+// b.mu held, on every transition that makes a client active.
+func (b *Bridge) signalActivatedLocked() {
+	close(b.activated)
+	b.activated = make(chan struct{})
 }
 
 // addClient registers a new browser connection and returns it. The first
@@ -159,6 +172,7 @@ func (b *Bridge) addClient() *agentClient {
 	b.clients = append(b.clients, c)
 	if b.activeID == "" {
 		b.activeID = c.id
+		b.signalActivatedLocked()
 	}
 	b.broadcastStatusLocked()
 	return c
@@ -191,6 +205,7 @@ func (b *Bridge) removeClient(c *agentClient) {
 	}
 	if len(b.clients) > 0 {
 		b.activeID = b.clients[len(b.clients)-1].id
+		b.signalActivatedLocked()
 	} else {
 		b.activeID = ""
 	}
@@ -215,6 +230,7 @@ func (b *Bridge) Activate(clientID string) bool {
 		return true
 	}
 	b.activeID = clientID
+	b.signalActivatedLocked()
 	if b.pending != nil && b.pending.clientID == old {
 		// Fail the request; the dispatching Request goroutine reliably tells the
 		// (still-connected) superseded client to abort the now-abandoned command
@@ -239,23 +255,27 @@ func (b *Bridge) HasActiveClient() bool {
 // is canceled, or agentIdleTimeout elapses with no client. Returns nil once a
 // client is active.
 func (b *Bridge) WaitForActiveClient(ctx context.Context) error {
-	if b.HasActiveClient() {
-		return nil
-	}
 	timeout := time.NewTimer(agentIdleTimeout)
 	defer timeout.Stop()
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
 	for {
+		// Grab the current activation channel under the lock and recheck after,
+		// so an activation that races this check still wakes us (the channel is
+		// only ever closed, never sent on, while mu is held).
+		b.mu.Lock()
+		if b.activeClientLocked() != nil {
+			b.mu.Unlock()
+			return nil
+		}
+		activated := b.activated
+		b.mu.Unlock()
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-timeout.C:
 			return ErrNoActiveClient
-		case <-ticker.C:
-			if b.HasActiveClient() {
-				return nil
-			}
+		case <-activated:
+			// A client became active (or the set changed); loop to recheck.
 		}
 	}
 }
