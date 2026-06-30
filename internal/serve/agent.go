@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -170,23 +171,13 @@ func (b *Bridge) removeClient(c *agentClient) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	idx := -1
-	for i, existing := range b.clients {
-		if existing == c {
-			idx = i
-			break
-		}
-	}
+	idx := slices.Index(b.clients, c)
 	if idx == -1 {
 		return
 	}
-	// Shift the tail down and clear the now-unused final slot so the departed
-	// client (and its channels) can be garbage-collected: a plain
-	// append(clients[:idx], clients[idx+1:]...) leaves the removed pointer
-	// lingering in the backing array's stale slot when removing the last element.
-	copy(b.clients[idx:], b.clients[idx+1:])
-	b.clients[len(b.clients)-1] = nil
-	b.clients = b.clients[:len(b.clients)-1]
+	// slices.Delete shifts the tail down and zeroes the vacated slot, so the
+	// departed client (and its channels) can be garbage-collected.
+	b.clients = slices.Delete(b.clients, idx, idx+1)
 	close(c.done)
 
 	if b.activeID != c.id {
@@ -213,14 +204,9 @@ func (b *Bridge) Activate(clientID string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	found := false
-	for _, c := range b.clients {
-		if c.id == clientID {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.ContainsFunc(b.clients, func(c *agentClient) bool {
+		return c.id == clientID
+	}) {
 		return false
 	}
 
