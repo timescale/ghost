@@ -4,12 +4,21 @@ import {
   MAX_ADDITIONAL_RUNS,
   MAX_CHART_CONFIG_HISTORY_ENTRIES,
   MAX_QUERY_HISTORY_ENTRIES,
+  type PersistedState,
   useServeStore,
 } from './store';
 
 // The store persists via a debounced fetch to /api/state; stub it so tests
 // don't make real network calls.
 globalThis.fetch = mock(async () => new Response(null, { status: 204 }));
+
+// hydrate() reads window.location/history for the selected db id; stub a
+// minimal window so the store can run outside a DOM.
+// biome-ignore lint/suspicious/noExplicitAny: minimal test stub.
+(globalThis as any).window = {
+  location: { search: '', pathname: '/' },
+  history: { replaceState: () => {} },
+};
 
 describe('query history', () => {
   beforeEach(() => {
@@ -82,6 +91,28 @@ describe('query history', () => {
     add('SELECT 1', true);
     useServeStore.getState().clearQueryHistory();
     expect(history()).toHaveLength(0);
+  });
+});
+
+describe('hydrate', () => {
+  const hydrate = (saved: PersistedState) =>
+    useServeStore.getState().hydrate(saved);
+
+  test('keeps a known resultView', () => {
+    hydrate({ resultView: 'chart_editor' });
+    expect(useServeStore.getState().resultView).toBe('chart_editor');
+  });
+
+  test('falls back to table for an unknown resultView', () => {
+    // e.g. state written by an older/incompatible build (the editor view was
+    // once named 'editor').
+    hydrate({ resultView: 'editor' as never });
+    expect(useServeStore.getState().resultView).toBe('table');
+  });
+
+  test('falls back to table when resultView is missing', () => {
+    hydrate({});
+    expect(useServeStore.getState().resultView).toBe('table');
   });
 });
 

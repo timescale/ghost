@@ -3,6 +3,14 @@ import { DEFAULT_CHART_CONFIG } from './components/chart/defaultConfig';
 import type { ResultView } from './components/chart/types';
 import { debounce } from './util/debounce';
 
+// Exhaustive map of valid result views. Typed as Record<ResultView, ...> so
+// adding a new ResultView fails type checking here until it's listed.
+const RESULT_VIEWS: Record<ResultView, ResultView> = {
+  table: 'table',
+  chart: 'chart',
+  chart_editor: 'chart_editor',
+};
+
 // A single execution of a query, recording when it ran and whether it
 // succeeded. The SQL itself lives on the parent QueryHistoryEntry.
 export interface QueryRun {
@@ -164,7 +172,8 @@ export const useServeStore = create<ServeStore>((set, get) => ({
       schemaPaneVisible: saved.schemaPaneVisible ?? true,
       schemaTreeExpanded: saved.schemaTreeExpanded ?? {},
       showInternalObjects: saved.showInternalObjects ?? false,
-      resultView: saved.resultView ?? 'table',
+      resultView:
+        (saved.resultView && RESULT_VIEWS[saved.resultView]) ?? 'table',
       chartConfig: saved.chartConfig ?? DEFAULT_CHART_CONFIG,
       chartEditorWidth: saved.chartEditorWidth ?? DEFAULT_CHART_EDITOR_WIDTH,
       queryHistory: saved.queryHistory ?? [],
