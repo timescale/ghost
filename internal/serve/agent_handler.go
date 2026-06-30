@@ -21,12 +21,10 @@ func (h *Handler) agentEventsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := log.FromContext(ctx)
 
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		logger.Error("Response writer does not support flushing")
-		internalServerError(w, logger)
-		return
-	}
+	// The default http.ResponseWriter implements http.Flusher and we never wrap
+	// it with one that doesn't, so a failed assertion is a programmer error —
+	// panic rather than handle it (matching writer.NewFlushWriter).
+	flusher := w.(http.Flusher)
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store, no-transform")
