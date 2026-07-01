@@ -130,9 +130,11 @@ interface ServeStore {
   // results from the widget cache. Returns an empty array when nothing is
   // evicted.
   addQueryHistoryEntry: (entry: QueryHistoryEntry) => string[];
-  // Sets the retention limit (from /api/bootstrap) and trims, returning any
-  // runIds dropped as a result so the caller can evict them.
-  setQueryHistoryLimit: (limit: number) => string[];
+  // Sets the retention limit (from /api/bootstrap) and trims the history to it.
+  // No runs exist when this runs at startup (the query panel doesn't mount
+  // until bootstrap resolves), and addQueryHistoryEntry already caps the list,
+  // so the trim is only a defensive invariant — nothing to evict.
+  setQueryHistoryLimit: (limit: number) => void;
   // Removes a single run from the history by runId. The caller is responsible
   // for evicting the run's cached results (deleteRun) separately.
   removeQueryHistoryEntry: (runId: string) => void;
@@ -335,13 +337,10 @@ export const useServeStore = create<ServeStore>((set, get) => ({
     return evicted;
   },
   setQueryHistoryLimit: (limit) => {
-    const { queryHistory } = get();
-    const evicted = queryHistory.slice(limit).map((e) => e.runId);
     set({
       queryHistoryLimit: limit,
-      queryHistory: queryHistory.slice(0, limit),
+      queryHistory: get().queryHistory.slice(0, limit),
     });
-    return evicted;
   },
   removeQueryHistoryEntry: (runId) => {
     set({ queryHistory: get().queryHistory.filter((e) => e.runId !== runId) });

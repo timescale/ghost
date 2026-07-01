@@ -1,11 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { ResultsCacheContext } from '@timescale/popsql-query-widget-cdn';
 import '@timescale/popsql-query-widget-cdn/index.css';
-import { useContext, useRef } from 'react';
 
 import { AgentStatusBanner } from './agent/AgentStatusBanner';
 import { DisconnectedBanner } from './agent/DisconnectedBanner';
-import { deleteRun, type ResultsCacheClient } from './agent/runData';
 import { useAgentBridge } from './agent/useAgentBridge';
 import { QueryPanel } from './components/QueryPanel';
 import { SchemaPane } from './components/SchemaPane';
@@ -50,38 +47,21 @@ function pickDefaultDatabaseId(databases: Database[]): string | null {
 }
 
 export function App() {
-  // The widget's in-process results cache (hosted at the app root by
-  // WidgetProviders). Kept in a ref so the bootstrap queryFn reads the latest
-  // client without a stale closure, mirroring QueryPanel's clientRef pattern.
-  const { client } = useContext(ResultsCacheContext) as {
-    client: ResultsCacheClient | null;
-  };
-  const clientRef = useRef<ResultsCacheClient | null>(client);
-  clientRef.current = client;
-
   const bootstrap = useQuery({
     queryKey: ['bootstrap'],
     queryFn: async () => {
       const data = await fetchJSON<Bootstrap>('/api/bootstrap');
       // Apply the in-memory query-history retention limit from the server
-      // config (ui_query_history_limit) as soon as bootstrap resolves, evicting
-      // the cached results of any runs it trims so they don't leak (the
-      // widget's own eviction is disabled via referenceId). In practice this
-      // trims nothing at initial load — the query panel can't mount (and so no
-      // run can exist) until bootstrap has resolved — but honoring the evicted
-      // ids keeps this consistent with every other caller of the action.
+      // config (ui_query_history_limit) as soon as bootstrap resolves. No runs
+      // can exist yet — the query panel doesn't mount until bootstrap has
+      // resolved — so this only sets the limit; there's nothing to evict.
+      // Only override the client default (DEFAULT_QUERY_HISTORY_LIMIT) when the
+      // server sends a usable value: a hand-edited config file bypasses the
+      // CLI's positive-int validation, and an older backend may omit the field
+      // entirely (arriving as undefined) — in both cases keep the default
+      // rather than disabling query history with a 0/negative limit.
       if (data.uiQueryHistoryLimit > 0) {
-        const evicted = useServeStore
-          .getState()
-          .setQueryHistoryLimit(data.uiQueryHistoryLimit);
-        const cacheClient = clientRef.current;
-        if (cacheClient) {
-          for (const runId of evicted) {
-            void deleteRun(cacheClient, runId).catch(() => {
-              // Best-effort: a failed delete only leaks a cached run until reload.
-            });
-          }
-        }
+        useServeStore.getState().setQueryHistoryLimit(data.uiQueryHistoryLimit);
       }
       return data;
     },

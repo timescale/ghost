@@ -136,15 +136,12 @@ describe('query history', () => {
     expect(history()).toHaveLength(0);
   });
 
-  test('setQueryHistoryLimit trims and returns the evicted runIds', () => {
+  test('setQueryHistoryLimit sets the limit and trims to it', () => {
     add({ runId: 'a' });
     add({ runId: 'b' });
     add({ runId: 'c' });
-    // History is [c, b, a]; trimming to 1 evicts b and a.
-    expect(useServeStore.getState().setQueryHistoryLimit(1)).toEqual([
-      'b',
-      'a',
-    ]);
+    // History is [c, b, a]; trimming to 1 keeps only the newest.
+    useServeStore.getState().setQueryHistoryLimit(1);
     expect(history().map((e) => e.runId)).toEqual(['c']);
     expect(useServeStore.getState().queryHistoryLimit).toBe(1);
   });
