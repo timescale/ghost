@@ -87,6 +87,9 @@ export function QueryHistoryDetail({ entry, onOpen }: Props) {
   // reference (and renderToolbarAppendLeft's memoization holds).
   const now = useMemo(() => Date.now(), []);
 
+  // Only the database name and run time — the run status and row count are
+  // already shown by the widget's own status indicator and results grid, so
+  // repeating them here would be redundant.
   const renderToolbarAppendLeft = useCallback(
     () => (
       <div className="flex flex-auto items-center gap-1.5 text-xs text-slate-500">
@@ -95,18 +98,9 @@ export function QueryHistoryDetail({ entry, onOpen }: Props) {
         <span title={formatAbsoluteTime(entry.ts)}>
           {formatRelativeTime(entry.ts, now)}
         </span>
-        {entry.status === 'success' ? (
-          <span>
-            · {entry.rowCount} row{entry.rowCount === 1 ? '' : 's'}
-          </span>
-        ) : entry.status === 'canceled' ? (
-          <span className="text-slate-500">· canceled</span>
-        ) : (
-          <span className="text-red-600">· failed</span>
-        )}
       </div>
     ),
-    [entry.databaseName, entry.ts, entry.status, entry.rowCount, now],
+    [entry.databaseName, entry.ts, now],
   );
 
   const renderToolbarAppendRight = useCallback(
