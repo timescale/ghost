@@ -131,7 +131,10 @@ interface ServeStore {
   hydrate: (saved: PersistedState) => void;
   setSelectedDatabaseId: (id: string | null) => void;
   setEditorSql: (sql: string) => void;
-  appendEditorSql: (sql: string) => void;
+  // Appends the given SQL to the editor contents (separated by a blank line if
+  // non-empty), returning the resulting combined contents so the caller can
+  // mark them as applied in editor history without recomputing the join.
+  appendEditorSql: (sql: string) => string;
   setEditorHeight: (height: number) => void;
   setSchemaPaneWidth: (width: number | ((prevWidth: number) => number)) => void;
   setSchemaPaneVisible: (visible: boolean) => void;
@@ -264,6 +267,7 @@ export const useServeStore = create<ServeStore>((set, get) => ({
     const next = current.trim() ? `${current.trimEnd()}\n\n${sql}` : sql;
     set({ editorSql: next });
     persist(snapshotFor(get()));
+    return next;
   },
   setEditorHeight: (height) => {
     set({ editorHeight: height });

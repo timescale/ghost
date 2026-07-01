@@ -64,6 +64,21 @@ export async function deleteRun(
   if (res.error) throw new Error(res.error);
 }
 
+// evictRuns best-effort evicts each run's cached results from the widget cache.
+// A failed delete only leaks a cached run (reclaimed on page reload), so errors
+// are swallowed. No-op when the client isn't ready.
+export function evictRuns(
+  client: ResultsCacheClient | null,
+  runIds: Iterable<string>,
+): void {
+  if (!client) return;
+  for (const runId of runIds) {
+    void deleteRun(client, runId).catch(() => {
+      // Best-effort: a leaked cached run is reclaimed on reload.
+    });
+  }
+}
+
 // rowsToMatrix converts row objects (keyed by column name) into a positional
 // matrix aligned to the given columns — the [][]any shape the agent returns to
 // the MCP tool.

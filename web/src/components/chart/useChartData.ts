@@ -1,7 +1,7 @@
-import { ResultsCacheContext } from '@timescale/popsql-query-widget-cdn';
-import { useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
-import { fetchRunData, type ResultsCacheClient } from '../../agent/runData';
+import { fetchRunData } from '../../agent/runData';
+import { useResultsCacheClient } from '../../agent/useResultsCacheClient';
 import type { ChartData } from './types';
 
 // Cap the number of rows pulled into a chart. ECharts degrades badly past tens
@@ -22,9 +22,7 @@ const IDLE: State = { data: null, loading: false, error: null };
 // fetched by the query — no re-execution. Returns the rows + columns, a loading
 // flag, and any error.
 export function useChartData(runId: string | null): State {
-  const { client } = useContext(ResultsCacheContext) as {
-    client: ResultsCacheClient | null;
-  };
+  const client = useResultsCacheClient();
   const [state, setState] = useState<State>(IDLE);
 
   useEffect(() => {

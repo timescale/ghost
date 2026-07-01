@@ -1,13 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useEffect } from 'react';
 
 import { useServeStore } from '../store';
-import { debounce } from '../util/debounce';
-
-// Debounce window for recording the editor contents into editor history after
-// they last changed. Long enough that only content that's dwelt on is captured
-// — not every intermediate keystroke while actively typing. Matches the chart
-// config recorder's window for consistency.
-const RECORD_DEBOUNCE_MS = 1500;
+import {
+  type HistoryRecorder,
+  useHistoryRecorder,
+} from './history/useHistoryRecorder';
 
 export interface EditorHistoryRecorder {
   // Call before replaying content from a history panel (Open in editor,
@@ -16,62 +13,32 @@ export interface EditorHistoryRecorder {
   // ordering. NOT called for freshly authored content, including agent-authored
   // SQL, which should flow through into history. Mirrors the chart config
   // recorder's markApplied.
-  markApplied: (sql: string) => void;
+  markApplied: HistoryRecorder['markApplied'];
 }
 
 // useEditorHistoryRecorder records the full editor contents into editor history
 // as they're freshly authored — the user typing, or the agent authoring SQL via
 // MCP — but never the content merely loaded on startup or replayed from a
 // history panel (both of which seed the baseline via markApplied). A change
-// from the baseline that settles for RECORD_DEBOUNCE_MS is recorded; the store
+// from the baseline that settles for the record debounce is recorded; the store
 // additionally dedups globally, so returning to an earlier draft promotes it
 // rather than duplicating it.
 //
-// `initialSql` is the editor content when the hook mounts (from persisted state
-// or empty). It seeds the baseline synchronously, so the first draft authored
-// is recorded even if edited within the debounce window, while the loaded
-// content itself isn't re-recorded.
+// `sql` is the current editor content; every change is fed through the shared
+// recorder. Its initial value seeds the baseline synchronously (see
+// useHistoryRecorder), so the first draft authored is recorded even if edited
+// within the debounce window, while the loaded content itself isn't re-recorded.
 export function useEditorHistoryRecorder(sql: string): EditorHistoryRecorder {
   const addEditorHistoryEntry = useServeStore((s) => s.addEditorHistoryEntry);
-
-  // The content we won't record (loaded/just-recorded). Seeded synchronously
-  // from the content present when the hook mounts. useRef's initializer runs
-  // only on mount, so later sql changes don't reset the baseline.
-  const baselineRef = useRef<string>(sql);
-
-  const record = useMemo(
-    () =>
-      debounce((next: string) => {
-        if (next.trim() === baselineRef.current.trim()) return;
-        baselineRef.current = next;
-        addEditorHistoryEntry(next);
-      }, RECORD_DEBOUNCE_MS),
-    [addEditorHistoryEntry],
+  const { record, markApplied } = useHistoryRecorder(
+    sql,
+    addEditorHistoryEntry,
   );
 
   // Feed every editor change through the debounced recorder.
   useEffect(() => {
     record(sql);
   }, [sql, record]);
-
-  // Flush any pending record on unmount (e.g. a database switch), so a draft
-  // authored within the debounce window is still committed to history rather
-  // than silently dropped.
-  useEffect(() => record.flush, [record]);
-
-  const markApplied = useCallback(
-    (applied: string) => {
-      // Flush (don't cancel) any pending record so a draft the user authored
-      // just before applying — the exact content editor history exists to
-      // protect — is committed to history first. flush() records it against
-      // the draft's own contents (its captured args), then we reset the
-      // baseline to the applied content so the replayed content (and the
-      // change event it triggers) is skipped.
-      record.flush();
-      baselineRef.current = applied;
-    },
-    [record],
-  );
 
   return { markApplied };
 }

@@ -1,11 +1,12 @@
-import { ResultsCacheContext } from '@timescale/popsql-query-widget-cdn';
-import { useContext, useMemo } from 'react';
+import { useMemo } from 'react';
 
-import { deleteRun, type ResultsCacheClient } from '../agent/runData';
+import { evictRuns } from '../agent/runData';
+import { useResultsCacheClient } from '../agent/useResultsCacheClient';
 import { type QueryHistoryEntry, useServeStore } from '../store';
 import { formatAbsoluteTime, formatRelativeTime } from '../util/time';
 import type { ResultView } from './chart/types';
 import { ClearHistoryFooter, HistoryListRow } from './history/HistoryList';
+import { previewText } from './history/previewText';
 import { useHistorySelection } from './history/useHistorySelection';
 import { Icon } from './Icon';
 import { QueryHistoryDetail } from './QueryHistoryDetail';
@@ -20,11 +21,6 @@ interface Props {
   onRunsEvicted: (runIds: string[]) => void;
 }
 
-// A one-line preview of a run's SQL for the list (whitespace collapsed).
-function previewSql(sql: string): string {
-  return sql.trim().replace(/\s+/g, ' ');
-}
-
 // QueryHistoryPanel lists distinct query runs (newest first), each kept in the
 // in-memory results cache. Selecting one shows it in the query widget's own
 // read-only editor + results grid (see QueryHistoryDetail), with a button to make
@@ -37,27 +33,17 @@ export function QueryHistoryPanel({ onOpen, onRunsEvicted }: Props) {
   const removeEntry = useServeStore((s) => s.removeQueryHistoryEntry);
   const clearHistory = useServeStore((s) => s.clearQueryHistory);
   // The widget's in-process results cache, used to evict a deleted run's rows.
-  const { client } = useContext(ResultsCacheContext) as {
-    client: ResultsCacheClient | null;
-  };
+  const client = useResultsCacheClient();
 
   const { activeId, setSelectedId } = useHistorySelection(
     useMemo(() => queryHistory.map((e) => e.runId), [queryHistory]),
   );
   const selected = queryHistory.find((e) => e.runId === activeId) ?? null;
 
-  // Best-effort eviction of a run's cached results from the widget cache.
-  const evict = (runId: string) => {
-    if (!client) return;
-    void deleteRun(client, runId).catch(() => {
-      // A failed delete only leaks a cached run, reclaimed on reload.
-    });
-  };
-
   const handleClear = () => {
     // Evict every run's cached results, then empty the history.
     const runIds = clearHistory();
-    for (const runId of runIds) evict(runId);
+    evictRuns(client, runIds);
     // Drop any main-view references to the now-evicted runs.
     onRunsEvicted(runIds);
   };
@@ -67,7 +53,7 @@ export function QueryHistoryPanel({ onOpen, onRunsEvicted }: Props) {
 
   const handleRemove = (runId: string) => {
     // Evict the run's cached results (best effort), then drop the entry.
-    evict(runId);
+    evictRuns(client, [runId]);
     removeEntry(runId);
     // Drop any main-view reference to this now-evicted run.
     onRunsEvicted([runId]);
@@ -109,9 +95,9 @@ export function QueryHistoryPanel({ onOpen, onRunsEvicted }: Props) {
                 />
                 <span
                   className="truncate font-mono text-xs text-slate-700"
-                  title={previewSql(entry.sql)}
+                  title={previewText(entry.sql)}
                 >
-                  {previewSql(entry.sql)}
+                  {previewText(entry.sql)}
                 </span>
               </span>
               <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">

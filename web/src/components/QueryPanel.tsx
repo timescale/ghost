@@ -6,24 +6,13 @@ import {
   type OnQueryCompleteArgs,
   QueryWidget,
   type QueryWidgetApiRef,
-  ResultsCacheContext,
 } from '@timescale/popsql-query-widget-cdn';
-import {
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { QueryOutcome } from '../agent/executor';
 import { type Executor, registerExecutor } from '../agent/executor';
-import {
-  deleteRun,
-  fetchRunData,
-  type ResultsCacheClient,
-} from '../agent/runData';
+import { evictRuns, fetchRunData } from '../agent/runData';
 import { useAgentStore } from '../agent/store';
+import { useResultsCacheClient } from '../agent/useResultsCacheClient';
 import { useAutocompletePlugin } from '../autocomplete/useAutocompletePlugin';
 import { type QueryHistoryEntry, useServeStore } from '../store';
 import { ChartArea } from './chart/ChartArea';
@@ -117,10 +106,8 @@ export function QueryPanel({
 
   // The widget's in-process results cache. Used to read cached run results and
   // to evict the oldest run when a new one pushes past the retention limit.
-  const { client } = useContext(ResultsCacheContext) as {
-    client: ResultsCacheClient | null;
-  };
-  const clientRef = useRef<ResultsCacheClient | null>(client);
+  const client = useResultsCacheClient();
+  const clientRef = useRef(client);
   clientRef.current = client;
 
   const setAgentLastRun = useAgentStore((s) => s.setLastRun);
@@ -252,15 +239,7 @@ export function QueryPanel({
           status: succeeded ? 'success' : failed ? 'failed' : 'canceled',
           rowCount: args.rowCount ?? 0,
         });
-        const cache = clientRef.current;
-        if (cache) {
-          for (const runId of evicted) {
-            void deleteRun(cache, runId).catch(() => {
-              // Best-effort eviction: a failed delete only leaks a cached run,
-              // which is reclaimed when the page reloads.
-            });
-          }
-        }
+        evictRuns(clientRef.current, evicted);
       }
       // Refresh the schema (shared by the tree and autocomplete) after a
       // statement that may have altered it, so new objects appear without a
@@ -556,11 +535,11 @@ export function QueryPanel({
             setHistoryOpen(false);
           }}
           onAppendEditor={(sql) => {
-            // Append produces new combined contents; compute and mark them so
-            // the programmatic change isn't recorded as a fresh user draft.
-            const current = query.trim() ? `${query.trimEnd()}\n\n${sql}` : sql;
-            markEditorApplied(current);
-            appendEditorSql(sql);
+            // appendEditorSql returns the combined contents; mark them applied
+            // so the programmatic change isn't recorded as a fresh user draft.
+            // Marking the store's own result (rather than recomputing the join)
+            // keeps the marked baseline exactly in sync with what was written.
+            markEditorApplied(appendEditorSql(sql));
             setHistoryOpen(false);
           }}
           onOpenRun={handleOpenRun}

@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { useServeStore } from '../store';
 import { formatAbsoluteTime, formatRelativeTime } from '../util/time';
 import { ClearHistoryFooter, HistoryListRow } from './history/HistoryList';
+import { previewText } from './history/previewText';
 import { useHistorySelection } from './history/useHistorySelection';
 import { SqlCodeView } from './SqlCodeView';
 
@@ -11,11 +12,6 @@ interface Props {
   onApply: (sql: string) => void;
   // Append the given SQL to the editor contents, then close.
   onAppend: (sql: string) => void;
-}
-
-// A one-line preview of an entry's SQL for the list (whitespace collapsed).
-function previewSql(sql: string): string {
-  return sql.trim().replace(/\s+/g, ' ');
 }
 
 // EditorHistoryPanel lists past editor drafts (full editor contents recorded as
@@ -62,9 +58,9 @@ export function EditorHistoryPanel({ onApply, onAppend }: Props) {
             >
               <span
                 className="w-full truncate font-mono text-xs text-slate-700"
-                title={previewSql(entry.sql)}
+                title={previewText(entry.sql)}
               >
-                {previewSql(entry.sql)}
+                {previewText(entry.sql)}
               </span>
               <span className="mt-0.5 text-[11px] text-slate-400">
                 <span title={formatAbsoluteTime(entry.ts)}>

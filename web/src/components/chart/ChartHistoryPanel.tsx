@@ -4,6 +4,7 @@ import { useServeStore } from '../../store';
 import { formatAbsoluteTime, formatRelativeTime } from '../../util/time';
 import { CopyButton } from '../CopyButton';
 import { ClearHistoryFooter, HistoryListRow } from '../history/HistoryList';
+import { previewText } from '../history/previewText';
 import { useHistorySelection } from '../history/useHistorySelection';
 import { ChartView } from './ChartView';
 import { ConfigCodeView } from './ConfigCodeView';
@@ -17,12 +18,6 @@ interface Props {
   data: ChartData | null;
   loading: boolean;
   dataError: string | null;
-}
-
-// A one-line preview of a config for the list (whitespace collapsed). The
-// config is a JS function; show its first meaningful content.
-function previewConfig(config: string): string {
-  return config.trim().replace(/\s+/g, ' ');
 }
 
 // ChartHistoryPanel lists previously rendered chart configs (newest first).
@@ -76,9 +71,9 @@ export function ChartHistoryPanel({
             >
               <span
                 className="w-full truncate font-mono text-xs text-slate-700"
-                title={previewConfig(entry.config)}
+                title={previewText(entry.config)}
               >
-                {previewConfig(entry.config)}
+                {previewText(entry.config)}
               </span>
               <span className="mt-0.5 text-[11px] text-slate-400">
                 <span title={formatAbsoluteTime(entry.ts)}>
