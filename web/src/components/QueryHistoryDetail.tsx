@@ -44,6 +44,9 @@ export function QueryHistoryDetail({ entry, onOpen }: Props) {
   // between table and chart), which would otherwise shrink the editor; only
   // honor height changes from a real user drag.
   const [editorHeight, setEditorHeight] = useState(160);
+  // Ephemeral config-editor pane width: local to this preview so resizing it
+  // doesn't mutate (or persist) the main view's chart layout.
+  const [chartEditorWidth, setChartEditorWidth] = useState(480);
   const isResizingEditor = useRef(false);
 
   // Re-seed the preview when the selected run changes. The widget itself isn't
@@ -144,6 +147,8 @@ export function QueryHistoryDetail({ entry, onOpen }: Props) {
           loading={loading}
           error={error}
           onRenderSuccess={noop}
+          editorWidth={chartEditorWidth}
+          onEditorWidthChange={setChartEditorWidth}
         />
       )}
     </div>

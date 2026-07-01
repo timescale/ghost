@@ -137,6 +137,8 @@ export function QueryPanel({
   const setResultView = useServeStore((s) => s.setResultView);
   const chartConfig = useServeStore((s) => s.chartConfig);
   const setChartConfig = useServeStore((s) => s.setChartConfig);
+  const chartEditorWidth = useServeStore((s) => s.chartEditorWidth);
+  const setChartEditorWidth = useServeStore((s) => s.setChartEditorWidth);
   const showTable = resultView === 'table';
 
   // Read the cached results for the most recent successful run, shared by the
@@ -515,6 +517,8 @@ export function QueryPanel({
             loading={chartLoading}
             error={chartError}
             onRenderSuccess={recordRenderSuccess}
+            editorWidth={chartEditorWidth}
+            onEditorWidthChange={setChartEditorWidth}
           />
         )}
       </div>

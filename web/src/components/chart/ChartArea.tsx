@@ -1,4 +1,3 @@
-import { useServeStore } from '../../store';
 import { SplitPane } from '../SplitPane';
 import { ChartConfigEditor } from './ChartConfigEditor';
 import { ChartView } from './ChartView';
@@ -17,6 +16,14 @@ interface Props {
   // Called when a config renders cleanly, so the parent's recorder can capture
   // user-authored configs into history.
   onRenderSuccess: (config: string) => void;
+  // Width (px) of the config editor pane and a setter for it. The parent owns
+  // this: the main view persists it to the store, while the read-only query-
+  // history preview keeps it in ephemeral local state so resizing the preview
+  // doesn't mutate (and persist) the main layout.
+  editorWidth: number;
+  onEditorWidthChange: (
+    width: number | ((prevWidth: number) => number),
+  ) => void;
 }
 
 // ChartArea fills the space below the query editor when the chart or editor
@@ -30,10 +37,9 @@ export function ChartArea({
   loading,
   error,
   onRenderSuccess,
+  editorWidth,
+  onEditorWidthChange,
 }: Props) {
-  const chartEditorWidth = useServeStore((s) => s.chartEditorWidth);
-  const setChartEditorWidth = useServeStore((s) => s.setChartEditorWidth);
-
   const editorPane = (
     <div className="flex min-h-0 flex-auto flex-col">
       <div className="flex items-center gap-2 border-b border-slate-200 px-2 py-1.5">
@@ -49,10 +55,10 @@ export function ChartArea({
     <SplitPane
       className="mt-4 flex flex-auto overflow-hidden rounded-lg border border-slate-200 bg-white"
       showLeft={view === 'chart_editor'}
-      leftWidth={chartEditorWidth}
+      leftWidth={editorWidth}
       minLeftWidth={280}
       minRightWidth={300}
-      onLeftWidthChange={setChartEditorWidth}
+      onLeftWidthChange={onEditorWidthChange}
       left={editorPane}
       right={
         <ChartView
