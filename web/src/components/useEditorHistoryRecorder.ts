@@ -54,15 +54,20 @@ export function useEditorHistoryRecorder(sql: string): EditorHistoryRecorder {
     record(sql);
   }, [sql, record]);
 
-  // Cancel any pending record on unmount.
-  useEffect(() => record.cancel, [record]);
+  // Flush any pending record on unmount (e.g. a database switch), so a draft
+  // authored within the debounce window is still committed to history rather
+  // than silently dropped.
+  useEffect(() => record.flush, [record]);
 
   const markApplied = useCallback(
     (applied: string) => {
-      // A pending record from edits made just before applying would otherwise
-      // fire against the applied content; cancel it and reset the baseline so
-      // the replayed content (and the change event it triggers) is skipped.
-      record.cancel();
+      // Flush (don't cancel) any pending record so a draft the user authored
+      // just before applying — the exact content editor history exists to
+      // protect — is committed to history first. flush() records it against
+      // the draft's own contents (its captured args), then we reset the
+      // baseline to the applied content so the replayed content (and the
+      // change event it triggers) is skipped.
+      record.flush();
       baselineRef.current = applied;
     },
     [record],

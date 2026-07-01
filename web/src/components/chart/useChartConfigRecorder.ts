@@ -60,16 +60,19 @@ export function useChartConfigRecorder(
 
   const markApplied = useCallback(
     (config: string) => {
-      // A pending record from edits made just before applying would otherwise
-      // fire against the applied config; cancel it and reset the baseline.
-      recordRenderSuccess.cancel();
+      // Flush (don't cancel) any pending record so a config the user authored
+      // just before applying is committed to history first (against its own
+      // contents), then reset the baseline to the applied config so the
+      // replayed config isn't re-recorded as a fresh edit.
+      recordRenderSuccess.flush();
       baselineRef.current = config;
     },
     [recordRenderSuccess],
   );
 
-  // Cancel any pending record on unmount.
-  useEffect(() => recordRenderSuccess.cancel, [recordRenderSuccess]);
+  // Flush any pending record on unmount so a config authored within the
+  // debounce window is still committed to history rather than dropped.
+  useEffect(() => recordRenderSuccess.flush, [recordRenderSuccess]);
 
   return { recordRenderSuccess, markApplied };
 }
