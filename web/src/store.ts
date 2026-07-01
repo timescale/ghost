@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { DEFAULT_CHART_CONFIG } from './components/chart/defaultConfig';
 import type { ResultView } from './components/chart/types';
 import { debounce } from './util/debounce';
+import { newId } from './util/id';
 
 // Exhaustive map of valid result views. Typed as Record<ResultView, ...> so
 // adding a new ResultView fails type checking here until it's listed.
@@ -17,6 +18,12 @@ const RESULT_VIEWS: Record<ResultView, ResultView> = {
 // contents are deduplicated globally (re-visiting one moves it to the top
 // rather than adding a duplicate), mirroring the chart config history.
 export interface EditorHistoryEntry {
+  // Stable, unique identity assigned when the entry is created. Used as the
+  // list key and selection identity so those track the entry (not its
+  // position) as the live list mutates (prepends from the recorder/agent,
+  // removals). Not derived from `ts`, which can collide and changes when an
+  // entry is promoted to the top on dedup.
+  id: string;
   // The full editor contents at the time this snapshot was recorded.
   sql: string;
   // Epoch milliseconds when this content was last recorded.
@@ -32,6 +39,9 @@ export const MAX_EDITOR_HISTORY_ENTRIES = 100;
 // globally (re-rendering or re-applying one moves it to the top rather than
 // adding a duplicate).
 export interface ChartConfigHistoryEntry {
+  // Stable, unique identity assigned when the entry is created (see
+  // EditorHistoryEntry.id).
+  id: string;
   // The full chart config source.
   config: string;
   // Epoch milliseconds when this config was last recorded (rendered/applied).
@@ -93,8 +103,12 @@ export interface PersistedState {
   resultView?: ResultView;
   chartConfig?: string;
   chartEditorWidth?: number;
-  editorHistory?: EditorHistoryEntry[];
-  chartConfigHistory?: ChartConfigHistoryEntry[];
+  // Persisted history entries may predate the `id` field (written by an older
+  // build), so `id` is optional here and backfilled on hydrate.
+  editorHistory?: (Omit<EditorHistoryEntry, 'id'> & { id?: string })[];
+  chartConfigHistory?: (Omit<ChartConfigHistoryEntry, 'id'> & {
+    id?: string;
+  })[];
 }
 
 interface ServeStore {
@@ -129,10 +143,10 @@ interface ServeStore {
   ) => void;
   toggleSchemaNode: (databaseId: string, key: string) => void;
   addEditorHistoryEntry: (sql: string) => void;
-  removeEditorHistoryEntry: (index: number) => void;
+  removeEditorHistoryEntry: (id: string) => void;
   clearEditorHistory: () => void;
   addChartConfigHistoryEntry: (config: string) => void;
-  removeChartConfigHistoryEntry: (index: number) => void;
+  removeChartConfigHistoryEntry: (id: string) => void;
   clearChartConfigHistory: () => void;
   // Prepends a run and trims to the limit, returning the runIds dropped past
   // the limit (newest-first eviction order) so the caller can evict their
@@ -224,8 +238,16 @@ export const useServeStore = create<ServeStore>((set, get) => ({
         (saved.resultView && RESULT_VIEWS[saved.resultView]) ?? 'table',
       chartConfig: saved.chartConfig ?? DEFAULT_CHART_CONFIG,
       chartEditorWidth: saved.chartEditorWidth ?? DEFAULT_CHART_EDITOR_WIDTH,
-      editorHistory: saved.editorHistory ?? [],
-      chartConfigHistory: saved.chartConfigHistory ?? [],
+      // Backfill a stable id for any persisted entry written before ids
+      // existed, so the list key/selection identity is always present.
+      editorHistory: (saved.editorHistory ?? []).map((e) => ({
+        ...e,
+        id: e.id ?? newId(),
+      })),
+      chartConfigHistory: (saved.chartConfigHistory ?? []).map((e) => ({
+        ...e,
+        id: e.id ?? newId(),
+      })),
     });
   },
   setSelectedDatabaseId: (id) => {
@@ -289,7 +311,7 @@ export const useServeStore = create<ServeStore>((set, get) => ({
     // Global dedup + move-to-top: drop any existing identical content so
     // returning to a previous draft promotes it rather than duplicating it.
     const withoutDup = history.filter((e) => e.sql.trim() !== trimmed);
-    const entry: EditorHistoryEntry = { sql, ts: Date.now() };
+    const entry: EditorHistoryEntry = { id: newId(), sql, ts: Date.now() };
     set({
       editorHistory: [entry, ...withoutDup].slice(
         0,
@@ -298,8 +320,8 @@ export const useServeStore = create<ServeStore>((set, get) => ({
     });
     persist(snapshotFor(get()));
   },
-  removeEditorHistoryEntry: (index) => {
-    set({ editorHistory: get().editorHistory.filter((_, i) => i !== index) });
+  removeEditorHistoryEntry: (id) => {
+    set({ editorHistory: get().editorHistory.filter((e) => e.id !== id) });
     persist(snapshotFor(get()));
   },
   clearEditorHistory: () => {
@@ -316,7 +338,11 @@ export const useServeStore = create<ServeStore>((set, get) => ({
     // Global dedup + move-to-top: drop any existing identical config so
     // re-rendering or re-applying one promotes it rather than duplicating it.
     const withoutDup = history.filter((e) => e.config.trim() !== trimmed);
-    const entry: ChartConfigHistoryEntry = { config, ts: Date.now() };
+    const entry: ChartConfigHistoryEntry = {
+      id: newId(),
+      config,
+      ts: Date.now(),
+    };
     set({
       chartConfigHistory: [entry, ...withoutDup].slice(
         0,
@@ -325,11 +351,9 @@ export const useServeStore = create<ServeStore>((set, get) => ({
     });
     persist(snapshotFor(get()));
   },
-  removeChartConfigHistoryEntry: (index) => {
+  removeChartConfigHistoryEntry: (id) => {
     set({
-      chartConfigHistory: get().chartConfigHistory.filter(
-        (_, i) => i !== index,
-      ),
+      chartConfigHistory: get().chartConfigHistory.filter((e) => e.id !== id),
     });
     persist(snapshotFor(get()));
   },

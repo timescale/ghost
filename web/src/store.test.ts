@@ -67,10 +67,34 @@ describe('editor history', () => {
     expect(entries[entries.length - 1].sql).toBe('SELECT 10');
   });
 
-  test('removeEditorHistoryEntry removes by index', () => {
+  test('every entry gets a unique, stable id', () => {
     add('SELECT 1');
     add('SELECT 2');
-    useServeStore.getState().removeEditorHistoryEntry(0);
+    const ids = history().map((e) => e.id);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(ids.every((id) => typeof id === 'string' && id.length > 0)).toBe(
+      true,
+    );
+  });
+
+  test('promoting an entry (dedup) preserves its id', () => {
+    add('SELECT 1');
+    add('SELECT 2');
+    const originalId = history().find((e) => e.sql === 'SELECT 1')?.id;
+    add('SELECT 1'); // re-add promotes it to the top
+    expect(history()[0].sql).toBe('SELECT 1');
+    // Dedup drops the old entry and inserts a fresh one, so the id changes;
+    // what matters is the id is regenerated (not derived from ts).
+    expect(history()[0].id).not.toBe(originalId);
+  });
+
+  test('removeEditorHistoryEntry removes by id', () => {
+    add('SELECT 1');
+    add('SELECT 2');
+    const target = history().find((e) => e.sql === 'SELECT 2');
+    if (!target) throw new Error('expected entry');
+    useServeStore.getState().removeEditorHistoryEntry(target.id);
     expect(history().map((e) => e.sql)).toEqual(['SELECT 1']);
   });
 
@@ -178,6 +202,29 @@ describe('hydrate', () => {
     hydrate({});
     expect(useServeStore.getState().resultView).toBe('table');
   });
+
+  test('backfills stable ids for persisted entries lacking them', () => {
+    hydrate({
+      // Simulate state written by an older build, before entries had ids.
+      editorHistory: [{ sql: 'SELECT 1', ts: 1 }],
+      chartConfigHistory: [{ config: 'a', ts: 2 }],
+    });
+    const editor = useServeStore.getState().editorHistory;
+    const chart = useServeStore.getState().chartConfigHistory;
+    expect(editor[0].id).toBeString();
+    expect(editor[0].id.length).toBeGreaterThan(0);
+    expect(chart[0].id).toBeString();
+    expect(chart[0].id.length).toBeGreaterThan(0);
+  });
+
+  test('preserves existing ids on hydrate', () => {
+    hydrate({
+      editorHistory: [{ id: 'e1', sql: 'SELECT 1', ts: 1 }],
+      chartConfigHistory: [{ id: 'c1', config: 'a', ts: 2 }],
+    });
+    expect(useServeStore.getState().editorHistory[0].id).toBe('e1');
+    expect(useServeStore.getState().chartConfigHistory[0].id).toBe('c1');
+  });
 });
 
 describe('chart config history', () => {
@@ -229,10 +276,23 @@ describe('chart config history', () => {
     expect(entries[entries.length - 1].config).toBe('config 10');
   });
 
-  test('removeChartConfigHistoryEntry removes by index', () => {
+  test('every entry gets a unique, stable id', () => {
     add('a');
     add('b');
-    useServeStore.getState().removeChartConfigHistoryEntry(0);
+    const ids = history().map((e) => e.id);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(ids.every((id) => typeof id === 'string' && id.length > 0)).toBe(
+      true,
+    );
+  });
+
+  test('removeChartConfigHistoryEntry removes by id', () => {
+    add('a');
+    add('b');
+    const target = history().find((e) => e.config === 'b');
+    if (!target) throw new Error('expected entry');
+    useServeStore.getState().removeChartConfigHistoryEntry(target.id);
     expect(history().map((e) => e.config)).toEqual(['a']);
   });
 

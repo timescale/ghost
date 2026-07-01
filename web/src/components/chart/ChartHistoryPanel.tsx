@@ -41,18 +41,14 @@ export function ChartHistoryPanel({
   const removeEntry = useServeStore((s) => s.removeChartConfigHistoryEntry);
   const clearHistory = useServeStore((s) => s.clearChartConfigHistory);
 
-  const { activeIndex, setSelectedIndex, adjustForRemoval } =
-    useHistorySelection(history.length);
-  const selected = history[activeIndex];
+  const { activeId, setSelectedId } = useHistorySelection(
+    useMemo(() => history.map((e) => e.id), [history]),
+  );
+  const selected = history.find((e) => e.id === activeId) ?? null;
 
   // Capture "now" once per mount so all relative times share a single
   // reference for the lifetime of this (short-lived) modal.
   const now = useMemo(() => Date.now(), []);
-
-  const handleRemove = (index: number) => {
-    removeEntry(index);
-    adjustForRemoval(index);
-  };
 
   if (history.length === 0) {
     return (
@@ -68,15 +64,14 @@ export function ChartHistoryPanel({
       {/* Left: list of entries (newest first) plus the clear-all action. */}
       <div className="flex w-80 min-w-72 flex-col border-r border-slate-200">
         <ul className="min-h-0 flex-1 overflow-auto">
-          {history.map((entry, index) => (
+          {history.map((entry) => (
             <HistoryListRow
-              // History entries have no stable id; index is the natural, stable
-              // key for this newest-first list.
-              // biome-ignore lint/suspicious/noArrayIndexKey: list keyed by position
-              key={index}
-              active={index === activeIndex}
-              onSelect={() => setSelectedIndex(index)}
-              onRemove={() => handleRemove(index)}
+              // Keyed by the entry's stable id so the row (and its confirm
+              // state) follows the entry as the live list mutates.
+              key={entry.id}
+              active={entry.id === activeId}
+              onSelect={() => setSelectedId(entry.id)}
+              onRemove={() => removeEntry(entry.id)}
               removeLabel="Remove from history"
             >
               <span

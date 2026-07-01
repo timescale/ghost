@@ -37,9 +37,10 @@ export function QueryHistoryPanel({ onOpen }: Props) {
     client: ResultsCacheClient | null;
   };
 
-  const { activeIndex, setSelectedIndex, adjustForRemoval } =
-    useHistorySelection(queryHistory.length);
-  const selected = queryHistory[activeIndex];
+  const { activeId, setSelectedId } = useHistorySelection(
+    useMemo(() => queryHistory.map((e) => e.runId), [queryHistory]),
+  );
+  const selected = queryHistory.find((e) => e.runId === activeId) ?? null;
 
   // Best-effort eviction of a run's cached results from the widget cache.
   const evict = (runId: string) => {
@@ -57,11 +58,10 @@ export function QueryHistoryPanel({ onOpen }: Props) {
   // Recompute "now" once per render so all relative times share a reference.
   const now = useMemo(() => Date.now(), []);
 
-  const handleRemove = (index: number, runId: string) => {
+  const handleRemove = (runId: string) => {
     // Evict the run's cached results (best effort), then drop the entry.
     evict(runId);
     removeEntry(runId);
-    adjustForRemoval(index);
   };
 
   if (queryHistory.length === 0) {
@@ -78,12 +78,12 @@ export function QueryHistoryPanel({ onOpen }: Props) {
       {/* Left: list of runs (newest first). */}
       <div className="flex w-80 min-w-72 flex-col border-r border-slate-200">
         <ul className="min-h-0 flex-1 overflow-auto">
-          {queryHistory.map((entry, index) => (
+          {queryHistory.map((entry) => (
             <HistoryListRow
               key={entry.runId}
-              active={index === activeIndex}
-              onSelect={() => setSelectedIndex(index)}
-              onRemove={() => handleRemove(index, entry.runId)}
+              active={entry.runId === activeId}
+              onSelect={() => setSelectedId(entry.runId)}
+              onRemove={() => handleRemove(entry.runId)}
               removeLabel="Delete run (evict from cache)"
             >
               <span className="flex w-full items-center gap-1.5">
