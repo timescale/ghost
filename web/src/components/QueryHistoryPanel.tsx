@@ -112,12 +112,14 @@ export function QueryHistoryPanel({ onOpen }: Props) {
                 <span>· {entry.databaseName}</span>
                 {entry.status === 'canceled' ? (
                   <span>· canceled</span>
-                ) : entry.status === 'success' ? (
+                ) : entry.status === 'failed' ? (
+                  <span>· failed</span>
+                ) : (
                   <span>
                     · {entry.rowCount} row
                     {entry.rowCount === 1 ? '' : 's'}
                   </span>
-                ) : null}
+                )}
               </span>
             </HistoryListRow>
           ))}
