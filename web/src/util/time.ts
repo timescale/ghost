@@ -1,6 +1,6 @@
 // formatRelativeTime renders a compact, human-readable "time ago" string for
 // the given epoch-millisecond timestamp (e.g. "just now", "5m ago", "3h ago",
-// "2d ago"). Used for query history timestamps, with the absolute time shown in
+// "2d ago"). Used for editor history timestamps, with the absolute time shown in
 // a tooltip via formatAbsoluteTime.
 export function formatRelativeTime(
   ts: number,

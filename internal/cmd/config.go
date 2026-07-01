@@ -72,6 +72,9 @@ func outputConfigTable(w io.Writer, cfg *config.ConfigOutput) error {
 	if cfg.ReadOnly != nil {
 		table.Append("read_only", fmt.Sprintf("%t", *cfg.ReadOnly))
 	}
+	if cfg.UIQueryHistoryLimit != nil {
+		table.Append("ui_query_history_limit", fmt.Sprintf("%d", *cfg.UIQueryHistoryLimit))
+	}
 	if cfg.VersionCheck != nil {
 		table.Append("version_check", fmt.Sprintf("%t", *cfg.VersionCheck))
 	}

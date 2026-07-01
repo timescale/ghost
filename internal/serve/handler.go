@@ -165,6 +165,10 @@ type GetBootstrapResponse struct {
 	// this server use an immutable read-only connection, so the UI surfaces a
 	// read-only indicator to the user.
 	ReadOnly bool `json:"readOnly"`
+	// UIQueryHistoryLimit reflects the ui_query_history_limit config option:
+	// the maximum number of recent query runs (and their results) the UI keeps
+	// in the in-memory results cache before evicting the oldest.
+	UIQueryHistoryLimit int `json:"uiQueryHistoryLimit"`
 }
 
 func (h *Handler) bootstrapHandler(w http.ResponseWriter, r *http.Request) {
@@ -180,9 +184,10 @@ func (h *Handler) bootstrapHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, GetBootstrapResponse{
-		ProjectID: projectID,
-		Version:   config.Version,
-		ReadOnly:  cfg.ReadOnly,
+		ProjectID:           projectID,
+		Version:             config.Version,
+		ReadOnly:            cfg.ReadOnly,
+		UIQueryHistoryLimit: cfg.UIQueryHistoryLimit,
 	}, logger)
 }
 
@@ -317,30 +322,24 @@ type State struct {
 	// ChartEditorWidth is the width (px) of the chart config editor pane in the
 	// editor/preview split.
 	ChartEditorWidth int `json:"chartEditorWidth,omitempty"`
-	// QueryHistory is the list of previously run queries, newest first. Each PUT
-	// replaces it wholesale; the web client owns dedup and capping.
-	QueryHistory []QueryHistoryEntry `json:"queryHistory,omitempty"`
+	// EditorHistory is the list of past editor drafts (full editor contents
+	// recorded as the user edits), newest first. Each PUT replaces it wholesale;
+	// the web client owns dedup and capping. (Query history — distinct runs and
+	// their results — is kept in-memory only by the web client and never
+	// persisted here.)
+	EditorHistory []EditorHistoryEntry `json:"editorHistory,omitempty"`
 	// ChartConfigHistory is the list of previously used chart configs, newest
-	// first. Like QueryHistory, each PUT replaces it wholesale; the web client
+	// first. Like EditorHistory, each PUT replaces it wholesale; the web client
 	// owns dedup and capping.
 	ChartConfigHistory []ChartConfigHistoryEntry `json:"chartConfigHistory,omitempty"`
 }
 
-// QueryRun records a single execution of a query: when it completed (epoch
-// milliseconds) and whether it succeeded.
-type QueryRun struct {
-	Timestamp int64 `json:"ts"`
-	Success   bool  `json:"success"`
-}
-
-// QueryHistoryEntry is one entry in the query history. Consecutive runs of the
-// same SQL (whitespace-insensitive) are collapsed by the web client into a
-// single entry, with earlier runs recorded in AdditionalRuns (newest first).
-type QueryHistoryEntry struct {
-	SQL            string     `json:"sql"`
-	Timestamp      int64      `json:"ts"`
-	Success        bool       `json:"success"`
-	AdditionalRuns []QueryRun `json:"additionalRuns,omitempty"`
+// EditorHistoryEntry is one entry in the editor history: the full editor
+// contents at the time it was recorded and when (epoch milliseconds). The web
+// client owns dedup (identical contents are promoted, not duplicated).
+type EditorHistoryEntry struct {
+	SQL       string `json:"sql"`
+	Timestamp int64  `json:"ts"`
 }
 
 // ChartConfigHistoryEntry is one entry in the chart config history: the full

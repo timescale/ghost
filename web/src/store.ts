@@ -11,34 +11,20 @@ const RESULT_VIEWS: Record<ResultView, ResultView> = {
   chart_editor: 'chart_editor',
 };
 
-// A single execution of a query, recording when it ran and whether it
-// succeeded. The SQL itself lives on the parent QueryHistoryEntry.
-export interface QueryRun {
-  // Epoch milliseconds when the run completed.
-  ts: number;
-  success: boolean;
-}
-
-// One entry in the query history. Consecutive runs of the same SQL (ignoring
-// leading/trailing whitespace) are collapsed into a single entry: the most
-// recent run is the entry's own `ts`/`success`, and any earlier consecutive
-// runs are recorded in `additionalRuns` (newest first).
-export interface QueryHistoryEntry {
-  // The exact SQL that was executed (a selection, if one was active, otherwise
-  // the full editor contents).
+// One entry in the editor history. Editor history is a record of the full editor
+// contents over time (drafts), recorded as the user edits — not tied to runs
+// (each distinct run is captured by the query history instead). Identical
+// contents are deduplicated globally (re-visiting one moves it to the top
+// rather than adding a duplicate), mirroring the chart config history.
+export interface EditorHistoryEntry {
+  // The full editor contents at the time this snapshot was recorded.
   sql: string;
-  // Epoch milliseconds when the most recent run completed.
+  // Epoch milliseconds when this content was last recorded.
   ts: number;
-  success: boolean;
-  // Earlier consecutive runs of the same SQL, newest first. Omitted when there
-  // was only a single run.
-  additionalRuns?: QueryRun[];
 }
 
 // Maximum number of distinct history entries to retain (oldest dropped first).
-export const MAX_QUERY_HISTORY_ENTRIES = 100;
-// Maximum number of additional (deduplicated) runs to retain per entry.
-export const MAX_ADDITIONAL_RUNS = 100;
+export const MAX_EDITOR_HISTORY_ENTRIES = 100;
 
 // One entry in the chart config history. Unlike query runs, there's no discrete
 // "completion" event for a config, so entries are recorded whenever an edited
@@ -55,6 +41,38 @@ export interface ChartConfigHistoryEntry {
 // Maximum number of chart config history entries to retain (oldest dropped).
 export const MAX_CHART_CONFIG_HISTORY_ENTRIES = 100;
 
+// One entry in the query history. Unlike the query/chart config histories, run
+// history is never persisted and records each distinct *run* (a single
+// execution and its results). The actual result rows live in the widget's
+// in-memory results cache (keyed by runId); this entry holds the metadata
+// needed to list runs and re-display one. Capped at `queryHistoryLimit` entries:
+// when a new run pushes past the limit, the oldest run's id is returned by
+// `addQueryHistoryEntry` so the caller can evict it from the results cache.
+export interface QueryHistoryEntry {
+  // The widget results-cache key for this run's results.
+  runId: string;
+  // The database the run executed against (id + display name).
+  databaseId: string;
+  databaseName: string;
+  // The exact SQL that was executed (a selection, if one was active, otherwise
+  // the full editor contents at run time).
+  sql: string;
+  // The chart config in effect when the run completed. For agent-driven
+  // ghost_visualize this is the config the agent applied (applied before the
+  // run is recorded); for user runs it's the current editor config. Lets the
+  // query-history detail re-render the run's chart exactly as it was.
+  chartConfig: string;
+  // Epoch milliseconds when the run completed.
+  ts: number;
+  success: boolean;
+  // Total number of rows the run produced (0 for a failed run).
+  rowCount: number;
+}
+
+// Default number of runs to retain in memory, used until the real limit is
+// loaded from /api/bootstrap (the ui_query_history_limit config option).
+export const DEFAULT_QUERY_HISTORY_LIMIT = 25;
+
 export interface PersistedState {
   selectedDatabaseId?: string;
   editorHeight?: number;
@@ -66,7 +84,7 @@ export interface PersistedState {
   resultView?: ResultView;
   chartConfig?: string;
   chartEditorWidth?: number;
-  queryHistory?: QueryHistoryEntry[];
+  editorHistory?: EditorHistoryEntry[];
   chartConfigHistory?: ChartConfigHistoryEntry[];
 }
 
@@ -82,8 +100,11 @@ interface ServeStore {
   resultView: ResultView;
   chartConfig: string;
   chartEditorWidth: number;
-  queryHistory: QueryHistoryEntry[];
+  editorHistory: EditorHistoryEntry[];
   chartConfigHistory: ChartConfigHistoryEntry[];
+  // Query history is in-memory only (never persisted). Newest first.
+  queryHistory: QueryHistoryEntry[];
+  queryHistoryLimit: number;
   hydrate: (saved: PersistedState) => void;
   setSelectedDatabaseId: (id: string | null) => void;
   setEditorSql: (sql: string) => void;
@@ -98,12 +119,26 @@ interface ServeStore {
     width: number | ((prevWidth: number) => number),
   ) => void;
   toggleSchemaNode: (databaseId: string, key: string) => void;
-  addQueryHistoryEntry: (sql: string, success: boolean) => void;
-  removeQueryHistoryEntry: (index: number) => void;
-  clearQueryHistory: () => void;
+  addEditorHistoryEntry: (sql: string) => void;
+  removeEditorHistoryEntry: (index: number) => void;
+  clearEditorHistory: () => void;
   addChartConfigHistoryEntry: (config: string) => void;
   removeChartConfigHistoryEntry: (index: number) => void;
   clearChartConfigHistory: () => void;
+  // Prepends a run and trims to the limit, returning the runIds dropped past
+  // the limit (newest-first eviction order) so the caller can evict their
+  // results from the widget cache. Returns an empty array when nothing is
+  // evicted.
+  addQueryHistoryEntry: (entry: QueryHistoryEntry) => string[];
+  // Sets the retention limit (from /api/bootstrap) and trims, returning any
+  // runIds dropped as a result so the caller can evict them.
+  setQueryHistoryLimit: (limit: number) => string[];
+  // Removes a single run from the history by runId. The caller is responsible
+  // for evicting the run's cached results (deleteRun) separately.
+  removeQueryHistoryEntry: (runId: string) => void;
+  // Clears the entire query history, returning the runIds that were in it so
+  // the caller can evict their cached results (deleteRun).
+  clearQueryHistory: () => string[];
 }
 
 export const DEFAULT_EDITOR_HEIGHT = 240;
@@ -141,7 +176,7 @@ function snapshotFor(store: ServeStore): PersistedState {
     resultView: store.resultView,
     chartConfig: store.chartConfig,
     chartEditorWidth: store.chartEditorWidth,
-    queryHistory: store.queryHistory,
+    editorHistory: store.editorHistory,
     chartConfigHistory: store.chartConfigHistory,
   };
 }
@@ -158,8 +193,10 @@ export const useServeStore = create<ServeStore>((set, get) => ({
   resultView: 'table',
   chartConfig: DEFAULT_CHART_CONFIG,
   chartEditorWidth: DEFAULT_CHART_EDITOR_WIDTH,
-  queryHistory: [],
+  editorHistory: [],
   chartConfigHistory: [],
+  queryHistory: [],
+  queryHistoryLimit: DEFAULT_QUERY_HISTORY_LIMIT,
   hydrate: (saved) => {
     const selectedDatabaseId = getUrlDbId() ?? saved.selectedDatabaseId ?? null;
     if (selectedDatabaseId) setUrlDbId(selectedDatabaseId);
@@ -176,7 +213,7 @@ export const useServeStore = create<ServeStore>((set, get) => ({
         (saved.resultView && RESULT_VIEWS[saved.resultView]) ?? 'table',
       chartConfig: saved.chartConfig ?? DEFAULT_CHART_CONFIG,
       chartEditorWidth: saved.chartEditorWidth ?? DEFAULT_CHART_EDITOR_WIDTH,
-      queryHistory: saved.queryHistory ?? [],
+      editorHistory: saved.editorHistory ?? [],
       chartConfigHistory: saved.chartConfigHistory ?? [],
     });
   },
@@ -231,35 +268,31 @@ export const useServeStore = create<ServeStore>((set, get) => ({
     });
     persist(snapshotFor(get()));
   },
-  addQueryHistoryEntry: (sql, success) => {
+  addEditorHistoryEntry: (sql) => {
     const trimmed = sql.trim();
     if (!trimmed) return;
-    const ts = Date.now();
-    const history = get().queryHistory;
-    const newest = history[0];
-    // Collapse consecutive runs of the same SQL (whitespace-insensitive) into
-    // the newest entry, recording the prior run in additionalRuns.
-    if (newest && newest.sql.trim() === trimmed) {
-      const additionalRuns = [
-        { ts: newest.ts, success: newest.success },
-        ...(newest.additionalRuns ?? []),
-      ].slice(0, MAX_ADDITIONAL_RUNS);
-      const merged: QueryHistoryEntry = { sql, ts, success, additionalRuns };
-      set({ queryHistory: [merged, ...history.slice(1)] });
-    } else {
-      const entry: QueryHistoryEntry = { sql, ts, success };
-      set({
-        queryHistory: [entry, ...history].slice(0, MAX_QUERY_HISTORY_ENTRIES),
-      });
-    }
+    const history = get().editorHistory;
+    // Already at the top: nothing to do (avoids timestamp churn while the
+    // debounced recorder fires repeatedly on the same content).
+    if (history[0]?.sql.trim() === trimmed) return;
+    // Global dedup + move-to-top: drop any existing identical content so
+    // returning to a previous draft promotes it rather than duplicating it.
+    const withoutDup = history.filter((e) => e.sql.trim() !== trimmed);
+    const entry: EditorHistoryEntry = { sql, ts: Date.now() };
+    set({
+      editorHistory: [entry, ...withoutDup].slice(
+        0,
+        MAX_EDITOR_HISTORY_ENTRIES,
+      ),
+    });
     persist(snapshotFor(get()));
   },
-  removeQueryHistoryEntry: (index) => {
-    set({ queryHistory: get().queryHistory.filter((_, i) => i !== index) });
+  removeEditorHistoryEntry: (index) => {
+    set({ editorHistory: get().editorHistory.filter((_, i) => i !== index) });
     persist(snapshotFor(get()));
   },
-  clearQueryHistory: () => {
-    set({ queryHistory: [] });
+  clearEditorHistory: () => {
+    set({ editorHistory: [] });
     persist(snapshotFor(get()));
   },
   addChartConfigHistoryEntry: (config) => {
@@ -292,6 +325,33 @@ export const useServeStore = create<ServeStore>((set, get) => ({
   clearChartConfigHistory: () => {
     set({ chartConfigHistory: [] });
     persist(snapshotFor(get()));
+  },
+  addQueryHistoryEntry: (entry) => {
+    const { queryHistory, queryHistoryLimit } = get();
+    const next = [entry, ...queryHistory];
+    const evicted = next.slice(queryHistoryLimit).map((e) => e.runId);
+    set({ queryHistory: next.slice(0, queryHistoryLimit) });
+    // Query history is intentionally not persisted, so no persist() call here.
+    return evicted;
+  },
+  setQueryHistoryLimit: (limit) => {
+    const { queryHistory } = get();
+    const evicted = queryHistory.slice(limit).map((e) => e.runId);
+    set({
+      queryHistoryLimit: limit,
+      queryHistory: queryHistory.slice(0, limit),
+    });
+    return evicted;
+  },
+  removeQueryHistoryEntry: (runId) => {
+    set({ queryHistory: get().queryHistory.filter((e) => e.runId !== runId) });
+    // Query history is intentionally not persisted, so no persist() call here.
+  },
+  clearQueryHistory: () => {
+    const runIds = get().queryHistory.map((e) => e.runId);
+    set({ queryHistory: [] });
+    // Query history is intentionally not persisted, so no persist() call here.
+    return runIds;
   },
   toggleSchemaNode: (databaseId, key) => {
     const prev = get().schemaTreeExpanded[databaseId] ?? [];

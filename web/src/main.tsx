@@ -3,6 +3,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './app';
+import { WidgetProviders } from './components/WidgetProviders';
 import './styles.css';
 
 const queryClient = new QueryClient({
@@ -15,7 +16,9 @@ if (!rootElement) throw new Error('missing #root element');
 createRoot(rootElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <WidgetProviders>
+        <App />
+      </WidgetProviders>
     </QueryClientProvider>
   </StrictMode>,
 );

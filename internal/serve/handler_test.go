@@ -68,7 +68,7 @@ func TestAgentEventsHandler_NoBridgeLiveness(t *testing.T) {
 // against State fields being silently dropped on the round-trip: because a PUT
 // replaces the stored state wholesale by unmarshaling into State, any field the
 // web client sends but State omits is lost (this was a real regression for
-// chartConfigHistory). Driving real JSON through the router exercises the
+// chartConfigHistory and, later, editorHistory). Driving real JSON through the router exercises the
 // unmarshalRequest middleware and the store's marshal/unmarshal path.
 func TestStateHandler_RoundTrip(t *testing.T) {
 	h := &Handler{
@@ -84,8 +84,9 @@ func TestStateHandler_RoundTrip(t *testing.T) {
 		"editorSql": "select 1",
 		"resultView": "chart",
 		"chartConfig": "return {};",
-		"queryHistory": [
-			{"sql": "select 1", "ts": 1000, "success": true}
+		"editorHistory": [
+			{"sql": "select 1", "ts": 1000},
+			{"sql": "select 2", "ts": 900}
 		],
 		"chartConfigHistory": [
 			{"config": "return {a:1};", "ts": 2000},
@@ -124,8 +125,9 @@ func TestStateHandler_RoundTrip(t *testing.T) {
 		EditorSQL:          "select 1",
 		ResultView:         "chart",
 		ChartConfig:        "return {};",
-		QueryHistory: []QueryHistoryEntry{
-			{SQL: "select 1", Timestamp: 1000, Success: true},
+		EditorHistory: []EditorHistoryEntry{
+			{SQL: "select 1", Timestamp: 1000},
+			{SQL: "select 2", Timestamp: 900},
 		},
 		ChartConfigHistory: []ChartConfigHistoryEntry{
 			{Config: "return {a:1};", Timestamp: 2000},

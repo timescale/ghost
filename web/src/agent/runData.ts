@@ -6,7 +6,7 @@ import type { ChartColumn, ChartData } from '../components/chart/types';
 // `fields` (including their Postgres types); `readCache` yields the rows.
 export interface ResultsCacheClient {
   rpc(payload: {
-    type: 'getRunInfo' | 'readCache';
+    type: 'getRunInfo' | 'readCache' | 'deleteRun';
     data: unknown;
   }): Promise<{ data: unknown; error?: string }>;
 }
@@ -51,6 +51,17 @@ export async function fetchRunData(
     : Object.keys(rows[0] ?? {}).map((name) => ({ name }));
 
   return { rows, columns };
+}
+
+// deleteRun evicts a completed run's results from the widget's in-process
+// results cache (dropping its DuckDB table). Used to enforce the query-history
+// retention limit by removing the oldest run once a new one pushes past it.
+export async function deleteRun(
+  client: ResultsCacheClient,
+  runId: string,
+): Promise<void> {
+  const res = await client.rpc({ type: 'deleteRun', data: { runId } });
+  if (res.error) throw new Error(res.error);
 }
 
 // rowsToMatrix converts row objects (keyed by column name) into a positional

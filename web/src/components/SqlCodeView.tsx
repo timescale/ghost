@@ -1,19 +1,14 @@
 import {
-  ContextMenuContext,
-  ContextMenuProvider,
   type ExecuteQueryData,
   ExecuteQueryEngine,
   type GetExecuteQueryDataArgs,
   QueryWidget,
-  QueryWidgetProvider,
-  Theme,
-  TimescaleResultsCacheContextProvider,
 } from '@timescale/popsql-query-widget-cdn';
-import type React from 'react';
 import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
 } from 'react';
@@ -38,8 +33,15 @@ interface Props {
 // QueryWidget with the run button, results, status, and search all hidden — so
 // only the code editor and a copy button (in the toolbar) are visible. Used to
 // display object definitions (indexes, functions, procedures) with the same
-// highlighting as the main query editor.
+// highlighting as the main query editor. It relies on the widget providers
+// hosted at the app root (see WidgetProviders), so it must be rendered within
+// that tree.
 export function SqlCodeView({ query, language, toolbarActions, fill }: Props) {
+  // A unique widget id per instance: several SqlCodeViews (and the main editor)
+  // can be mounted at once under the shared root QueryWidgetProvider, and each
+  // editor instance must have a unique id. Strip the colons React's useId adds
+  // so the id is safe to use in the widget's editor model URI.
+  const widgetId = `sql-code-view-${useId().replace(/[^a-z0-9]/gi, '')}`;
   // When `fill` is set, the widget can't flex on its own (its editor auto-sizes
   // to the SQL), so we measure the wrapper and feed the height back in as a
   // controlled editorHeight. The widget subtracts its own toolbar height, so
@@ -77,44 +79,33 @@ export function SqlCodeView({ query, language, toolbarActions, fill }: Props) {
   );
 
   return (
-    <TimescaleResultsCacheContextProvider baseUrl={window.location.origin}>
-      <QueryWidgetProvider theme={Theme.light}>
-        <ContextMenuProvider>
-          <div
-            ref={wrapperRef}
-            className={fill ? 'flex min-h-0 flex-auto' : undefined}
-          >
-            <QueryWidget
-              id="definition-viewer"
-              className={fill ? 'flex-auto' : undefined}
-              query={query}
-              getExecuteQueryData={getExecuteQueryData}
-              readonlyEditor
-              disableRun
-              hideRunButton
-              hideResults
-              hideSessionStatus
-              hideSearchInput
-              resizeHandles="none"
-              editorHeight={fill ? fillHeight : undefined}
-              renderToolbarAppendRight={renderToolbarAppendRight}
-              editorLanguage={language}
-              editorOptions={{
-                minimap: { enabled: false },
-                scrollBeyondLastLine: false,
-                // Prose wraps to the modal width; SQL keeps Monaco's default
-                // no-wrap + horizontal scroll.
-                ...(language === 'plaintext'
-                  ? { wordWrap: 'on' as const }
-                  : {}),
-              }}
-            />
-          </div>
-          <ContextMenuContext.Consumer>
-            {({ render }: { render: () => React.ReactNode }) => render()}
-          </ContextMenuContext.Consumer>
-        </ContextMenuProvider>
-      </QueryWidgetProvider>
-    </TimescaleResultsCacheContextProvider>
+    <div
+      ref={wrapperRef}
+      className={fill ? 'flex min-h-0 flex-auto' : undefined}
+    >
+      <QueryWidget
+        id={widgetId}
+        className={fill ? 'flex-auto' : undefined}
+        query={query}
+        getExecuteQueryData={getExecuteQueryData}
+        readonlyEditor
+        disableRun
+        hideRunButton
+        hideResults
+        hideSessionStatus
+        hideSearchInput
+        resizeHandles="none"
+        editorHeight={fill ? fillHeight : undefined}
+        renderToolbarAppendRight={renderToolbarAppendRight}
+        editorLanguage={language}
+        editorOptions={{
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          // Prose wraps to the modal width; SQL keeps Monaco's default
+          // no-wrap + horizontal scroll.
+          ...(language === 'plaintext' ? { wordWrap: 'on' as const } : {}),
+        }}
+      />
+    </div>
   );
 }

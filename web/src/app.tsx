@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import '@timescale/popsql-query-widget-cdn/index.css';
+import { useEffect } from 'react';
 
 import { AgentStatusBanner } from './agent/AgentStatusBanner';
 import { DisconnectedBanner } from './agent/DisconnectedBanner';
@@ -13,6 +14,7 @@ interface Bootstrap {
   projectId: string;
   version: string;
   readOnly: boolean;
+  uiQueryHistoryLimit: number;
 }
 
 interface Database {
@@ -60,6 +62,14 @@ export function App() {
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
+  // Apply the in-memory query-history retention limit from the server config
+  // (ui_query_history_limit) once bootstrap loads.
+  const queryHistoryLimit = bootstrap.data?.uiQueryHistoryLimit;
+  useEffect(() => {
+    if (queryHistoryLimit && queryHistoryLimit > 0) {
+      useServeStore.getState().setQueryHistoryLimit(queryHistoryLimit);
+    }
+  }, [queryHistoryLimit]);
   const hydrated = useServeStore((s) => s.hydrated);
 
   if (bootstrap.isError || persistedState.isError) {

@@ -17,30 +17,32 @@ import (
 )
 
 type Config struct {
-	APIURL       string `mapstructure:"api_url"`
-	Analytics    bool   `mapstructure:"analytics"`
-	Color        bool   `mapstructure:"color"`
-	DocsMCPURL   string `mapstructure:"docs_mcp_url"`
-	Keyring      bool   `mapstructure:"keyring"`
-	ReadOnly     bool   `mapstructure:"read_only"`
-	ReleasesURL  string `mapstructure:"releases_url"`
-	ShareURL     string `mapstructure:"share_url"`
-	VersionCheck bool   `mapstructure:"version_check"`
+	APIURL              string `mapstructure:"api_url"`
+	Analytics           bool   `mapstructure:"analytics"`
+	Color               bool   `mapstructure:"color"`
+	DocsMCPURL          string `mapstructure:"docs_mcp_url"`
+	Keyring             bool   `mapstructure:"keyring"`
+	ReadOnly            bool   `mapstructure:"read_only"`
+	ReleasesURL         string `mapstructure:"releases_url"`
+	UIQueryHistoryLimit int    `mapstructure:"ui_query_history_limit"`
+	ShareURL            string `mapstructure:"share_url"`
+	VersionCheck        bool   `mapstructure:"version_check"`
 
 	ConfigDir string         `mapstructure:"-"`
 	flags     *pflag.FlagSet `mapstructure:"-"`
 }
 
 type ConfigOutput struct {
-	APIURL       *string `mapstructure:"api_url" json:"api_url,omitempty"`
-	Analytics    *bool   `mapstructure:"analytics" json:"analytics,omitempty"`
-	Color        *bool   `mapstructure:"color" json:"color,omitempty"`
-	DocsMCPURL   *string `mapstructure:"docs_mcp_url" json:"docs_mcp_url,omitempty"`
-	Keyring      *bool   `mapstructure:"keyring" json:"keyring,omitempty"`
-	ReadOnly     *bool   `mapstructure:"read_only" json:"read_only,omitempty"`
-	ReleasesURL  *string `mapstructure:"releases_url" json:"releases_url,omitempty"`
-	ShareURL     *string `mapstructure:"share_url" json:"share_url,omitempty"`
-	VersionCheck *bool   `mapstructure:"version_check" json:"version_check,omitempty"`
+	APIURL              *string `mapstructure:"api_url" json:"api_url,omitempty"`
+	Analytics           *bool   `mapstructure:"analytics" json:"analytics,omitempty"`
+	Color               *bool   `mapstructure:"color" json:"color,omitempty"`
+	DocsMCPURL          *string `mapstructure:"docs_mcp_url" json:"docs_mcp_url,omitempty"`
+	Keyring             *bool   `mapstructure:"keyring" json:"keyring,omitempty"`
+	ReadOnly            *bool   `mapstructure:"read_only" json:"read_only,omitempty"`
+	ReleasesURL         *string `mapstructure:"releases_url" json:"releases_url,omitempty"`
+	UIQueryHistoryLimit *int    `mapstructure:"ui_query_history_limit" json:"ui_query_history_limit,omitempty"`
+	ShareURL            *string `mapstructure:"share_url" json:"share_url,omitempty"`
+	VersionCheck        *bool   `mapstructure:"version_check" json:"version_check,omitempty"`
 
 	ConfigDir string       `mapstructure:"-" json:"-"`
 	viper     *viper.Viper `mapstructure:"-" json:"-"`
@@ -49,22 +51,24 @@ type ConfigOutput struct {
 const configFileName = "config.yaml"
 
 const (
-	defaultAPIURL       = "https://api.ghost.build/v0"
-	defaultAnalytics    = true
-	defaultColor        = true
-	defaultDocsMCPURL   = "https://mcp.tigerdata.com/docs?disabled_skills=ghost-database&disabled_prompts=ghost-database"
-	defaultKeyring      = true
-	defaultReadOnly     = false
-	defaultReleasesURL  = "https://install.ghost.build"
-	defaultShareURL     = "https://ghost.build/share"
-	defaultVersionCheck = true
+	defaultAPIURL              = "https://api.ghost.build/v0"
+	defaultAnalytics           = true
+	defaultColor               = true
+	defaultDocsMCPURL          = "https://mcp.tigerdata.com/docs?disabled_skills=ghost-database&disabled_prompts=ghost-database"
+	defaultKeyring             = true
+	defaultReadOnly            = false
+	defaultReleasesURL         = "https://install.ghost.build"
+	defaultUIQueryHistoryLimit = 25
+	defaultShareURL            = "https://ghost.build/share"
+	defaultVersionCheck        = true
 )
 
 var publicDefaultValues = map[string]any{
-	"analytics":     defaultAnalytics,
-	"color":         defaultColor,
-	"read_only":     defaultReadOnly,
-	"version_check": defaultVersionCheck,
+	"analytics":              defaultAnalytics,
+	"color":                  defaultColor,
+	"read_only":              defaultReadOnly,
+	"ui_query_history_limit": defaultUIQueryHistoryLimit,
+	"version_check":          defaultVersionCheck,
 }
 
 var privateDefaultValues = map[string]any{
@@ -302,6 +306,8 @@ func validateValue(key, val string) (any, error) {
 		return val, nil
 	case "analytics", "color", "keyring", "read_only", "version_check":
 		return parseBool(key, val)
+	case "ui_query_history_limit":
+		return parsePositiveInt(key, val)
 	default:
 		return nil, fmt.Errorf("unknown configuration key: %s", key)
 	}
@@ -313,4 +319,12 @@ func parseBool(key, val string) (bool, error) {
 		return false, fmt.Errorf("invalid %s value: %s (must be true or false)", key, val)
 	}
 	return b, nil
+}
+
+func parsePositiveInt(key, val string) (int, error) {
+	n, err := strconv.Atoi(val)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("invalid %s value: %s (must be a positive integer)", key, val)
+	}
+	return n, nil
 }

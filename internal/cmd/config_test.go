@@ -9,10 +9,11 @@ func TestConfigCmd(t *testing.T) {
 		{
 			name: "text output defaults",
 			args: []string{"config"},
-			wantStdout: "analytics      true   \n" +
-				"color          true   \n" +
-				"read_only      false  \n" +
-				"version_check  true   \n",
+			wantStdout: "analytics               true   \n" +
+				"color                   true   \n" +
+				"read_only               false  \n" +
+				"ui_query_history_limit  25     \n" +
+				"version_check           true   \n",
 		},
 		{
 			name: "json output defaults",
@@ -21,6 +22,7 @@ func TestConfigCmd(t *testing.T) {
   "analytics": true,
   "color": true,
   "read_only": false,
+  "ui_query_history_limit": 25,
   "version_check": true
 }
 `,
@@ -31,6 +33,7 @@ func TestConfigCmd(t *testing.T) {
 			wantStdout: `analytics: true
 color: true
 read_only: false
+ui_query_history_limit: 25
 version_check: true
 `,
 		},
@@ -38,10 +41,11 @@ version_check: true
 			name: "env flag text output",
 			args: []string{"config", "--env"},
 			opts: []runOption{withEnv("GHOST_COLOR", "false")},
-			wantStdout: "analytics      true   \n" +
-				"color          false  \n" +
-				"read_only      false  \n" +
-				"version_check  true   \n",
+			wantStdout: "analytics               true   \n" +
+				"color                   false  \n" +
+				"read_only               false  \n" +
+				"ui_query_history_limit  25     \n" +
+				"version_check           true   \n",
 		},
 		{
 			name: "env flag json output",
@@ -51,6 +55,7 @@ version_check: true
   "analytics": true,
   "color": false,
   "read_only": false,
+  "ui_query_history_limit": 25,
   "version_check": true
 }
 `,
@@ -62,21 +67,23 @@ version_check: true
 			wantStdout: `analytics: true
 color: false
 read_only: false
+ui_query_history_limit: 25
 version_check: true
 `,
 		},
 		{
 			name: "all flag text output",
 			args: []string{"config", "--all"},
-			wantStdout: "analytics      true                                                                                           \n" +
-				"color          true                                                                                           \n" +
-				"read_only      false                                                                                          \n" +
-				"version_check  true                                                                                           \n" +
-				"api_url        https://api.ghost.build/v0                                                                     \n" +
-				"docs_mcp_url   https://mcp.tigerdata.com/docs?disabled_skills=ghost-database&disabled_prompts=ghost-database  \n" +
-				"keyring        true                                                                                           \n" +
-				"releases_url   https://install.ghost.build                                                                    \n" +
-				"share_url      https://ghost.build/share                                                                      \n",
+			wantStdout: "analytics               true                                                                                           \n" +
+				"color                   true                                                                                           \n" +
+				"read_only               false                                                                                          \n" +
+				"ui_query_history_limit  25                                                                                             \n" +
+				"version_check           true                                                                                           \n" +
+				"api_url                 https://api.ghost.build/v0                                                                     \n" +
+				"docs_mcp_url            https://mcp.tigerdata.com/docs?disabled_skills=ghost-database&disabled_prompts=ghost-database  \n" +
+				"keyring                 true                                                                                           \n" +
+				"releases_url            https://install.ghost.build                                                                    \n" +
+				"share_url               https://ghost.build/share                                                                      \n",
 		},
 		{
 			name: "all flag json output",
@@ -89,6 +96,7 @@ version_check: true
   "keyring": true,
   "read_only": false,
   "releases_url": "https://install.ghost.build",
+  "ui_query_history_limit": 25,
   "share_url": "https://ghost.build/share",
   "version_check": true
 }
@@ -105,6 +113,7 @@ keyring: true
 read_only: false
 releases_url: https://install.ghost.build
 share_url: https://ghost.build/share
+ui_query_history_limit: 25
 version_check: true
 `,
 		},
@@ -112,15 +121,16 @@ version_check: true
 			name: "env and all flags text output",
 			args: []string{"config", "--env", "--all"},
 			opts: []runOption{withEnv("GHOST_COLOR", "false")},
-			wantStdout: "analytics      true                                                                                           \n" +
-				"color          false                                                                                          \n" +
-				"read_only      false                                                                                          \n" +
-				"version_check  true                                                                                           \n" +
-				"api_url        https://api.ghost.build/v0                                                                     \n" +
-				"docs_mcp_url   https://mcp.tigerdata.com/docs?disabled_skills=ghost-database&disabled_prompts=ghost-database  \n" +
-				"keyring        true                                                                                           \n" +
-				"releases_url   https://install.ghost.build                                                                    \n" +
-				"share_url      https://ghost.build/share                                                                      \n",
+			wantStdout: "analytics               true                                                                                           \n" +
+				"color                   false                                                                                          \n" +
+				"read_only               false                                                                                          \n" +
+				"ui_query_history_limit  25                                                                                             \n" +
+				"version_check           true                                                                                           \n" +
+				"api_url                 https://api.ghost.build/v0                                                                     \n" +
+				"docs_mcp_url            https://mcp.tigerdata.com/docs?disabled_skills=ghost-database&disabled_prompts=ghost-database  \n" +
+				"keyring                 true                                                                                           \n" +
+				"releases_url            https://install.ghost.build                                                                    \n" +
+				"share_url               https://ghost.build/share                                                                      \n",
 		},
 		{
 			name: "env and all flags json output",
@@ -134,6 +144,7 @@ version_check: true
   "keyring": true,
   "read_only": false,
   "releases_url": "https://install.ghost.build",
+  "ui_query_history_limit": 25,
   "share_url": "https://ghost.build/share",
   "version_check": true
 }
@@ -151,6 +162,7 @@ keyring: true
 read_only: false
 releases_url: https://install.ghost.build
 share_url: https://ghost.build/share
+ui_query_history_limit: 25
 version_check: true
 `,
 		},
