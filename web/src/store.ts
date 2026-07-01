@@ -41,12 +41,16 @@ export interface ChartConfigHistoryEntry {
 // Maximum number of chart config history entries to retain (oldest dropped).
 export const MAX_CHART_CONFIG_HISTORY_ENTRIES = 100;
 
+// The terminal outcome of a recorded run. Canceled is a distinct third state:
+// unlike a failure, a canceled run can still have produced (partial) results.
+export type QueryRunStatus = 'success' | 'failed' | 'canceled';
+
 // One entry in the query history. Unlike the query/chart config histories, run
 // history is never persisted and records each distinct *run* (a single
 // execution and its results). The actual result rows live in the widget's
 // in-memory results cache (keyed by runId); this entry holds the metadata
-// needed to list runs and re-display one. Capped at `queryHistoryLimit` entries:
-// when a new run pushes past the limit, the oldest run's id is returned by
+// needed to list runs and re-display one. Capped at `queryHistoryLimit`
+// entries: when a new run pushes past the limit, the oldest run's id is returned by
 // `addQueryHistoryEntry` so the caller can evict it from the results cache.
 export interface QueryHistoryEntry {
   // The widget results-cache key for this run's results.
@@ -64,8 +68,12 @@ export interface QueryHistoryEntry {
   chartConfig: string;
   // Epoch milliseconds when the run completed.
   ts: number;
-  success: boolean;
-  // Total number of rows the run produced (0 for a failed run).
+  // Terminal outcome of the run. A canceled run can still have (partial)
+  // results cached, so it's kept in history and its cache entry is retained
+  // (never deleted) so the widget can still display whatever it produced.
+  status: QueryRunStatus;
+  // Total number of rows the run produced (0 for a failed run; may be a partial
+  // count for a canceled run).
   rowCount: number;
 }
 

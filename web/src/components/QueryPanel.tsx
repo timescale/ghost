@@ -222,23 +222,14 @@ export function QueryPanel({
               : 'the query was canceled',
         });
       }
-      // Record every completed run (success or failure) in the histories; skip
-      // cancellations, which have no real outcome. Success and failure are the
-      // two branches carrying 'rowsAffected'/'error'; the canceled branch has
-      // neither. The SQL was stashed by getExecuteQueryData under this runId.
+      // Record every completed run in the history, including canceled ones: a
+      // canceled run can still have produced (partial) results that the widget
+      // can display, so we keep it in history and — crucially — never delete
+      // its cache entry (which would break the widget's display of it). The SQL
+      // was stashed by getExecuteQueryData under this runId.
       const sql = runSqlById.current.get(args.runId);
       runSqlById.current.delete(args.runId);
-      if (sql !== undefined && !succeeded && !failed) {
-        // Canceled run: we don't keep it in history, and the widget's own
-        // keep-only-current-run eviction is disabled (via referenceId), so its
-        // (possibly partial) cached results would otherwise leak past the
-        // retention limit. Evict it now.
-        const cache = clientRef.current;
-        if (cache) {
-          void deleteRun(cache, args.runId).catch(() => {});
-        }
-      }
-      if (sql !== undefined && (succeeded || failed)) {
+      if (sql !== undefined) {
         // Record the distinct run (with its cached results) and evict the
         // oldest run's results once we exceed the retention limit. The
         // just-completed run is the newest entry, so it's never the one
@@ -254,7 +245,7 @@ export function QueryPanel({
           // config, not a stale one.
           chartConfig: useServeStore.getState().chartConfig,
           ts: Date.now(),
-          success: succeeded,
+          status: succeeded ? 'success' : failed ? 'failed' : 'canceled',
           rowCount: args.rowCount ?? 0,
         });
         const cache = clientRef.current;
@@ -457,10 +448,10 @@ export function QueryPanel({
       setChartConfig(config);
       setResultView(view);
       setActiveRunId(entry.runId);
-      // Feed the chart from this run only if it succeeded; a failed run has no
-      // chartable results, so clear any prior chart source rather than leaving
-      // an unrelated run's data on screen.
-      setChartRunId(entry.success ? entry.runId : null);
+      // Feed the chart from this run only if it fully succeeded; a failed or
+      // canceled run has no complete chartable results, so clear any prior
+      // chart source rather than leaving an unrelated run's data on screen.
+      setChartRunId(entry.status === 'success' ? entry.runId : null);
       setHistoryOpen(false);
     },
     [

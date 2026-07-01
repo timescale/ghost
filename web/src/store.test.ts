@@ -97,7 +97,7 @@ describe('query history', () => {
       sql: 'SELECT 1',
       chartConfig: '',
       ts: Date.now(),
-      success: true,
+      status: 'success',
       rowCount: 1,
       ...entry,
     });
@@ -106,6 +106,17 @@ describe('query history', () => {
     expect(add({ runId: 'a' })).toEqual([]);
     expect(add({ runId: 'b' })).toEqual([]);
     expect(history().map((e) => e.runId)).toEqual(['b', 'a']);
+  });
+
+  test('records runs of every terminal status, including canceled', () => {
+    add({ runId: 'ok', status: 'success' });
+    add({ runId: 'err', status: 'failed' });
+    add({ runId: 'stopped', status: 'canceled' });
+    expect(history().map((e) => [e.runId, e.status])).toEqual([
+      ['stopped', 'canceled'],
+      ['err', 'failed'],
+      ['ok', 'success'],
+    ]);
   });
 
   test('does not deduplicate identical SQL across distinct runs', () => {

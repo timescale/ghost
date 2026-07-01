@@ -88,9 +88,15 @@ export function QueryHistoryPanel({ onOpen }: Props) {
             >
               <span className="flex w-full items-center gap-1.5">
                 <Icon
-                  name={entry.success ? 'check' : 'x'}
+                  name={entry.status === 'success' ? 'check' : 'x'}
                   size="xs"
-                  color={entry.success ? 'green' : 'red'}
+                  color={
+                    entry.status === 'success'
+                      ? 'green'
+                      : entry.status === 'canceled'
+                        ? 'gray'
+                        : 'red'
+                  }
                 />
                 <span
                   className="truncate font-mono text-xs text-slate-700"
@@ -104,7 +110,9 @@ export function QueryHistoryPanel({ onOpen }: Props) {
                   {formatRelativeTime(entry.ts, now)}
                 </span>
                 <span>· {entry.databaseName}</span>
-                {entry.success ? (
+                {entry.status === 'canceled' ? (
+                  <span>· canceled</span>
+                ) : entry.status === 'success' ? (
                   <span>
                     · {entry.rowCount} row
                     {entry.rowCount === 1 ? '' : 's'}

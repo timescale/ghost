@@ -95,16 +95,18 @@ export function QueryHistoryDetail({ entry, onOpen }: Props) {
         <span title={formatAbsoluteTime(entry.ts)}>
           {formatRelativeTime(entry.ts, now)}
         </span>
-        {entry.success ? (
+        {entry.status === 'success' ? (
           <span>
             · {entry.rowCount} row{entry.rowCount === 1 ? '' : 's'}
           </span>
+        ) : entry.status === 'canceled' ? (
+          <span className="text-slate-500">· canceled</span>
         ) : (
           <span className="text-red-600">· failed</span>
         )}
       </div>
     ),
-    [entry.databaseName, entry.ts, entry.success, entry.rowCount, now],
+    [entry.databaseName, entry.ts, entry.status, entry.rowCount, now],
   );
 
   const renderToolbarAppendRight = useCallback(
