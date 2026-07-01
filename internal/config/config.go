@@ -24,8 +24,8 @@ type Config struct {
 	Keyring             bool   `mapstructure:"keyring"`
 	ReadOnly            bool   `mapstructure:"read_only"`
 	ReleasesURL         string `mapstructure:"releases_url"`
-	UIQueryHistoryLimit int    `mapstructure:"ui_query_history_limit"`
 	ShareURL            string `mapstructure:"share_url"`
+	UIQueryHistoryLimit int    `mapstructure:"ui_query_history_limit"`
 	VersionCheck        bool   `mapstructure:"version_check"`
 
 	ConfigDir string         `mapstructure:"-"`
@@ -40,8 +40,8 @@ type ConfigOutput struct {
 	Keyring             *bool   `mapstructure:"keyring" json:"keyring,omitempty"`
 	ReadOnly            *bool   `mapstructure:"read_only" json:"read_only,omitempty"`
 	ReleasesURL         *string `mapstructure:"releases_url" json:"releases_url,omitempty"`
-	UIQueryHistoryLimit *int    `mapstructure:"ui_query_history_limit" json:"ui_query_history_limit,omitempty"`
 	ShareURL            *string `mapstructure:"share_url" json:"share_url,omitempty"`
+	UIQueryHistoryLimit *int    `mapstructure:"ui_query_history_limit" json:"ui_query_history_limit,omitempty"`
 	VersionCheck        *bool   `mapstructure:"version_check" json:"version_check,omitempty"`
 
 	ConfigDir string       `mapstructure:"-" json:"-"`

@@ -96,8 +96,8 @@ version_check: true
   "keyring": true,
   "read_only": false,
   "releases_url": "https://install.ghost.build",
-  "ui_query_history_limit": 25,
   "share_url": "https://ghost.build/share",
+  "ui_query_history_limit": 25,
   "version_check": true
 }
 `,
@@ -144,8 +144,8 @@ version_check: true
   "keyring": true,
   "read_only": false,
   "releases_url": "https://install.ghost.build",
-  "ui_query_history_limit": 25,
   "share_url": "https://ghost.build/share",
+  "ui_query_history_limit": 25,
   "version_check": true
 }
 `,
