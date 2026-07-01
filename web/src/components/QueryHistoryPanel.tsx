@@ -14,6 +14,10 @@ interface Props {
   // Make the selected run the active run in the main view (editor + results +
   // chart), then close the modal.
   onOpen: (entry: QueryHistoryEntry, view: ResultView, config: string) => void;
+  // Notify the parent that these runIds' cached results have been evicted (via
+  // delete or clear), so it can drop any main-view references to them (the
+  // results grid / chart) before they resolve to a missing cache entry.
+  onRunsEvicted: (runIds: string[]) => void;
 }
 
 // A one-line preview of a run's SQL for the list (whitespace collapsed).
@@ -28,7 +32,7 @@ function previewSql(sql: string): string {
 // its results from the cache. Unlike query/chart history, query history is never
 // persisted and is capped at the server's ui_query_history_limit (oldest runs
 // evicted).
-export function QueryHistoryPanel({ onOpen }: Props) {
+export function QueryHistoryPanel({ onOpen, onRunsEvicted }: Props) {
   const queryHistory = useServeStore((s) => s.queryHistory);
   const removeEntry = useServeStore((s) => s.removeQueryHistoryEntry);
   const clearHistory = useServeStore((s) => s.clearQueryHistory);
@@ -52,7 +56,10 @@ export function QueryHistoryPanel({ onOpen }: Props) {
 
   const handleClear = () => {
     // Evict every run's cached results, then empty the history.
-    for (const runId of clearHistory()) evict(runId);
+    const runIds = clearHistory();
+    for (const runId of runIds) evict(runId);
+    // Drop any main-view references to the now-evicted runs.
+    onRunsEvicted(runIds);
   };
 
   // Recompute "now" once per render so all relative times share a reference.
@@ -62,6 +69,8 @@ export function QueryHistoryPanel({ onOpen }: Props) {
     // Evict the run's cached results (best effort), then drop the entry.
     evict(runId);
     removeEntry(runId);
+    // Drop any main-view reference to this now-evicted run.
+    onRunsEvicted([runId]);
   };
 
   if (queryHistory.length === 0) {

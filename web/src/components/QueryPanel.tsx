@@ -428,6 +428,18 @@ export function QueryPanel({
     return registerExecutor(executor);
   }, [databaseId, runQuery, client]);
 
+  // Drop main-view references to runs whose cached results were just evicted
+  // in the query-history panel (delete/clear). The results grid (activeRunId)
+  // and chart (chartRunId) point into the same cache; if either still targets
+  // an evicted run, its lazy reads would hit a missing cache entry and surface
+  // an error under SQL that looks like it just ran fine. Clear them so the
+  // grid/chart fall back to their empty state instead.
+  const handleRunsEvicted = useCallback((runIds: string[]) => {
+    const evicted = new Set(runIds);
+    setActiveRunId((id) => (id !== null && evicted.has(id) ? null : id));
+    setChartRunId((id) => (id !== null && evicted.has(id) ? null : id));
+  }, []);
+
   // Apply a config picked from chart-config history: mark it so the recorder
   // doesn't treat it as a fresh user edit, push it into the editor, and close.
   const handleApplyConfig = useCallback(
@@ -538,6 +550,7 @@ export function QueryPanel({
             setHistoryOpen(false);
           }}
           onOpenRun={handleOpenRun}
+          onRunsEvicted={handleRunsEvicted}
           onApplyConfig={handleApplyConfig}
           chartData={chartData}
           chartLoading={chartLoading}

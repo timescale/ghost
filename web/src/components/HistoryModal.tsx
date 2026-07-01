@@ -23,6 +23,9 @@ interface Props {
     view: ResultView,
     config: string,
   ) => void;
+  // Runs whose cached results were just evicted (delete/clear in the query
+  // history tab), so the parent can drop any main-view references to them.
+  onRunsEvicted: (runIds: string[]) => void;
   // Chart config history tab.
   onApplyConfig: (config: string) => void;
   chartData: ChartData | null;
@@ -47,6 +50,7 @@ export function HistoryModal({
   onApplyEditor,
   onAppendEditor,
   onOpenRun,
+  onRunsEvicted,
   onApplyConfig,
   chartData,
   chartLoading,
@@ -86,7 +90,9 @@ export function HistoryModal({
       {tab === 'editor' ? (
         <EditorHistoryPanel onApply={onApplyEditor} onAppend={onAppendEditor} />
       ) : null}
-      {tab === 'query' ? <QueryHistoryPanel onOpen={onOpenRun} /> : null}
+      {tab === 'query' ? (
+        <QueryHistoryPanel onOpen={onOpenRun} onRunsEvicted={onRunsEvicted} />
+      ) : null}
       {tab === 'chart' ? (
         <ChartHistoryPanel
           onApply={onApplyConfig}
