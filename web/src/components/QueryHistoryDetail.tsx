@@ -4,7 +4,14 @@ import {
   type GetExecuteQueryDataArgs,
   QueryWidget,
 } from '@timescale/popsql-query-widget-cdn';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import type { QueryHistoryEntry } from '../store';
 import { formatAbsoluteTime, formatRelativeTime } from '../util/time';
@@ -33,6 +40,11 @@ const noop = () => {};
 // the widget's toolbar. It must render inside the main results-cache provider so
 // the grid reads the same cache the run executed in.
 export function QueryHistoryDetail({ entry, onOpen }: Props) {
+  // A unique widget id: the widget's QueryWidgetProvider is hosted at the app
+  // root (see WidgetProviders), so every mounted editor needs an id unique
+  // across the whole tree. Strip the colons React's useId adds so the id is
+  // safe in the widget's editor model URI.
+  const widgetId = `query-history-detail-${useId().replace(/[^a-z0-9]/gi, '')}`;
   // Local, ephemeral preview state. Editing the config here only affects this
   // preview until the user opens the run into the main editor.
   const [view, setView] = useState<ResultView>('table');
@@ -71,7 +83,9 @@ export function QueryHistoryDetail({ entry, onOpen }: Props) {
     [entry.sql],
   );
 
-  const now = Date.now();
+  // Capture "now" once per mount so all relative times share a single
+  // reference (and renderToolbarAppendLeft's memoization holds).
+  const now = useMemo(() => Date.now(), []);
 
   const renderToolbarAppendLeft = useCallback(
     () => (
@@ -112,7 +126,7 @@ export function QueryHistoryDetail({ entry, onOpen }: Props) {
   return (
     <div className="flex min-w-0 flex-1 flex-col p-2">
       <QueryWidget
-        id="query-history-detail"
+        id={widgetId}
         className={showTable ? 'flex-auto' : undefined}
         query={entry.sql}
         runId={entry.runId}
