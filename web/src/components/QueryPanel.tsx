@@ -129,7 +129,9 @@ export function QueryPanel({
 
   // Record the full editor contents into editor history as the user edits
   // (debounced). Runs themselves are captured separately by query history.
-  useEditorHistoryRecorder(query);
+  // markApplied is called before every programmatic edit (history apply, opened
+  // run, agent query) so those aren't mistaken for user-authored drafts.
+  const { markApplied: markEditorApplied } = useEditorHistoryRecorder(query);
 
   const resultView = useServeStore((s) => s.resultView);
   const setResultView = useServeStore((s) => s.setResultView);
@@ -346,6 +348,8 @@ export function QueryPanel({
 
   const runQuery = useCallback(
     (sql: string, signal: AbortSignal): Promise<QueryOutcome> => {
+      // Agent-driven SQL is programmatic, not a user draft; don't record it.
+      markEditorApplied(sql);
       onQueryChange(sql);
       // Use a plain UUID: the serve backend parses runId as a uuid.UUID, so a
       // prefixed value (e.g. `agent-<uuid>`) fails JSON decoding with "invalid
@@ -406,7 +410,7 @@ export function QueryPanel({
         }, 0);
       });
     },
-    [onQueryChange],
+    [onQueryChange, markEditorApplied],
   );
 
   // Register an agent Executor for the currently-mounted database, gated on the
@@ -441,6 +445,7 @@ export function QueryPanel({
   // (if it succeeded) feed the chart from it. Then close the modal.
   const handleOpenRun = useCallback(
     (entry: QueryHistoryEntry, view: ResultView, config: string) => {
+      markEditorApplied(entry.sql);
       onQueryChange(entry.sql);
       markApplied(config);
       setChartConfig(config);
@@ -452,7 +457,13 @@ export function QueryPanel({
       setChartRunId(entry.success ? entry.runId : null);
       setHistoryOpen(false);
     },
-    [onQueryChange, markApplied, setChartConfig, setResultView],
+    [
+      onQueryChange,
+      markApplied,
+      markEditorApplied,
+      setChartConfig,
+      setResultView,
+    ],
   );
 
   return (
@@ -512,10 +523,15 @@ export function QueryPanel({
           initialTab={historyTab}
           onClose={() => setHistoryOpen(false)}
           onApplyEditor={(sql) => {
+            markEditorApplied(sql);
             onQueryChange(sql);
             setHistoryOpen(false);
           }}
           onAppendEditor={(sql) => {
+            // Append produces new combined contents; compute and mark them so
+            // the programmatic change isn't recorded as a fresh user draft.
+            const current = query.trim() ? `${query.trimEnd()}\n\n${sql}` : sql;
+            markEditorApplied(current);
             appendEditorSql(sql);
             setHistoryOpen(false);
           }}
