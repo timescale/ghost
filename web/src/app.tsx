@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
+import { ResultsCacheContext } from '@timescale/popsql-query-widget-cdn';
 import '@timescale/popsql-query-widget-cdn/index.css';
-import { useEffect } from 'react';
+import { useContext, useEffect } from 'react';
 
 import { AgentStatusBanner } from './agent/AgentStatusBanner';
 import { DisconnectedBanner } from './agent/DisconnectedBanner';
+import { deleteRun, type ResultsCacheClient } from './agent/runData';
 import { useAgentBridge } from './agent/useAgentBridge';
 import { QueryPanel } from './components/QueryPanel';
 import { SchemaPane } from './components/SchemaPane';
@@ -62,14 +64,31 @@ export function App() {
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
+  // The widget's in-process results cache (hosted at the app root by
+  // WidgetProviders), used to evict any runs trimmed when the retention limit
+  // is applied.
+  const { client } = useContext(ResultsCacheContext) as {
+    client: ResultsCacheClient | null;
+  };
   // Apply the in-memory query-history retention limit from the server config
-  // (ui_query_history_limit) once bootstrap loads.
+  // (ui_query_history_limit) once bootstrap loads, evicting the cached results
+  // of any runs it trims so they don't leak (the widget's own eviction is
+  // disabled via referenceId).
   const queryHistoryLimit = bootstrap.data?.uiQueryHistoryLimit;
   useEffect(() => {
     if (queryHistoryLimit && queryHistoryLimit > 0) {
-      useServeStore.getState().setQueryHistoryLimit(queryHistoryLimit);
+      const evicted = useServeStore
+        .getState()
+        .setQueryHistoryLimit(queryHistoryLimit);
+      if (client) {
+        for (const runId of evicted) {
+          void deleteRun(client, runId).catch(() => {
+            // Best-effort: a failed delete only leaks a cached run until reload.
+          });
+        }
+      }
     }
-  }, [queryHistoryLimit]);
+  }, [queryHistoryLimit, client]);
   const hydrated = useServeStore((s) => s.hydrated);
 
   if (bootstrap.isError || persistedState.isError) {
