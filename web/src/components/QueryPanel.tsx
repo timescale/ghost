@@ -224,9 +224,12 @@ export function QueryPanel({
       }
       // Record every completed run in the history, including canceled ones: a
       // canceled run can still have produced (partial) results that the widget
-      // can display, so we keep it in history and — crucially — never delete
-      // its cache entry (which would break the widget's display of it). The SQL
-      // was stashed by getExecuteQueryData under this runId.
+      // can display, so we keep it in history and retain its cache entry (not
+      // deleted while it remains in history) so the widget can still display
+      // whatever it produced. Its cache entry is only evicted along with the
+      // entry itself — by retention eviction (below) or a manual delete/clear
+      // in the query-history panel. The SQL was stashed by getExecuteQueryData
+      // under this runId.
       const sql = runSqlById.current.get(args.runId);
       runSqlById.current.delete(args.runId);
       if (sql) {

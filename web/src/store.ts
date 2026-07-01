@@ -70,7 +70,8 @@ export interface QueryHistoryEntry {
   ts: number;
   // Terminal outcome of the run. A canceled run can still have (partial)
   // results cached, so it's kept in history and its cache entry is retained
-  // (never deleted) so the widget can still display whatever it produced.
+  // (not deleted while it remains in history) so the widget can still display
+  // whatever it produced. It's evicted only when the entry leaves history.
   status: QueryRunStatus;
   // Total number of rows the run produced (0 for a failed run; may be a partial
   // count for a canceled run).
