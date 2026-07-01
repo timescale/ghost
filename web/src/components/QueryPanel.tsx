@@ -229,7 +229,7 @@ export function QueryPanel({
       // was stashed by getExecuteQueryData under this runId.
       const sql = runSqlById.current.get(args.runId);
       runSqlById.current.delete(args.runId);
-      if (sql !== undefined) {
+      if (sql) {
         // Record the distinct run (with its cached results) and evict the
         // oldest run's results once we exceed the retention limit. The
         // just-completed run is the newest entry, so it's never the one
