@@ -126,6 +126,7 @@ export function QueryPanel({
   const setAgentLastRun = useAgentStore((s) => s.setLastRun);
   const addQueryHistoryEntry = useServeStore((s) => s.addQueryHistoryEntry);
   const appendEditorSql = useServeStore((s) => s.appendEditorSql);
+  const setSelectedDatabaseId = useServeStore((s) => s.setSelectedDatabaseId);
 
   // Record the full editor contents into editor history (debounced) whenever
   // the content is freshly authored — the user typing, or the agent authoring
@@ -457,6 +458,17 @@ export function QueryPanel({
   // (if it succeeded) feed the chart from it. Then close the modal.
   const handleOpenRun = useCallback(
     (entry: QueryHistoryEntry, view: ResultView, config: string) => {
+      // Query history is global across databases, so a run may have executed
+      // against a different database than the one currently selected. Switch
+      // the selection to the run's database so pressing Run re-executes its
+      // SQL against the database it actually ran against (not the current one,
+      // which would be a real footgun for DDL/DML). The panel isn't keyed by
+      // database, so this only re-renders it with the new databaseId (no
+      // remount) — the activeRunId/chartRunId set below persist and keep
+      // pointing at this run's cached results.
+      if (entry.databaseId !== databaseId) {
+        setSelectedDatabaseId(entry.databaseId);
+      }
       markEditorApplied(entry.sql);
       onQueryChange(entry.sql);
       markApplied(config);
@@ -470,6 +482,8 @@ export function QueryPanel({
       setHistoryOpen(false);
     },
     [
+      databaseId,
+      setSelectedDatabaseId,
       onQueryChange,
       markApplied,
       markEditorApplied,
