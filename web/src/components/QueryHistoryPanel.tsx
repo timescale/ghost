@@ -1,10 +1,12 @@
 import { ResultsCacheContext } from '@timescale/popsql-query-widget-cdn';
-import { useContext, useMemo, useState } from 'react';
+import { useContext, useMemo } from 'react';
 
 import { deleteRun, type ResultsCacheClient } from '../agent/runData';
 import { type QueryHistoryEntry, useServeStore } from '../store';
 import { formatAbsoluteTime, formatRelativeTime } from '../util/time';
 import type { ResultView } from './chart/types';
+import { ClearHistoryFooter, HistoryListRow } from './history/HistoryList';
+import { useHistorySelection } from './history/useHistorySelection';
 import { Icon } from './Icon';
 import { QueryHistoryDetail } from './QueryHistoryDetail';
 
@@ -35,10 +37,9 @@ export function QueryHistoryPanel({ onOpen }: Props) {
     client: ResultsCacheClient | null;
   };
 
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  // runId of the entry whose delete is awaiting inline confirmation, if any.
-  const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null);
-  const [confirmingClear, setConfirmingClear] = useState(false);
+  const { activeIndex, setSelectedIndex, adjustForRemoval } =
+    useHistorySelection(queryHistory.length);
+  const selected = queryHistory[activeIndex];
 
   // Best-effort eviction of a run's cached results from the widget cache.
   const evict = (runId: string) => {
@@ -51,16 +52,7 @@ export function QueryHistoryPanel({ onOpen }: Props) {
   const handleClear = () => {
     // Evict every run's cached results, then empty the history.
     for (const runId of clearHistory()) evict(runId);
-    setConfirmingClear(false);
   };
-
-  // Clamp the selection so eviction (which trims the oldest) can't leave it
-  // pointing past the end of the list.
-  const activeIndex = Math.min(
-    selectedIndex,
-    Math.max(0, queryHistory.length - 1),
-  );
-  const selected = queryHistory[activeIndex];
 
   // Recompute "now" once per render so all relative times share a reference.
   const now = useMemo(() => Date.now(), []);
@@ -69,8 +61,7 @@ export function QueryHistoryPanel({ onOpen }: Props) {
     // Evict the run's cached results (best effort), then drop the entry.
     evict(runId);
     removeEntry(runId);
-    if (index < selectedIndex) setSelectedIndex((i) => i - 1);
-    setConfirmingRemove(null);
+    adjustForRemoval(index);
   };
 
   if (queryHistory.length === 0) {
@@ -87,133 +78,46 @@ export function QueryHistoryPanel({ onOpen }: Props) {
       {/* Left: list of runs (newest first). */}
       <div className="flex w-80 min-w-72 flex-col border-r border-slate-200">
         <ul className="min-h-0 flex-1 overflow-auto">
-          {queryHistory.map((entry, index) => {
-            const active = index === activeIndex;
-            return (
-              <li key={entry.runId}>
-                {/* The whole row is the clickable target; the nested delete/
-                    confirm buttons stop propagation so they don't also select
-                    the row. */}
-                {/* biome-ignore lint/a11y/useSemanticElements: a native <button> can't be used because the row contains nested action buttons (remove/confirm), which is invalid HTML; the role/tabIndex/keydown handler provide equivalent button semantics */}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSelectedIndex(index)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      setSelectedIndex(index);
-                    }
-                  }}
-                  className={`group flex w-full cursor-pointer items-center gap-2 border-b border-slate-100 px-3 py-2 text-left ${
-                    active ? 'bg-slate-100' : 'hover:bg-slate-50'
-                  }`}
-                >
-                  <span className="flex min-w-0 flex-1 flex-col items-start">
-                    <span className="flex w-full items-center gap-1.5">
-                      <Icon
-                        name={entry.success ? 'check' : 'x'}
-                        size="xs"
-                        color={entry.success ? 'green' : 'red'}
-                      />
-                      <span
-                        className="truncate font-mono text-xs text-slate-700"
-                        title={previewSql(entry.sql)}
-                      >
-                        {previewSql(entry.sql)}
-                      </span>
-                    </span>
-                    <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
-                      <span title={formatAbsoluteTime(entry.ts)}>
-                        {formatRelativeTime(entry.ts, now)}
-                      </span>
-                      <span>· {entry.databaseName}</span>
-                      {entry.success ? (
-                        <span>
-                          · {entry.rowCount} row
-                          {entry.rowCount === 1 ? '' : 's'}
-                        </span>
-                      ) : null}
-                    </span>
-                  </span>
-                  {confirmingRemove === entry.runId ? (
-                    <span className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemove(index, entry.runId);
-                        }}
-                        aria-label="Confirm delete"
-                        title="Confirm delete"
-                        className="rounded border border-red-300 bg-red-50 p-1 text-red-600 hover:bg-red-100"
-                      >
-                        <Icon name="check" size="sm" color="current" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setConfirmingRemove(null);
-                        }}
-                        aria-label="Cancel delete"
-                        title="Cancel delete"
-                        className="rounded border border-slate-300 bg-white p-1 text-slate-600 hover:bg-slate-50"
-                      >
-                        <Icon name="x" size="sm" color="current" />
-                      </button>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfirmingRemove(entry.runId);
-                      }}
-                      aria-label="Delete run (evict from cache)"
-                      title="Delete run (evict from cache)"
-                      className="rounded p-1 text-slate-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-slate-200 hover:text-red-600"
-                    >
-                      <Icon name="trash" size="sm" color="current" />
-                    </button>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-        <div className="border-t border-slate-200 p-2">
-          {confirmingClear ? (
-            <div className="flex items-center justify-between gap-2 text-xs text-slate-600">
-              <span>Clear all query history?</span>
-              <span className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={handleClear}
-                  className="rounded border border-red-300 bg-red-50 px-2 py-1 text-red-600 hover:bg-red-100"
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmingClear(false)}
-                  className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-600 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-              </span>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmingClear(true)}
-              className="flex w-full items-center justify-center gap-1.5 rounded border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-50 hover:text-slate-800"
+          {queryHistory.map((entry, index) => (
+            <HistoryListRow
+              key={entry.runId}
+              active={index === activeIndex}
+              onSelect={() => setSelectedIndex(index)}
+              onRemove={() => handleRemove(index, entry.runId)}
+              removeLabel="Delete run (evict from cache)"
             >
-              <Icon name="trash" size="sm" color="current" />
-              Clear all query history
-            </button>
-          )}
-        </div>
+              <span className="flex w-full items-center gap-1.5">
+                <Icon
+                  name={entry.success ? 'check' : 'x'}
+                  size="xs"
+                  color={entry.success ? 'green' : 'red'}
+                />
+                <span
+                  className="truncate font-mono text-xs text-slate-700"
+                  title={previewSql(entry.sql)}
+                >
+                  {previewSql(entry.sql)}
+                </span>
+              </span>
+              <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                <span title={formatAbsoluteTime(entry.ts)}>
+                  {formatRelativeTime(entry.ts, now)}
+                </span>
+                <span>· {entry.databaseName}</span>
+                {entry.success ? (
+                  <span>
+                    · {entry.rowCount} row
+                    {entry.rowCount === 1 ? '' : 's'}
+                  </span>
+                ) : null}
+              </span>
+            </HistoryListRow>
+          ))}
+        </ul>
+        <ClearHistoryFooter
+          label="Clear all query history"
+          onClear={handleClear}
+        />
       </div>
 
       {/* Right: the selected run in the widget's own editor + results grid.
