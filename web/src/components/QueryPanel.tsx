@@ -127,10 +127,12 @@ export function QueryPanel({
   const addQueryHistoryEntry = useServeStore((s) => s.addQueryHistoryEntry);
   const appendEditorSql = useServeStore((s) => s.appendEditorSql);
 
-  // Record the full editor contents into editor history as the user edits
-  // (debounced). Runs themselves are captured separately by query history.
-  // markApplied is called before every programmatic edit (history apply, opened
-  // run, agent query) so those aren't mistaken for user-authored drafts.
+  // Record the full editor contents into editor history (debounced) whenever
+  // the content is freshly authored — the user typing, or the agent authoring
+  // SQL via MCP. Runs themselves are captured separately by query history.
+  // markApplied is called only before edits that replay content from a history
+  // panel (Open in editor, Replace/Append) so those aren't re-recorded as fresh
+  // drafts (which would just churn the ordering of an entry already in history).
   const { markApplied: markEditorApplied } = useEditorHistoryRecorder(query);
 
   const resultView = useServeStore((s) => s.resultView);
@@ -148,8 +150,9 @@ export function QueryPanel({
     loading: chartLoading,
     error: chartError,
   } = useChartData(chartRunId);
-  // Records user-authored chart configs into history; markApplied prevents a
-  // config applied from history from being re-recorded as a fresh edit.
+  // Records chart configs into history as they render — the user's or the
+  // agent's (via MCP). markApplied prevents a config replayed from a history
+  // panel from being re-recorded as a fresh edit.
   const { recordRenderSuccess, markApplied } =
     useChartConfigRecorder(chartConfig);
 
@@ -350,8 +353,9 @@ export function QueryPanel({
 
   const runQuery = useCallback(
     (sql: string, signal: AbortSignal): Promise<QueryOutcome> => {
-      // Agent-driven SQL is programmatic, not a user draft; don't record it.
-      markEditorApplied(sql);
+      // Push the agent's SQL into the editor. Deliberately NOT marked as
+      // applied: agent-authored SQL is fresh content (like the user typing it),
+      // so it should flow through the recorder into editor history.
       onQueryChange(sql);
       // Use a plain UUID: the serve backend parses runId as a uuid.UUID, so a
       // prefixed value (e.g. `agent-<uuid>`) fails JSON decoding with "invalid
@@ -412,7 +416,7 @@ export function QueryPanel({
         }, 0);
       });
     },
-    [onQueryChange, markEditorApplied],
+    [onQueryChange],
   );
 
   // Register an agent Executor for the currently-mounted database, gated on the
