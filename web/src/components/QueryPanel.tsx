@@ -172,7 +172,11 @@ export function QueryPanel({
       // 'rowsAffected' is only present on the success branch of the union, so
       // this narrows to a successful run; track its id for charting.
       const succeeded = 'rowsAffected' in args;
-      if (succeeded) setChartRunId(args.runId);
+      // Point the chart at this run if it succeeded; otherwise clear it so a
+      // failed or canceled run doesn't leave the previous successful run's
+      // data on screen under the new (unrelated) SQL when the chart view is
+      // shown.
+      setChartRunId(succeeded ? args.runId : null);
       // The Postgres command-tag count (rows touched by a DML command, or rows
       // returned by a SELECT) is only carried on the success branch; it's zero
       // for a failed/canceled run.
@@ -442,7 +446,10 @@ export function QueryPanel({
       setChartConfig(config);
       setResultView(view);
       setActiveRunId(entry.runId);
-      if (entry.success) setChartRunId(entry.runId);
+      // Feed the chart from this run only if it succeeded; a failed run has no
+      // chartable results, so clear any prior chart source rather than leaving
+      // an unrelated run's data on screen.
+      setChartRunId(entry.success ? entry.runId : null);
       setHistoryOpen(false);
     },
     [onQueryChange, markApplied, setChartConfig, setResultView],
