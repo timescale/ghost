@@ -17,6 +17,8 @@ import (
 
 // buildMCPStartCmd creates the start subcommand with transport options
 func buildMCPStartCmd(app *common.App) *cobra.Command {
+	var serveRef string
+
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start the Ghost MCP server",
@@ -34,19 +36,28 @@ func buildMCPStartCmd(app *common.App) *cobra.Command {
 		SilenceUsage:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Default behavior when no subcommand is specified - use stdio
-			return startStdioServer(cmd, app)
+			return startStdioServer(cmd, app, serveRef)
 		},
 	}
 
+	// The consumer serving mode is experimental: expose only a single
+	// database's generated query tools, with no management or Ghost tools.
+	if app.Experimental {
+		cmd.PersistentFlags().StringVar(&serveRef, "serve", "", "Serve only the named database's custom query tools (no other Ghost tools)")
+		if err := cmd.RegisterFlagCompletionFunc("serve", databaseCompletion(app)); err != nil {
+			cobra.CompErrorln(err.Error())
+		}
+	}
+
 	// Add transport subcommands
-	cmd.AddCommand(buildMCPStdioCmd(app))
-	cmd.AddCommand(buildMCPHTTPCmd(app))
+	cmd.AddCommand(buildMCPStdioCmd(app, &serveRef))
+	cmd.AddCommand(buildMCPHTTPCmd(app, &serveRef))
 
 	return cmd
 }
 
 // buildMCPStdioCmd creates the stdio subcommand
-func buildMCPStdioCmd(app *common.App) *cobra.Command {
+func buildMCPStdioCmd(app *common.App, serveRef *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "stdio",
 		Short: "Start MCP server with stdio transport",
@@ -57,13 +68,13 @@ func buildMCPStdioCmd(app *common.App) *cobra.Command {
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return startStdioServer(cmd, app)
+			return startStdioServer(cmd, app, *serveRef)
 		},
 	}
 }
 
 // buildMCPHTTPCmd creates the http subcommand with port/host flags
-func buildMCPHTTPCmd(app *common.App) *cobra.Command {
+func buildMCPHTTPCmd(app *common.App, serveRef *string) *cobra.Command {
 	var httpPort int
 	var httpHost string
 
@@ -87,7 +98,7 @@ func buildMCPHTTPCmd(app *common.App) *cobra.Command {
 		SilenceUsage:      true,
 		SilenceErrors:     true, // HTTP server uses slog for all output, including errors
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return startHTTPServer(cmd, app, httpHost, httpPort)
+			return startHTTPServer(cmd, app, httpHost, httpPort, *serveRef)
 		},
 	}
 
@@ -99,11 +110,17 @@ func buildMCPHTTPCmd(app *common.App) *cobra.Command {
 }
 
 // startStdioServer starts the MCP server with stdio transport
-func startStdioServer(cmd *cobra.Command, app *common.App) error {
+func startStdioServer(cmd *cobra.Command, app *common.App, serveRef string) error {
 	ctx := cmd.Context()
 	// Create MCP server. Local (stdio) mode enables the browser-backed
 	// visualization tools, since we can open a browser on the user's machine.
-	server, err := mcp.NewServerWithOptions(ctx, app, log.New(cmd.ErrOrStderr()), mcp.Options{Local: true})
+	// The Local option is not set in the query-tool serving mode, which
+	// exposes only the generated query tools.
+	server, err := mcp.NewServerWithOptions(ctx, app, log.New(cmd.ErrOrStderr()), mcp.Options{
+		Local:           serveRef == "",
+		ServeQueryTools: serveRef,
+		QueryTools:      true,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create MCP server: %w", err)
 	}
@@ -122,12 +139,15 @@ func startStdioServer(cmd *cobra.Command, app *common.App) error {
 }
 
 // startHTTPServer starts the MCP server with HTTP transport
-func startHTTPServer(cmd *cobra.Command, app *common.App, host string, port int) error {
+func startHTTPServer(cmd *cobra.Command, app *common.App, host string, port int, serveRef string) error {
 	ctx := cmd.Context()
 	logger := log.New(cmd.ErrOrStderr())
 
 	// Create MCP server
-	server, err := mcp.NewServer(ctx, app, logger)
+	server, err := mcp.NewServerWithOptions(ctx, app, logger, mcp.Options{
+		ServeQueryTools: serveRef,
+		QueryTools:      true,
+	})
 	if err != nil {
 		logger.Error("failed to create MCP server", slog.String("error", err.Error()))
 		return fmt.Errorf("failed to create MCP server: %w", err)

@@ -10,6 +10,7 @@
   - **`internal/config/`** - Configuration management. Handles config file loading (via Viper), credential storage (keyring with file fallback), and version checking.
   - **`internal/common/`** - Shared business logic used across commands and MCP tools. Includes API client initialization, database connection/schema/query utilities, error handling with exit codes, and version update checks.
   - **`internal/mcp/`** - Model Context Protocol (MCP) server. Exposes Ghost database operations as MCP tools for AI/LLM integration, plus a documentation search proxy. Each MCP tool lives in its own file, named to match the tool (e.g. `ghost_usage` → `usage.go`). Helper files like `util.go`, `errors.go`, and `proxy.go` contain shared utilities. In local (stdio) mode the server can also drive a live web UI for visualization via the browser controller (`browser.go`) and the `ghost_visualize` (`visualize.go`) and `ghost_ui_state` (`ui_state.go`) tools (see [Web UI & MCP Agent Bridge](#web-ui--mcp-agent-bridge)).
+  - **`internal/mcp/query/`** - Custom MCP query tools (experimental, gated behind `GHOST_EXPERIMENTAL`): sqlc-annotated SQL queries stored in each database become typed, validated MCP tools. Contains the DB-backed query storage (`storage.go`), the sqlc build pipeline (`builder.go`, `sqlc_runner.go`, `sqlc_config.go`, `plugin.go`), EXPLAIN-based tool classification (`classify.go`), JSON Schema generation and query execution (`tools.go`, `scan.go`), tool-name prefixing (`naming.go`), and the `Manager` (`manager.go`) that registers generated tools on the MCP server and backs the `ghost_mcp_tool_*` management tools in `internal/mcp`. See [Custom MCP Query Tools](#custom-mcp-query-tools) below.
   - **`internal/serve/`** - Local web UI for `ghost serve` (and the MCP server's in-process visualization UI). Embeds a Vite/React SPA (from `web/dist`) via `//go:embed` (`assets.go`) and runs a small in-process HTTP server (`server.go`). Serves the support endpoints the UI needs — `/api/bootstrap` (config dump), `/api/databases` (read-only database list), `/api/state` (GET/PUT of persisted UI state), `/health`, and the SPA asset handler — plus the query endpoints the SQL query client calls: `/api/createSession`, `/api/sessionEvents`, `/api/closeSession`, `/api/executeQuery`, `/api/executeSessionQuery`, `/api/arrowResults`, `/api/cancelQuery`. Queries run in-process: each request resolves the target database's connection (via the API client + stored password) into a DSN, opens a Postgres session (`session.go`, `driver/`), executes the query, and streams results as newline-delimited JSON status plus an Apache Arrow IPC stream (`writer/`). The DSN honors the `read_only` config option (the immutable read-only connection GUC), so queries run through this server — including MCP-driven visualizations — can't bypass read-only mode; `/api/bootstrap` reports `readOnly` so the UI can surface a read-only indicator. Sessions and in-progress runs are tracked in an in-memory `Store` (`store.go`). Request/response types live in `api/`. The agent channel that lets MCP tools drive the UI (`agent.go`, `agent_handler.go`) is described in [Web UI & MCP Agent Bridge](#web-ui--mcp-agent-bridge).
   - **`internal/analytics/`** - Analytics event tracking with sensitive data redaction for flags, positional arguments, and MCP inputs.
   - **`internal/log/`** - Small `slog` helper package for the long-running backend commands (`ghost serve`, `ghost mcp`): `log.New` builds the stderr logger, and `NewContext`/`FromContext` thread a request-scoped logger through the context. `ErrLevel` picks debug vs error level based on context cancellation.
@@ -43,6 +44,28 @@ The bridge tracks all connected tabs with exactly one active: the first tab to c
 ## Build & Test
 
 After editing Go code, run `./check` from the repo root. It runs `go install`, `go fmt`, `go mod tidy`, `go fix`, `go vet`, `staticcheck`, and `go test` in one shot.
+
+**Build through the Makefile, not plain `go` commands.** sqlc and the sqlc plugin SDK (both linked in via `internal/mcp/query`) register the same protobuf definitions, which panics at process startup unless the conflict is suppressed at link time with `-ldflags="-X google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=ignore"`. The Makefile carries this flag for every target, so it is the standard way to build:
+
+- `make install` — install the ghost binary (instead of `go install ./...`)
+- `make test` — run tests (instead of `go test ./...`); pass extra args via `TESTFLAGS`
+- `make docs` — regenerate CLI reference and tutorial docs (instead of `go run ./cmd/generate-*docs`)
+
+`./check` and CI call these targets; GoReleaser and the Dockerfile pass the flag in their own build configs. A plain `go install ./...` or `go test ./...` produces binaries that panic immediately with `proto: file "plugin/codegen.proto" is already registered`. `go build`, `go vet`, and `staticcheck` don't run the result and are unaffected.
+
+## Custom MCP Query Tools
+
+Experimental (gated behind `GHOST_EXPERIMENTAL`): every Ghost database can define custom MCP tools entirely via SQL. A query tool is a sqlc-annotated SQL query (`-- name: get_user :one` + SQL) stored in a reserved schema inside the database itself (`_ghost.mcp_queries`, created lazily on first tool create; hidden from default `ghost schema` browsing via `common.ReservedSchema`). Because storage is in the database, tools are shared across the space and travel with forks and shares.
+
+Key mechanics (see `internal/mcp/query`):
+
+- **Dual-mode binary**: the sqlc pipeline runs sqlc as a library, and sqlc re-invokes the ghost executable itself both as its code-generation plugin (`SQLC_VERSION` set → `queries.RunPlugin`) and as an out-of-process runner (`GHOST_SQLC_RUNNER_CONFIG` set → `queries.RunSqlcDirect`). Both branches are handled at the top of `cmd/ghost/main.go` before any CLI machinery runs.
+- **Schema DDL instead of pg_dump**: sqlc's hybrid analysis needs a schema file; `common.FormatSchemaDDL` renders one from `common.FetchSchemaObjects` output (enums first, views emitted as tables with their introspected columns, function bodies verbatim).
+- **Validation**: `ghost_mcp_tool_create`/`ghost_mcp_tool_update` run the full sqlc build over the would-be query set *before* persisting anything; invalid SQL is rejected with sqlc's diagnostics.
+- **Tool naming**: generated tool names are prefixed with the snake_cased database name (`my_db_get_user`). Prefix collisions (including the reserved `ghost`/`ghost_*` namespace) are disambiguated with an ID-derived suffix.
+- **Two serving modes**: the regular `ghost mcp start` (authoring) registers the management tools plus a startup snapshot of every database's generated tools, built concurrently before the server starts serving; `ghost mcp start --serve <database_ref>` (consumer) exposes *only* that database's generated tools. Capability enumeration (`ghost mcp list`/`get`) constructs the server without `Options.QueryTools`, so it registers the management tools but never connects to any databases.
+- **Analytics**: generated tool calls are tracked under the single event `Call query MCP tool` with the tool name as a property, never one event per user-defined tool name.
+- **Read-only**: generated query tools deliberately ignore the `read_only` config option (creating one is an intentional act; the EXPLAIN-derived annotations tell clients which tools write). The management tools do respect it.
 
 ## Testing
 
@@ -355,16 +378,16 @@ After adding new commands, directories, or major functionality, update:
 
 ### Tutorial Docs
 
-The live `ghost tutorial` command and the markdown tutorials under `docs/tutorials/` share a single source of truth in `internal/tutorial/`. Each `tutorial.Tutorial` bundles its filename, title/callout/intro narrative, ordered `[]tutorial.Step`, and optional `DeleteStep`. Steps contain `tutorial.Block`s whose `Target` field controls visibility: `TargetAll` (default), `TargetCLIOnly`, or `TargetDocsOnly`. A block can carry CLI args, an `ExpectedOutput` string shown only in the markdown, and side-effect tracking (`CreatesDatabase`/`RemovesDatabase`) used by the live runtime. The renderer in `cmd/generate-tutorial-docs/docs.go` is content-agnostic — it walks the struct without any hard-coded text or step numbers, and `tutorial.FormatCommand` is shared with the CLI echo so multi-statement SQL formatting stays in sync. To add a new tutorial, create a `BuildXxxTutorial` function in `internal/tutorial/` and append it to `tutorial.All()`. After editing tutorial content, regenerate the docs with `go run ./cmd/generate-tutorial-docs` (`-out` defaults to `./docs/tutorials`). The golden test `TestAllTutorialDocsMatchGoldenFiles` (in `cmd/generate-tutorial-docs/`) iterates the registry and fails if any on-disk markdown drifts.
+The live `ghost tutorial` command and the markdown tutorials under `docs/tutorials/` share a single source of truth in `internal/tutorial/`. Each `tutorial.Tutorial` bundles its filename, title/callout/intro narrative, ordered `[]tutorial.Step`, and optional `DeleteStep`. Steps contain `tutorial.Block`s whose `Target` field controls visibility: `TargetAll` (default), `TargetCLIOnly`, or `TargetDocsOnly`. A block can carry CLI args, an `ExpectedOutput` string shown only in the markdown, and side-effect tracking (`CreatesDatabase`/`RemovesDatabase`) used by the live runtime. The renderer in `cmd/generate-tutorial-docs/docs.go` is content-agnostic — it walks the struct without any hard-coded text or step numbers, and `tutorial.FormatCommand` is shared with the CLI echo so multi-statement SQL formatting stays in sync. To add a new tutorial, create a `BuildXxxTutorial` function in `internal/tutorial/` and append it to `tutorial.All()`. After editing tutorial content, regenerate the docs with `make docs` (which also regenerates the CLI reference docs), or run `go run -ldflags="..." ./cmd/generate-tutorial-docs` directly with the linker flags from the Makefile (`-out` defaults to `./docs/tutorials`). The golden test `TestAllTutorialDocsMatchGoldenFiles` (in `cmd/generate-tutorial-docs/`) iterates the registry and fails if any on-disk markdown drifts.
 
 ### CLI Reference Docs
 
 The `docs/cli/` directory contains generated Markdown reference documentation for every CLI command. These are produced by `cmd/generate-docs`, which uses Cobra's `doc` package to walk the command tree and emit one file per command.
 
-Regenerate the docs whenever a CLI command is added, updated, or removed. Run from the repository root, or pass `-out` explicitly — the default output path is `./docs/cli` relative to the working directory, and `-clean` will delete that directory:
+Regenerate the docs whenever a CLI command is added, updated, or removed, with `make docs` (which also regenerates the tutorial docs). To run the generator directly (e.g. with custom flags), use `go run -ldflags="..." ./cmd/generate-docs` with the linker flags from the Makefile — the default output path is `./docs/cli` relative to the working directory, and `-clean` will delete that directory:
 
 ```bash
-go run ./cmd/generate-docs -clean
+make docs
 ```
 
 Flags:

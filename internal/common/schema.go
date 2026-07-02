@@ -356,18 +356,27 @@ func (f schemaFilter) queryArgs() []any {
 	return nil
 }
 
+// ReservedSchema is the Postgres schema Ghost reserves for its own metadata
+// inside a service's database (e.g. the stored MCP query tools in
+// _ghost.mcp_queries). It is hidden from default schema browsing like the
+// other internal schemas (see systemSchemaExclusions), though an explicit
+// --schema request can still target it.
+const ReservedSchema = "_ghost"
+
 // systemSchemaExclusions returns the " AND <col> ..." clauses that drop the
-// catalog schemas, TimescaleDB internals, information_schema, and the toolkit
-// experimental schema from a default browse. col is the SQL expression naming
-// the schema's name column (e.g. `n.nspname`, `nspname`). Shared by onSchema
-// and checkSchemaExists so the default-browse exclusions stay in lockstep.
-// Matches what popsql uses for the same purpose.
+// catalog schemas, TimescaleDB internals, information_schema, the toolkit
+// experimental schema, and Ghost's own reserved schema from a default browse.
+// col is the SQL expression naming the schema's name column (e.g.
+// `n.nspname`, `nspname`). Shared by onSchema and checkSchemaExists so the
+// default-browse exclusions stay in lockstep. Matches what popsql uses for
+// the same purpose (plus the Ghost reserved schema).
 func systemSchemaExclusions(col string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, ` AND %s !~ '^pg_'`, col)
 	fmt.Fprintf(&b, ` AND %s <> 'information_schema'`, col)
 	fmt.Fprintf(&b, ` AND %s !~ '^_?timescaledb_'`, col)
 	fmt.Fprintf(&b, ` AND %s <> 'toolkit_experimental'`, col)
+	fmt.Fprintf(&b, ` AND %s <> '%s'`, col, ReservedSchema)
 	return b.String()
 }
 
@@ -1126,6 +1135,37 @@ func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*Da
 	}
 	defer conn.Close(context.Background())
 
+	schemas, err := FetchSchemaObjects(ctx, conn, SchemaObjectsArgs{
+		Schema:             args.Schema,
+		IncludeInternal:    args.IncludeInternal,
+		IncludeDefinitions: args.IncludeDefinitions,
+		IncludeComments:    args.IncludeComments,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &DatabaseSchema{
+		ID:      database.Id,
+		Name:    database.Name,
+		Schemas: schemas,
+	}, nil
+}
+
+// SchemaObjectsArgs are the arguments to FetchSchemaObjects. The fields have
+// the same meaning as the corresponding FetchDatabaseSchemaArgs fields.
+type SchemaObjectsArgs struct {
+	Schema             string
+	IncludeInternal    bool
+	IncludeDefinitions bool
+	IncludeComments    bool
+}
+
+// FetchSchemaObjects fetches schema information over an existing database
+// connection. It is the connection-level core of FetchDatabaseSchema, exposed
+// for callers that already hold a connection (e.g. the query-tool builder,
+// which generates schema DDL through its connection pool).
+func FetchSchemaObjects(ctx context.Context, conn *pgx.Conn, args SchemaObjectsArgs) ([]NamespacedSchema, error) {
 	if args.Schema != "" {
 		if err := checkSchemaExists(ctx, conn, args.Schema, args.IncludeInternal); err != nil {
 			return nil, err
@@ -1194,11 +1234,7 @@ func FetchDatabaseSchema(ctx context.Context, args FetchDatabaseSchemaArgs) (*Da
 		return nil, fmt.Errorf("failed to fetch schema comments: %w", err)
 	}
 
-	return &DatabaseSchema{
-		ID:      database.Id,
-		Name:    database.Name,
-		Schemas: bld.build(),
-	}, nil
+	return bld.build(), nil
 }
 
 // SchemaNotFoundError indicates the requested namespace does not exist. It

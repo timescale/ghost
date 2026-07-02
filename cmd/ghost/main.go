@@ -9,9 +9,28 @@ import (
 	"syscall"
 
 	"github.com/timescale/ghost/internal/cmd"
+	"github.com/timescale/ghost/internal/mcp/query"
 )
 
 func main() {
+	// sqlc plugin mode: while building query-tool metadata, sqlc re-invokes
+	// this executable as a subprocess with SQLC_VERSION set (sqlc always sets
+	// it when calling process plugins). See query.RunPlugin.
+	if os.Getenv("SQLC_VERSION") != "" {
+		if err := query.RunPlugin(); err != nil {
+			fmt.Fprintf(os.Stderr, "sqlc plugin failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// sqlc runner mode: the MCP server spawns the binary in this mode to run
+	// sqlc out-of-process (see query.RunSqlc for why). sqlc may call
+	// os.Exit itself, so this branch is terminal.
+	if cfg := os.Getenv(query.SqlcConfigEnvVar); cfg != "" {
+		os.Exit(query.RunSqlcDirect(cfg))
+	}
+
 	if err := run(); err != nil {
 		// Check if it's a custom exit code error
 		if exitErr, ok := err.(interface{ ExitCode() int }); ok {

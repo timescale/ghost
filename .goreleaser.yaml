@@ -28,6 +28,9 @@ builds:
       - -X github.com/timescale/ghost/internal/config.Version=v{{.Version}}
       - -X github.com/timescale/ghost/internal/config.BuildTime={{.Date}}
       - -X github.com/timescale/ghost/internal/config.GitCommit={{.Commit}}
+      # sqlc and the sqlc plugin SDK register the same protobuf definitions;
+      # without this the binary panics at startup. See internal/mcp/query.
+      - -X google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=ignore
 
 archives:
   - id: archive
