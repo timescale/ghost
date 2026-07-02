@@ -122,6 +122,23 @@ describe('renderChartImage', () => {
     });
   });
 
+  test('supports an async config that uses the echarts second argument', async () => {
+    // A config may be async (e.g. fetching map GeoJSON) and may use the
+    // ECharts namespace passed as its second argument. The capture must await
+    // the resolved option — here proven by the resolved backgroundColor — and
+    // the passed-in namespace must be the real global (probed via its init).
+    const { renderChartImage } = await import('./screenshot');
+    const config = `async function chart(data, echarts) {
+      if (typeof echarts.init !== 'function') {
+        throw new Error('echarts namespace not passed');
+      }
+      await Promise.resolve();
+      return { backgroundColor: '#123456', series: [] };
+    }`;
+    await renderChartImage(config, data);
+    expect(capture.getDataURLArg?.backgroundColor).toBe('#123456');
+  });
+
   test('falls back to white when the config sets no backgroundColor', async () => {
     const { renderChartImage } = await import('./screenshot');
     const config = `function chart(data) {
@@ -186,8 +203,13 @@ describe('renderChartImage', () => {
         return { series: [] };
       }`;
       const promise = renderChartImage(config, data);
-      // The timeout is registered synchronously while renderChartImage runs up
-      // to its first await; advancing past it triggers the fallback capture.
+      // buildChartOption is async, so renderChartImage arms its render timeout
+      // only a few microtasks in (setOption and the timer are registered
+      // together). Flush microtasks until setOption has run, then advance past
+      // the timeout to trigger the fallback capture.
+      while (!capture.events.includes('setOption')) {
+        await Promise.resolve();
+      }
       jest.advanceTimersByTime(10_000);
       const image = await promise;
       expect(image).toBe('data:image/png;base64,STUB');

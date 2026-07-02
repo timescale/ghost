@@ -43,7 +43,7 @@ func (UIStateOutput) Schema() *jsonschema.Schema {
 	schema := util.Must(jsonschema.For[UIStateOutput](nil))
 	schema.Properties["selected_database_id"].Description = "ID of the database currently selected in the UI"
 	schema.Properties["editor_sql"].Description = "Current contents of the SQL editor"
-	schema.Properties["chart_config"].Description = "Current chart config (the chart(data) function source)"
+	schema.Properties["chart_config"].Description = "Current chart config (the chart(data, echarts) function source)"
 	schema.Properties["result_view"].Description = "Which view is active below the sql editor"
 	schema.Properties["result_view"].Enum = []any{"table", "chart", "chart_editor"}
 	schema.Properties["last_run_status"].Description = "Status of the most recent query run"

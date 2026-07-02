@@ -27,15 +27,23 @@ interface Props {
 // it back. The component debounces this per-instance (see useMemo below) rather
 // than at module scope, so multiple ChartViews (e.g. the main chart and the
 // history modal's preview) don't share a single timer and clobber each other.
-function applyChartOption(
+//
+// Because a chart config may be async (buildChartOption resolves a Promise),
+// applies can complete out of order. Each call claims a sequence number from
+// seqRef up front; after awaiting the config it bails if a newer apply has
+// claimed the counter (or the view unmounted), so a slow async config can
+// never clobber a newer render or clear.
+async function applyChartOption(
   echarts: EChartsGlobal,
   chartRef: { current: EChartsInstance | null },
+  seqRef: { current: number },
   containerEl: HTMLElement | null,
   data: ChartData | null,
   config: string,
   setRenderError: (message: string | null) => void,
   onRenderSuccess: ((config: string) => void) | undefined,
-): void {
+): Promise<void> {
+  const seq = ++seqRef.current;
   if (!chartRef.current) return;
   if (!data) {
     chartRef.current.clear();
@@ -43,7 +51,10 @@ function applyChartOption(
     return;
   }
   try {
-    const option = buildChartOption(config, data);
+    const option = await buildChartOption(config, data, echarts);
+    // The data/config changed again, or the view unmounted, while the config
+    // was being built — drop the stale option.
+    if (seq !== seqRef.current || !chartRef.current) return;
     chartRef.current.setOption(option, { notMerge: true });
     setRenderError(null);
     // Only a config that renders against real rows is worth remembering. Pass
@@ -52,11 +63,12 @@ function applyChartOption(
     // store if the user edited it in the meantime.
     if (data.rows.length > 0) onRenderSuccess?.(config);
   } catch (err) {
+    if (seq !== seqRef.current || !chartRef.current) return;
     // A failed setOption can throw mid-render and leave ECharts in an
     // inconsistent internal state that a later clear()/setOption won't recover
     // from (the next apply silently renders nothing or stale content). Dispose
     // and recreate the instance so the next valid config renders cleanly.
-    chartRef.current?.dispose();
+    chartRef.current.dispose();
     chartRef.current = containerEl ? echarts.init(containerEl) : null;
     setRenderError(err instanceof Error ? err.message : String(err));
   }
@@ -75,6 +87,8 @@ export function ChartView({
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<EChartsInstance | null>(null);
+  // Monotonic apply counter shared with applyChartOption's stale-result guard.
+  const applySeqRef = useRef(0);
   const [renderError, setRenderError] = useState<string | null>(null);
   const echarts = getECharts();
 
@@ -105,6 +119,7 @@ export function ChartView({
     debouncedApply(
       echarts,
       chartRef,
+      applySeqRef,
       containerRef.current,
       data,
       config,

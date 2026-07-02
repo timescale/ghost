@@ -20,7 +20,7 @@ import (
 // config is type-checked against the `EChartsOption` type in the UI's editor,
 // and any issues are returned as chart_diagnostics, so the model gets corrective
 // feedback after a first attempt.
-const chartConfigDescriptionPrefix = "JavaScript source defining a function `chart(data)` that returns an Apache ECharts option object (see the ECharts option reference at https://echarts.apache.org/en/option.html). `data` provides `data.rows` (array of row objects keyed by column name) and `data.columns` ([{name, type}]). The UI's editor type-checks the config against the `EChartsOption` type and any issues are reported back as chart_diagnostics. "
+const chartConfigDescriptionPrefix = "JavaScript source defining a function `chart(data, echarts)` that returns an Apache ECharts option object, or a Promise of one — the function may be async, e.g. to fetch map GeoJSON and register it via `echarts.registerMap(...)` before returning the option (see the ECharts option reference at https://echarts.apache.org/en/option.html). `data` provides `data.rows` (array of row objects keyed by column name) and `data.columns` ([{name, type}]). `echarts` is the Apache ECharts namespace (also available as a global). The UI's editor type-checks the config against the `EChartsOption` type and any issues are reported back as chart_diagnostics. A config may start with a JSDoc annotation line (`/** @type {ChartFunction} */`, or `/** @type {AsyncChartFunction} */` when chart is async) to type the function in the live editor; if the config doesn't begin with a JSDoc comment, that line is added automatically to the copy shown in the UI. "
 
 // VisualizeInput represents input for ghost_visualize.
 type VisualizeInput struct {

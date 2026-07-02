@@ -1,3 +1,4 @@
+import { ensureChartTypeAnnotation } from '../components/chart/configHeader';
 import type { ChartData, ResultView } from '../components/chart/types';
 import { tryGetChartConfigDiagnostics } from './diagnostics';
 import { awaitExecutor, getExecutor } from './executor';
@@ -108,7 +109,11 @@ async function handleVisualize(
   }
   deps.setEditorSql(cmd.sql);
   if (cmd.chartConfig) {
-    deps.setChartConfig(cmd.chartConfig);
+    // Store the annotated form so the live editor's model is fully typed
+    // (hover, completions, squiggles); the raw source the agent sent is still
+    // what gets rendered and diagnosed below, so the line numbers reported
+    // back to the agent match the config it wrote.
+    deps.setChartConfig(ensureChartTypeAnnotation(cmd.chartConfig));
     deps.setResultView('chart');
   }
 
@@ -216,7 +221,10 @@ async function handleChart(
   }
 
   // Results are readable and still current: apply the config and switch view.
-  deps.setChartConfig(cmd.chartConfig);
+  // The annotated form is stored for the live editor (typed hover/completions);
+  // the raw source is rendered and diagnosed below, so reported line numbers
+  // match the config the agent wrote.
+  deps.setChartConfig(ensureChartTypeAnnotation(cmd.chartConfig));
   deps.setResultView('chart');
 
   // Reuse tryRenderChart so a bad config doesn't fail the whole tool call:

@@ -1,5 +1,6 @@
 import { loader, type Monaco } from '@monaco-editor/react';
 
+import { configHeaderFor } from '../components/chart/configHeader';
 import { configureMonacoForCharts } from '../components/chart/monacoChartSetup';
 import { type DiagnosticMessageChain, flattenMessage } from './flattenMessage';
 
@@ -32,38 +33,17 @@ interface WorkerDiagnostic {
 // editor's model (or a previous check's), which Monaco forbids.
 let checkCounter = 0;
 
-// JSDoc header prepended to every config before type-checking. The chart config
-// is plain JavaScript whose `chart(data)` function is usually written without
-// type annotations, so TypeScript can't contextually type its `data` parameter
-// or check its return value against EChartsOption — the most common kind of
-// chart-config mistake (a wrong key or value inside the returned option object)
-// would then go completely unflagged. Annotating the function via JSDoc gives
-// `data` the ChartData type and the return value the EChartsOption type, so the
-// language service checks the whole returned option literal against the ECharts
-// schema (the same red squiggles a human sees). It's prepended only for the
-// diagnostics check, not for execution (buildChartOption runs the raw source).
-//
-// It's a single physical line so it doesn't shift the reported line numbers,
-// which are mapped back to the user's source by subtracting the prepended
-// columns — see CONFIG_HEADER_OFFSET. A trailing space separates it from a
-// leading `function` keyword on the user's first line.
-// JSDoc header prepended to every config before type-checking — see the long
-// note above. Exported so the live editor and the headless agent path stay in
-// lockstep (both must type-check the identical augmented source).
-export const CONFIG_HEADER =
-  '/** @param {ChartData} data @returns {EChartsOption} */ ';
-// Number of characters the header adds to the first line, so positions on line
-// 1 can be shifted back to the user's original columns. Since the header has no
-// newline, only line 1's columns are offset; all later lines are unchanged.
-const CONFIG_HEADER_OFFSET = CONFIG_HEADER.length;
-
 // userColumn maps a column from the header-augmented source back to the user's
-// original source. The header is prepended to line 1 only (no newline), so
-// subtract its width from columns on line 1; later lines are unaffected. Clamp
-// to 1 so a position landing inside the header (which shouldn't happen for a
-// valid comment) still reports a sane column.
-function userColumn(lineNumber: number, column: number): number {
-  return lineNumber === 1 ? Math.max(1, column - CONFIG_HEADER_OFFSET) : column;
+// original source. The header (see configHeader.ts) is prepended to line 1
+// only (no newline), so subtract its width from columns on line 1; later lines
+// are unaffected. Clamp to 1 so a position landing inside the header (which
+// shouldn't happen for a valid comment) still reports a sane column.
+function userColumn(
+  headerOffset: number,
+  lineNumber: number,
+  column: number,
+): number {
+  return lineNumber === 1 ? Math.max(1, column - headerOffset) : column;
 }
 
 // A diagnostic mapped back to the user's source with a full range, so the live
@@ -87,14 +67,11 @@ async function runChartConfigDiagnostics(
   monaco: Monaco,
   config: string,
 ): Promise<ChartConfigMarker[]> {
+  const header = configHeaderFor(config);
   const uri = monaco.Uri.parse(
     `file:///ghost-chart-config.check.${checkCounter++}.js`,
   );
-  const model = monaco.editor.createModel(
-    CONFIG_HEADER + config,
-    'javascript',
-    uri,
-  );
+  const model = monaco.editor.createModel(header + config, 'javascript', uri);
   try {
     const getWorker = await monaco.languages.typescript.getJavaScriptWorker();
     const worker = await getWorker(uri);
@@ -114,9 +91,13 @@ async function runChartConfigDiagnostics(
           const end = model.getPositionAt(offset + (d.length ?? 0));
           return {
             startLineNumber: start.lineNumber,
-            startColumn: userColumn(start.lineNumber, start.column),
+            startColumn: userColumn(
+              header.length,
+              start.lineNumber,
+              start.column,
+            ),
             endLineNumber: end.lineNumber,
-            endColumn: userColumn(end.lineNumber, end.column),
+            endColumn: userColumn(header.length, end.lineNumber, end.column),
             message: flattenMessage(d.messageText),
             severity: d.category === 1 ? 'error' : 'warning',
           } satisfies ChartConfigMarker;

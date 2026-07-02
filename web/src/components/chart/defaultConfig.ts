@@ -1,7 +1,12 @@
 // The starter chart config shown the first time a user opens the chart editor.
 // It defines a function `chart(data)` that returns an Apache ECharts option.
-// The JSDoc `@param`/`@returns` annotations drive Monaco's type checking: the
-// editor flags returns that don't satisfy `EChartsOption`.
+// The JSDoc `@type {ChartFunction}` annotation drives Monaco's type checking
+// (typing `data`, the optional second `echarts` parameter, and the returned
+// option — the same annotation ensureChartTypeAnnotation adds to agent
+// configs), so the editor flags returns that don't satisfy `EChartsOption`.
+// (The function may also take the ECharts namespace as a second parameter and
+// may be async — see the docstring inside the config — but the default needs
+// neither.)
 //
 // The default plots the first column on the x-axis and every numeric column as
 // its own line series — a sensible starting point for time-series / sensor
@@ -22,10 +27,16 @@ export const DEFAULT_CHART_CONFIG = `/**
  * fields out of every row. No manual reshaping needed for the common case —
  * but you can transform \`data.rows\` yourself before returning if you prefer.
  *
+ * The function may also take the ECharts namespace as a second parameter
+ * (\`chart(data, echarts)\` — the same object as the global \`echarts\`),
+ * e.g. for \`echarts.registerMap(...)\`. And it may be async (or return a
+ * Promise of the option) when it needs to fetch something first, such as
+ * GeoJSON for a map. Set the type annotation below to \`AsyncChartFunction\`
+ * if you want to declare it as \`async function chart(...)\`.
+ *
  * See https://echarts.apache.org/en/option.html
  *
- * @param {ChartData} data
- * @returns {EChartsOption}
+ * @type {ChartFunction}
  */
 function chart(data) {
   // Use the first column for the x-axis (often a timestamp or label)
