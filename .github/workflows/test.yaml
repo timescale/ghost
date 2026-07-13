@@ -49,9 +49,7 @@ jobs:
         run: go tool staticcheck ./...
 
       - name: Test
-        # Run through the Makefile, which carries the linker flags test
-        # binaries need to start up (see the Makefile for details).
-        run: make test TESTFLAGS='-race -coverprofile=coverage.out -coverpkg=./...'
+        run: go test -race -coverprofile=coverage.out -coverpkg=./... ./...
 
       - name: Generate coverage report
         run: go tool cover -html=coverage.out -o=coverage.html

@@ -30,10 +30,7 @@ func TestMCPListCmd(t *testing.T) {
 		"tool    ghost_list                              \n" +
 		"tool    ghost_login                             \n" +
 		"tool    ghost_logs                              \n" +
-		"tool    ghost_mcp_tool_create                   \n" +
-		"tool    ghost_mcp_tool_delete                   \n" +
-		"tool    ghost_mcp_tool_get                      \n" +
-		"tool    ghost_mcp_tool_update                   \n" +
+		"tool    ghost_mcp_tool_refresh                  \n" +
 		"tool    ghost_password                          \n" +
 		"tool    ghost_pause                             \n" +
 		"tool    ghost_pricing                           \n" +

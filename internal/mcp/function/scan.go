@@ -1,4 +1,4 @@
-package query
+package function
 
 import (
 	"encoding/json"
@@ -54,13 +54,13 @@ var (
 )
 
 // scanTypes returns the Go type each result column is scanned into, chosen
-// from sqlc's column metadata - the same metadata the tool schemas are built
-// from, so values and schemas agree by construction.
+// from the introspected column metadata - the same metadata the tool schemas
+// are built from, so values and schemas agree by construction.
 func scanTypes(cols []Column) []reflect.Type {
 	types := make([]reflect.Type, len(cols))
 	for i, col := range cols {
-		t := baseScanType(col)
-		if col.IsArray {
+		t := baseScanType(col.Type)
+		if col.Type.IsArray {
 			// Array elements scan into the scalar type; NULL elements become
 			// nil/invalid elements, which marshal as JSON null.
 			// Multidimensional arrays scan flattened.
@@ -75,8 +75,8 @@ func scanTypes(cols []Column) []reflect.Type {
 // column's PostgreSQL type. Types without a specific entry - including
 // user-defined and unknown types - scan into strings, matching their
 // string-typed schema.
-func baseScanType(col Column) reflect.Type {
-	switch col.Type.Name {
+func baseScanType(typ TypeInfo) reflect.Type {
+	switch typ.Name {
 	case "smallint", "int2", "smallserial", "serial2",
 		"integer", "int", "int4", "serial", "serial4",
 		"bigint", "int8", "bigserial", "serial8", "oid",

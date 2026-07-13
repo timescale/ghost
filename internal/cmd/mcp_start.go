@@ -41,9 +41,9 @@ func buildMCPStartCmd(app *common.App) *cobra.Command {
 	}
 
 	// The consumer serving mode is experimental: expose only a single
-	// database's generated query tools, with no management or Ghost tools.
+	// database's generated function tools, with no management or Ghost tools.
 	if app.Experimental {
-		cmd.PersistentFlags().StringVar(&serveRef, "serve", "", "Serve only the named database's custom query tools (no other Ghost tools)")
+		cmd.PersistentFlags().StringVar(&serveRef, "serve", "", "Serve only the named database's custom function tools (no other Ghost tools)")
 		if err := cmd.RegisterFlagCompletionFunc("serve", databaseCompletion(app)); err != nil {
 			cobra.CompErrorln(err.Error())
 		}
@@ -114,12 +114,12 @@ func startStdioServer(cmd *cobra.Command, app *common.App, serveRef string) erro
 	ctx := cmd.Context()
 	// Create MCP server. Local (stdio) mode enables the browser-backed
 	// visualization tools, since we can open a browser on the user's machine.
-	// The Local option is not set in the query-tool serving mode, which
-	// exposes only the generated query tools.
+	// The Local option is not set in the function-tool serving mode, which
+	// exposes only the generated function tools.
 	server, err := mcp.NewServerWithOptions(ctx, app, log.New(cmd.ErrOrStderr()), mcp.Options{
-		Local:           serveRef == "",
-		ServeQueryTools: serveRef,
-		QueryTools:      true,
+		Local:              serveRef == "",
+		ServeFunctionTools: serveRef,
+		FunctionTools:      true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create MCP server: %w", err)
@@ -145,8 +145,8 @@ func startHTTPServer(cmd *cobra.Command, app *common.App, host string, port int,
 
 	// Create MCP server
 	server, err := mcp.NewServerWithOptions(ctx, app, logger, mcp.Options{
-		ServeQueryTools: serveRef,
-		QueryTools:      true,
+		ServeFunctionTools: serveRef,
+		FunctionTools:      true,
 	})
 	if err != nil {
 		logger.Error("failed to create MCP server", slog.String("error", err.Error()))

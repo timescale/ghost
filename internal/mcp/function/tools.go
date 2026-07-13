@@ -1,4 +1,4 @@
-package query
+package function
 
 import (
 	"context"
@@ -10,93 +10,67 @@ import (
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// BuildQueryTool constructs the MCP tool definition and handler for a single
-// query. toolName is the full (database-prefixed) tool name; the tool's
-// schemas and annotations come from the query's sqlc metadata and EXPLAIN
-// classification, and the handler executes the query through pool.
-func BuildQueryTool(toolName string, query Query, meta *QueryMetadata, pool *pgxpool.Pool) (*mcp.Tool, mcp.ToolHandler) {
-	// Build input schema from params and output schema from columns.
-	inputSchema := buildInputSchema(query, meta)
-	outputSchema := buildOutputSchema(query, meta)
-
-	// Build the description from the query's doc comments. The backing SQL text
-	// is an internal implementation detail and is intentionally omitted.
-	description := ""
-	for _, comment := range query.Comments {
-		if description != "" {
-			description += "\n"
-		}
-		description += strings.TrimSpace(comment)
-	}
-
-	tool := &mcp.Tool{
+// BuildTool constructs the MCP tool definition and handler for a single
+// @api function. toolName is the full (database-prefixed) tool name; the
+// tool's schemas and annotations come from the function's introspected
+// metadata, and the handler calls the function through pool.
+func BuildTool(toolName string, tool Tool, pool *pgxpool.Pool) (*mcp.Tool, mcp.ToolHandler) {
+	def := &mcp.Tool{
 		Name:         toolName,
-		Description:  description,
-		InputSchema:  inputSchema,
-		OutputSchema: outputSchema,
-		Annotations:  queryToolAnnotations(query),
+		Description:  tool.Description,
+		InputSchema:  buildInputSchema(tool),
+		OutputSchema: buildOutputSchema(tool),
+		Annotations:  toolAnnotations(tool),
 	}
 
-	// The Go types the result columns scan into are fixed by the query's
-	// column metadata, so compute them once here.
-	types := scanTypes(query.Columns)
+	// The Go types the result columns scan into are fixed by the function's
+	// introspected metadata, so compute them once here.
+	types := scanTypes(tool.Columns)
 
 	handler := func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		// Extract arguments from request
 		var args map[string]any
 		if req.Params.Arguments != nil {
 			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 				return nil, fmt.Errorf("failed to parse arguments: %w", err)
 			}
-		} else {
-			args = make(map[string]any)
 		}
 
-		return handleToolCall(ctx, pool, query, types, args), nil
+		return handleToolCall(ctx, pool, tool, types, args), nil
 	}
 
-	return tool, handler
+	return def, handler
 }
 
-// queryToolAnnotations builds the annotation hints for a query tool. Every
-// query tool operates on a single closed database, so the world is closed. The
-// read-only/destructive hints come from the query's EXPLAIN-based
-// classification; when classification failed they are left at their
-// conservative defaults (not read-only, destructive).
-func queryToolAnnotations(query Query) *mcp.ToolAnnotations {
-	annotations := &mcp.ToolAnnotations{
+// toolAnnotations builds the annotation hints for a tool. Every tool
+// operates on a single closed database, so the world is closed. The
+// read-only hint comes from the function's own volatility declaration
+// (IMMUTABLE/STABLE); a VOLATILE function may write, and whether its writes
+// are destructive can't be determined, so the destructive hint is left at
+// its conservative default.
+func toolAnnotations(tool Tool) *mcp.ToolAnnotations {
+	return &mcp.ToolAnnotations{
+		ReadOnlyHint:  tool.ReadOnly,
 		OpenWorldHint: new(false),
 	}
-
-	if query.Classification != nil {
-		annotations.ReadOnlyHint = query.Classification.ReadOnly
-		if !query.Classification.ReadOnly {
-			annotations.DestructiveHint = new(query.Classification.Destructive)
-		}
-	}
-
-	return annotations
 }
 
-func buildInputSchema(query Query, meta *QueryMetadata) *jsonschema.Schema {
+// buildInputSchema builds the tool's input schema from the function's
+// arguments. Arguments without a DEFAULT are required. Every argument
+// admits null in addition to its base type, since PostgreSQL function
+// arguments can always be passed NULL explicitly.
+func buildInputSchema(tool Tool) *jsonschema.Schema {
 	properties := make(map[string]*jsonschema.Schema)
 	var required []string
 
-	for _, param := range query.Params {
-		paramName := param.Column.Name
-		if paramName == "" {
-			paramName = fmt.Sprintf("param_%d", param.Number)
-		}
-
-		properties[paramName] = mapTypeToJSONSchema(param.Column, meta)
-
-		// If not null, it's required
-		if param.Column.NotNull {
-			required = append(required, paramName)
+	for _, param := range tool.Params {
+		properties[param.Name] = allowNull(typeSchema(param.Type))
+		if !param.HasDefault {
+			required = append(required, param.Name)
 		}
 	}
 
@@ -107,108 +81,83 @@ func buildInputSchema(query Query, meta *QueryMetadata) *jsonschema.Schema {
 	}
 }
 
-func buildOutputSchema(query Query, meta *QueryMetadata) *jsonschema.Schema {
-	// Handle :exec queries - they only return rows_affected
-	if query.Cmd == ":exec" {
+// buildOutputSchema builds the tool's output schema from the function's
+// result columns. Column nullability is unknowable from the catalog, so
+// every column admits null — the conservative choice.
+func buildOutputSchema(tool Tool) *jsonschema.Schema {
+	if tool.Mode == ModeExec {
 		return &jsonschema.Schema{
 			Type: "object",
 			Properties: map[string]*jsonschema.Schema{
-				"rows_affected": {
-					Type:        "integer",
-					Description: "Number of rows affected by the operation",
+				"success": {
+					Type:        "boolean",
+					Description: "Whether the call completed successfully",
 				},
 			},
-			Required: []string{"rows_affected"},
+			Required: []string{"success"},
 		}
 	}
 
-	// Build properties from columns
 	properties := make(map[string]*jsonschema.Schema)
-	var required []string
-
-	for _, col := range query.Columns {
-		if col.Name == "" {
-			// Skip unnamed columns
-			continue
-		}
-
-		colSchema := mapTypeToJSONSchema(col, meta)
-
-		// A column comment overrides any generic type description
-		if col.Comment != "" {
-			colSchema.Description = col.Comment
-		}
-
-		properties[col.Name] = colSchema
-
-		// If not null, it's required
-		if col.NotNull {
-			required = append(required, col.Name)
-		}
+	for _, col := range tool.Columns {
+		properties[col.Name] = allowNull(typeSchema(col.Type))
 	}
 
 	itemSchema := &jsonschema.Schema{
 		Type:       "object",
 		Properties: properties,
-		Required:   required,
 	}
 
-	// For :one queries, return the object schema directly
-	if query.Cmd == ":one" {
+	if tool.Mode == ModeOne {
 		return itemSchema
 	}
 
-	// For :many queries, wrap the array in an object with a 'results' field
-	// to satisfy MCP SDK's requirement that output schemas have type "object" at root
-	if query.Cmd == ":many" {
-		return &jsonschema.Schema{
-			Type: "object",
-			Properties: map[string]*jsonschema.Schema{
-				"results": {
-					Type:  "array",
-					Items: itemSchema,
-				},
+	// ModeMany: wrap the array in an object with a 'results' field to
+	// satisfy the MCP SDK's requirement that output schemas have type
+	// "object" at the root.
+	return &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"results": {
+				Type:  "array",
+				Items: itemSchema,
 			},
-			Required: []string{"results"},
-		}
+		},
+		Required: []string{"results"},
 	}
-
-	// Fallback for unknown query types
-	return nil
 }
 
-// mapTypeToJSONSchema builds the JSON Schema for a column: the base type with
-// any format, bounds, enum values, and length constraints, wrapped for array
-// dimensions and nullability.
-func mapTypeToJSONSchema(col Column, meta *QueryMetadata) *jsonschema.Schema {
-	schema := baseTypeSchema(col, meta)
-
-	if col.IsArray {
-		// PostgreSQL array elements can always be NULL, regardless of the
-		// column's own nullability.
-		schema = allowNull(schema)
-
-		// Wrap one array level per dimension. Only the innermost elements can
-		// be null; sub-arrays of a multidimensional array cannot.
-		for range max(col.ArrayDims, 1) {
-			schema = &jsonschema.Schema{
-				Type:  "array",
-				Items: schema,
-			}
+// typeSchema maps a Postgres type to the JSON Schema describing a single
+// value of that type, wrapping array types in one array level (with
+// nullable elements — PostgreSQL array elements can always be NULL).
+func typeSchema(typ TypeInfo) *jsonschema.Schema {
+	schema := scalarTypeSchema(typ)
+	if typ.IsArray {
+		schema = &jsonschema.Schema{
+			Type:  "array",
+			Items: allowNull(schema),
 		}
 	}
-
-	if !col.NotNull {
-		schema = allowNull(schema)
-	}
-
 	return schema
 }
 
-// baseTypeSchema maps a PostgreSQL type to the JSON Schema describing how a
-// single non-null value of that type appears in tool input and output.
-func baseTypeSchema(col Column, meta *QueryMetadata) *jsonschema.Schema {
-	switch col.Type.Name {
+// scalarTypeSchema maps a Postgres type name to the JSON Schema describing
+// how a single non-null, non-array value of that type appears in tool input
+// and output.
+func scalarTypeSchema(typ TypeInfo) *jsonschema.Schema {
+	// Enum types list their values from the catalog.
+	if len(typ.EnumVals) > 0 {
+		vals := make([]any, len(typ.EnumVals))
+		for i, v := range typ.EnumVals {
+			vals[i] = v
+		}
+		return &jsonschema.Schema{
+			Type: "string",
+			Enum: vals,
+		}
+	}
+
+	switch typ.Name {
 	case "smallint", "int2", "smallserial", "serial2":
 		return &jsonschema.Schema{
 			Type:    "integer",
@@ -305,25 +254,9 @@ func baseTypeSchema(col Column, meta *QueryMetadata) *jsonschema.Schema {
 			Type:        "string",
 			Description: "Currency amount as formatted by the database locale",
 		}
-	case "text", "varchar", "character varying", "char", "character", "bpchar", "name", "citext", "xml":
-		schema := &jsonschema.Schema{Type: "string"}
-		if col.Length > 0 {
-			schema.MaxLength = new(col.Length)
-		}
-		return schema
 	default:
-		// Enum types appear under their own name; list their values when the
-		// catalog knows them.
-		if enum := meta.FindEnum(col.Type); enum != nil {
-			vals := make([]any, len(enum.Vals))
-			for i, v := range enum.Vals {
-				vals[i] = v
-			}
-			return &jsonschema.Schema{
-				Type: "string",
-				Enum: vals,
-			}
-		}
+		// Everything else — text types, user-defined types, ranges,
+		// composites — renders through its canonical Postgres text form.
 		return &jsonschema.Schema{Type: "string"}
 	}
 }
@@ -353,8 +286,8 @@ func allowNull(schema *jsonschema.Schema) *jsonschema.Schema {
 // but bytea parameters arrive as base64 strings (as their schema advertises)
 // and must be decoded; sending the string unchanged would store the base64
 // text itself.
-func convertParamValue(col Column, val any) (any, error) {
-	if col.Type.Name != "bytea" {
+func convertParamValue(typ TypeInfo, val any) (any, error) {
+	if typ.Name != "bytea" {
 		return val, nil
 	}
 	return decodeBase64Values(val)
@@ -413,58 +346,107 @@ func successResult(result any) *mcp.CallToolResult {
 	}
 }
 
-func handleToolCall(ctx context.Context, pool *pgxpool.Pool, query Query, types []reflect.Type, input map[string]any) *mcp.CallToolResult {
-	// Extract parameters in order
-	var args []any
-	for _, param := range query.Params {
-		paramName := param.Column.Name
-		if paramName == "" {
-			paramName = fmt.Sprintf("param_%d", param.Number)
-		}
+// buildCall renders the SQL invocation for one tool call and the bound
+// argument values, honoring argument defaults: optional arguments the
+// caller omitted are left out of the call so PostgreSQL applies their
+// defaults. When every argument is provided the call uses positional
+// notation; otherwise named notation ("arg" => $n) skips the omitted
+// arguments, which requires the function's arguments to be named — for a
+// function with unnamed arguments, the omitted optionals must form a
+// trailing suffix of the argument list.
+func buildCall(tool Tool, input map[string]any) (string, []any, error) {
+	type callArg struct {
+		param Param
+		value any
+	}
+	var provided []callArg
+	var omitted []string
 
-		val, ok := input[paramName]
-		if !ok && param.Column.NotNull {
-			return errorResult("missing required parameter: %s", paramName)
+	for _, param := range tool.Params {
+		val, ok := input[param.Name]
+		if !ok {
+			if !param.HasDefault {
+				return "", nil, fmt.Errorf("missing required parameter: %s", param.Name)
+			}
+			omitted = append(omitted, param.Name)
+			continue
 		}
-
-		val, err := convertParamValue(param.Column, val)
+		val, err := convertParamValue(param.Type, val)
 		if err != nil {
-			return errorResult("invalid value for parameter %s: %v", paramName, err)
+			return "", nil, fmt.Errorf("invalid value for parameter %s: %w", param.Name, err)
 		}
-
-		args = append(args, val)
+		if len(omitted) > 0 && !tool.Named {
+			return "", nil, fmt.Errorf("parameter %s requires %s to also be provided (the function's arguments are unnamed, so defaults can only be omitted from the end)", param.Name, strings.Join(omitted, ", "))
+		}
+		provided = append(provided, callArg{param: param, value: val})
 	}
 
-	// Execute query based on cmd type
-	switch query.Cmd {
-	case ":exec":
-		return executeExec(ctx, pool, query, args)
-	case ":one":
-		return executeOne(ctx, pool, query, types, args)
-	case ":many":
-		return executeMany(ctx, pool, query, types, args)
+	parts := make([]string, len(provided))
+	values := make([]any, len(provided))
+	useNamed := tool.Named && len(omitted) > 0
+	for i, arg := range provided {
+		placeholder := fmt.Sprintf("$%d", i+1)
+		if useNamed {
+			parts[i] = pgx.Identifier{arg.param.ArgName}.Sanitize() + " => " + placeholder
+		} else {
+			parts[i] = placeholder
+		}
+		values[i] = arg.value
+	}
+
+	fnName := pgx.Identifier{tool.Schema, tool.Name}.Sanitize()
+	argList := strings.Join(parts, ", ")
+
+	var sql string
+	switch {
+	case tool.IsProcedure:
+		sql = fmt.Sprintf("CALL %s(%s)", fnName, argList)
+	case tool.Mode == ModeExec:
+		// A void-returning function still has to be invoked via SELECT.
+		sql = fmt.Sprintf("SELECT %s(%s)", fnName, argList)
 	default:
-		return errorResult("unknown query cmd: %s", query.Cmd)
+		// SELECT * FROM expands composite and scalar results alike into the
+		// introspected result columns.
+		sql = fmt.Sprintf("SELECT * FROM %s(%s)", fnName, argList)
+	}
+
+	return sql, values, nil
+}
+
+func handleToolCall(ctx context.Context, pool *pgxpool.Pool, tool Tool, types []reflect.Type, input map[string]any) *mcp.CallToolResult {
+	sql, args, err := buildCall(tool, input)
+	if err != nil {
+		return errorResult("%v", err)
+	}
+
+	switch tool.Mode {
+	case ModeExec:
+		return executeExec(ctx, pool, sql, args)
+	case ModeOne:
+		return executeOne(ctx, pool, sql, types, args)
+	case ModeMany:
+		return executeMany(ctx, pool, sql, types, args)
+	default:
+		return errorResult("unknown tool mode: %s", tool.Mode)
 	}
 }
 
-func executeExec(ctx context.Context, pool *pgxpool.Pool, query Query, args []any) *mcp.CallToolResult {
-	tag, err := pool.Exec(ctx, query.Text, args...)
-	if err != nil {
-		return errorResult("query execution failed: %v", err)
+func executeExec(ctx context.Context, pool *pgxpool.Pool, sql string, args []any) *mcp.CallToolResult {
+	if _, err := pool.Exec(ctx, sql, args...); err != nil {
+		return errorResult("call failed: %v", err)
 	}
 
 	result := map[string]any{
-		"rows_affected": tag.RowsAffected(),
+		"success": true,
 	}
 
 	return successResult(result)
 }
 
-func executeOne(ctx context.Context, pool *pgxpool.Pool, query Query, types []reflect.Type, args []any) *mcp.CallToolResult {
-	rows, err := pool.Query(ctx, query.Text, append([]any{textResults}, args...)...)
+func executeOne(ctx context.Context, pool *pgxpool.Pool, sql string, types []reflect.Type, args []any) *mcp.CallToolResult {
+	rows, err := pool.Query(ctx, sql, append([]any{textResults}, args...)...)
 	if err != nil {
-		return errorResult("query execution failed: %v", err)
+		return errorResult("call failed: %v", err)
 	}
 	defer rows.Close()
 
@@ -492,10 +474,10 @@ func executeOne(ctx context.Context, pool *pgxpool.Pool, query Query, types []re
 	return successResult(result)
 }
 
-func executeMany(ctx context.Context, pool *pgxpool.Pool, query Query, types []reflect.Type, args []any) *mcp.CallToolResult {
-	rows, err := pool.Query(ctx, query.Text, append([]any{textResults}, args...)...)
+func executeMany(ctx context.Context, pool *pgxpool.Pool, sql string, types []reflect.Type, args []any) *mcp.CallToolResult {
+	rows, err := pool.Query(ctx, sql, append([]any{textResults}, args...)...)
 	if err != nil {
-		return errorResult("query execution failed: %v", err)
+		return errorResult("call failed: %v", err)
 	}
 	defer rows.Close()
 

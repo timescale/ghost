@@ -14,7 +14,7 @@ import (
 	"github.com/timescale/ghost/internal/analytics"
 	"github.com/timescale/ghost/internal/common"
 	"github.com/timescale/ghost/internal/config"
-	"github.com/timescale/ghost/internal/mcp/query"
+	"github.com/timescale/ghost/internal/mcp/function"
 )
 
 const (
@@ -32,10 +32,10 @@ type Server struct {
 	// tools. Non-nil only in local (stdio) mode, where opening a browser makes
 	// sense; nil for the remote HTTP transport.
 	browser *browserController
-	// queryManager owns the generated query tools (MCP tools defined by SQL
-	// queries stored in each database). Nil when the feature is unavailable
-	// (not experimental and not serving).
-	queryManager *query.Manager
+	// functionManager owns the generated function tools (MCP tools defined
+	// by @api-marked Postgres functions in each database). Nil when the
+	// feature is unavailable (not experimental and not serving).
+	functionManager *function.Manager
 }
 
 // Options configures optional [Server] behavior.
@@ -44,19 +44,20 @@ type Options struct {
 	// open a browser on the user's machine. Enables the visualize/chart/
 	// ui_state tools backed by an in-process web UI.
 	Local bool
-	// ServeQueryTools, when set to a database name or ID, puts the server in
-	// the stripped consumer serving mode: it exposes only that database's
-	// generated query tools — no management tools and no other Ghost tools.
-	// This is the artifact you hand to someone as an API.
-	ServeQueryTools string
-	// QueryTools enables building and registering the generated query tools
-	// of every database in the space at construction (experimental; requires
-	// GHOST_EXPERIMENTAL). Set by the serving commands (`ghost mcp start`)
-	// and left unset by callers that only enumerate capabilities (`ghost mcp
-	// list`/`get`), which must not connect to any databases. The
-	// ghost_mcp_tool_* management tools are registered in experimental mode
-	// regardless, so capability listings stay accurate.
-	QueryTools bool
+	// ServeFunctionTools, when set to a database name or ID, puts the server
+	// in the stripped consumer serving mode: it exposes only that database's
+	// generated function tools — no management tools and no other Ghost
+	// tools. This is the artifact you hand to someone as an API.
+	ServeFunctionTools string
+	// FunctionTools enables introspecting and registering the generated
+	// function tools of every database in the space at construction
+	// (experimental; requires GHOST_EXPERIMENTAL). Set by the serving
+	// commands (`ghost mcp start`) and left unset by callers that only
+	// enumerate capabilities (`ghost mcp list`/`get`), which must not
+	// connect to any databases. The ghost_mcp_tool_refresh management tool
+	// is registered in experimental mode regardless, so capability listings
+	// stay accurate.
+	FunctionTools bool
 }
 
 // NewServer creates a new Ghost MCP server instance
@@ -68,8 +69,8 @@ func NewServer(ctx context.Context, app *common.App, logger *slog.Logger) (*Serv
 // [Options].
 func NewServerWithOptions(ctx context.Context, app *common.App, logger *slog.Logger, opts Options) (*Server, error) {
 	logger = ensureLogger(logger)
-	if opts.ServeQueryTools != "" {
-		return newQueryToolsServer(ctx, app, logger, opts.ServeQueryTools)
+	if opts.ServeFunctionTools != "" {
+		return newFunctionToolsServer(ctx, app, logger, opts.ServeFunctionTools)
 	}
 	instructions := "Ghost provides tools for creating, managing, and querying fully-managed PostgreSQL databases. " +
 		"Use it to provision new databases, fork existing ones for isolation and testing migrations, share database copies with other users, pause and resume instances, execute SQL queries, inspect schemas, and manage credentials. " +
@@ -78,9 +79,9 @@ func NewServerWithOptions(ctx context.Context, app *common.App, logger *slog.Log
 		"Consult these skills when designing schemas or setting up Postgres features like time-series, vector, or full-text search. " +
 		"A free monthly compute allowance is included (shared across your space; databases auto-pause when it's reached), so creating and forking databases for experimentation is low-risk."
 
-	// Describe the query-tool feature when it is enabled (experimental).
+	// Describe the function-tool feature when it is enabled (experimental).
 	if app.Experimental {
-		instructions += queryToolsInstructions
+		instructions += functionToolsInstructions
 	}
 
 	// Append a directive to the instructions when an update is available, so
@@ -123,7 +124,7 @@ func NewServerWithOptions(ctx context.Context, app *common.App, logger *slog.Log
 	}
 
 	// Register all tools (including proxied docs tools)
-	server.registerTools(ctx, opts.QueryTools)
+	server.registerTools(ctx, opts.FunctionTools)
 
 	// Add analytics tracking middleware
 	server.mcpServer.AddReceivingMiddleware(server.analyticsMiddleware)
@@ -152,9 +153,10 @@ func (s *Server) HTTPHandler() http.Handler {
 	})
 }
 
-// registerTools registers all available MCP tools. queryTools additionally
-// builds and registers the generated query tools (see Options.QueryTools).
-func (s *Server) registerTools(ctx context.Context, queryTools bool) {
+// registerTools registers all available MCP tools. functionTools
+// additionally introspects and registers the generated function tools (see
+// Options.FunctionTools).
+func (s *Server) registerTools(ctx context.Context, functionTools bool) {
 	// Register remote docs MCP server proxy
 	s.registerDocsProxy(ctx)
 
@@ -192,10 +194,10 @@ func (s *Server) registerTools(ctx context.Context, queryTools bool) {
 		mcp.AddTool(s.mcpServer, newUIStateTool(), s.handleUIState)
 	}
 
-	// Register the query-tool management tools and, when requested, the
-	// generated query tools themselves (experimental).
+	// Register the function-tool management tools and, when requested, the
+	// generated function tools themselves (experimental).
 	if s.app.Experimental {
-		s.registerQueryTools(ctx, queryTools)
+		s.registerFunctionTools(ctx, functionTools)
 	}
 }
 
@@ -229,18 +231,18 @@ func (s *Server) analyticsMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 					}
 				}
 
-				// Generated query tool names are user-defined and unbounded,
-				// so their calls are all tracked under a single event name
-				// with the tool name as a property — never one event key per
-				// generated tool.
+				// Generated function tool names are user-defined and
+				// unbounded, so their calls are all tracked under a single
+				// event name with the tool name as a property — never one
+				// event key per generated tool.
 				event := fmt.Sprintf("Call %s tool", r.Params.Name)
 				options := []analytics.Option{
 					analytics.Map(args),
 					analytics.Property("elapsed_seconds", time.Since(start).Seconds()),
 					analytics.Error(toolErr),
 				}
-				if s.queryManager != nil && s.queryManager.IsQueryTool(r.Params.Name) {
-					event = "Call query MCP tool"
+				if s.functionManager != nil && s.functionManager.IsFunctionTool(r.Params.Name) {
+					event = "Call function MCP tool"
 					options = append(options, analytics.Property("tool_name", r.Params.Name))
 				}
 				a.Track(event, options...)
@@ -283,9 +285,9 @@ func (s *Server) Close() error {
 		errs = append(errs, fmt.Errorf("failed to close docs proxy client: %w", err))
 	}
 
-	// Release the query-tool connection pools, if the feature was enabled.
-	if s.queryManager != nil {
-		s.queryManager.Close()
+	// Release the function-tool connection pools, if the feature was enabled.
+	if s.functionManager != nil {
+		s.functionManager.Close()
 	}
 
 	return errors.Join(errs...)
