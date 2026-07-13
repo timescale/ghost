@@ -29,8 +29,7 @@ const (
 	ModeOne Mode = "one"
 	// ModeMany returns a set of rows (RETURNS SETOF / RETURNS TABLE).
 	ModeMany Mode = "many"
-	// ModeExec runs for its side effects and returns no rows (RETURNS void,
-	// or a procedure).
+	// ModeExec runs for its side effects and returns no rows (RETURNS void).
 	ModeExec Mode = "exec"
 )
 
@@ -40,9 +39,6 @@ type Tool struct {
 	Name        string
 	Description string
 	Mode        Mode
-	// IsProcedure marks a procedure (invoked with CALL) rather than a
-	// function (invoked with SELECT).
-	IsProcedure bool
 	// ReadOnly reports whether the function is marked IMMUTABLE or STABLE.
 	// Unlike a plan-based classification, this is the author's own
 	// declaration, which is also what the planner trusts.
@@ -227,6 +223,14 @@ func Introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([
 
 // buildTool converts one catalog row into tool metadata.
 func buildTool(ctx context.Context, resolver *typeResolver, row functionRow) (Tool, error) {
+	// Procedures are deliberately not supported: a void-returning function
+	// covers the same ground, and each tool call runs as its own
+	// transaction anyway. They are still selected by functionsQuery so a
+	// marked procedure is skipped loudly rather than silently ignored.
+	if row.Kind == "p" {
+		return Tool{}, fmt.Errorf("procedures are not supported; use a function returning void instead")
+	}
+
 	params, outCols, err := splitArgs(ctx, resolver, row)
 	if err != nil {
 		return Tool{}, err
@@ -244,7 +248,6 @@ func buildTool(ctx context.Context, resolver *typeResolver, row functionRow) (To
 		Schema:      row.SchemaName,
 		Name:        row.Name,
 		Description: row.Comment,
-		IsProcedure: row.Kind == "p",
 		ReadOnly:    row.Volatility == "i" || row.Volatility == "s",
 		Params:      params,
 		Named:       named,
@@ -252,14 +255,6 @@ func buildTool(ctx context.Context, resolver *typeResolver, row functionRow) (To
 
 	// Determine the result shape.
 	switch {
-	case row.Kind == "p":
-		// Procedures run via CALL for their side effects. Procedures with
-		// OUT/INOUT arguments return a result row, which is not supported
-		// yet.
-		if len(outCols) > 0 {
-			return Tool{}, fmt.Errorf("procedures with OUT arguments are not supported")
-		}
-		tool.Mode = ModeExec
 	case row.RetTypeName == "void":
 		tool.Mode = ModeExec
 	default:

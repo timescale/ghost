@@ -138,25 +138,4 @@ func TestBuildCall(t *testing.T) {
 			t.Error("expected error for non-trailing omission with unnamed arguments")
 		}
 	})
-
-	t.Run("procedure uses CALL", func(t *testing.T) {
-		proc := Tool{
-			Schema:      "public",
-			Name:        "log_event",
-			Mode:        ModeExec,
-			IsProcedure: true,
-			Named:       true,
-			Params: []Param{
-				{Name: "msg", ArgName: "msg", Type: TypeInfo{Name: "text"}},
-			},
-		}
-		sql, _, err := buildCall(proc, map[string]any{"msg": "hi"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := `CALL "public"."log_event"($1)`
-		if sql != want {
-			t.Errorf("sql = %q, want %q", sql, want)
-		}
-	})
 }

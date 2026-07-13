@@ -398,13 +398,11 @@ func buildCall(tool Tool, input map[string]any) (string, []any, error) {
 	argList := strings.Join(parts, ", ")
 
 	var sql string
-	switch {
-	case tool.IsProcedure:
-		sql = fmt.Sprintf("CALL %s(%s)", fnName, argList)
-	case tool.Mode == ModeExec:
-		// A void-returning function still has to be invoked via SELECT.
+	if tool.Mode == ModeExec {
+		// A void-returning function is invoked bare: there are no result
+		// columns to expand.
 		sql = fmt.Sprintf("SELECT %s(%s)", fnName, argList)
-	default:
+	} else {
 		// SELECT * FROM expands composite and scalar results alike into the
 		// introspected result columns.
 		sql = fmt.Sprintf("SELECT * FROM %s(%s)", fnName, argList)
