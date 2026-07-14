@@ -52,7 +52,7 @@ func newMCPToolRefreshTool() *mcp.Tool {
 }
 
 func (s *Server) handleMCPToolRefresh(ctx context.Context, req *mcp.CallToolRequest, input MCPToolRefreshInput) (*mcp.CallToolResult, MCPToolRefreshOutput, error) {
-	tools, err := s.functionManager.Refresh(ctx, input.Ref)
+	tools, err := s.functionManager.Load(ctx, input.Ref)
 	if err != nil {
 		return nil, MCPToolRefreshOutput{}, handleDatabaseError(err)
 	}

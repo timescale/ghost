@@ -25,6 +25,12 @@ type Manager struct {
 	app    *common.App
 	server *mcp.Server
 	logger *slog.Logger
+	// prefixTools controls whether tool names carry the snake_cased
+	// database-name prefix. The authoring server sets it, since it registers
+	// tools from every database in the space alongside the built-in ghost_*
+	// tools; the consumer serving mode exposes a single database's tools and
+	// nothing else, so it registers bare function names.
+	prefixTools bool
 
 	// mu guards services and toolNames, and serializes refreshes (which
 	// re-introspect and swap registered tools).
@@ -45,24 +51,32 @@ type service struct {
 }
 
 // NewManager creates a Manager that registers function tools on server.
-func NewManager(app *common.App, server *mcp.Server, logger *slog.Logger) *Manager {
+// prefixTools is described on the corresponding field.
+func NewManager(app *common.App, server *mcp.Server, logger *slog.Logger, prefixTools bool) *Manager {
 	return &Manager{
-		app:       app,
-		server:    server,
-		logger:    logger,
-		services:  map[string]*service{},
-		toolNames: map[string]string{},
+		app:         app,
+		server:      server,
+		logger:      logger,
+		prefixTools: prefixTools,
+		services:    map[string]*service{},
+		toolNames:   map[string]string{},
 	}
 }
 
-// RegisterAll introspects the @mcp functions of every database in the space
+// LoadAll introspects the @mcp functions of every database in the space
 // and registers the resulting tools, running the per-database introspection
 // concurrently. Databases that can't be introspected — paused, no stored
 // password, unreachable — are skipped with a logged warning; their tools
 // simply don't appear until a refresh or restart when they're available.
 // Databases with no @mcp functions are skipped silently (and their
 // connections closed).
-func (m *Manager) RegisterAll(ctx context.Context) {
+//
+// LoadAll is a startup-only snapshot: it assumes no databases are loaded
+// yet, and unlike Load it never reloads an existing service. If a
+// refresh-everything operation is ever needed (e.g. picking up other space
+// members' changes without a restart), rework this to share Load's
+// load-or-reload semantics rather than calling it twice.
+func (m *Manager) LoadAll(ctx context.Context) {
 	client, projectID, err := m.app.GetClient()
 	if err != nil {
 		m.logger.Warn("Skipping function tool registration (API client unavailable)",
@@ -89,7 +103,7 @@ func (m *Manager) RegisterAll(ctx context.Context) {
 				)
 				return
 			}
-			svc, err := m.buildService(ctx, database, prefixes[database.Id], false)
+			svc, err := m.buildService(ctx, database, prefixes[database.Id])
 			if err != nil {
 				m.logger.Warn("Skipping function tools for database",
 					slog.String("database", database.Name),
@@ -97,8 +111,10 @@ func (m *Manager) RegisterAll(ctx context.Context) {
 				)
 				return
 			}
-			if svc == nil {
-				// No @mcp functions.
+			if len(svc.tools) == 0 {
+				// Most databases never define function tools; don't hold an
+				// idle pool open just to represent that.
+				svc.pool.Close()
 				return
 			}
 
@@ -111,41 +127,66 @@ func (m *Manager) RegisterAll(ctx context.Context) {
 	wg.Wait()
 }
 
-// RegisterServe introspects and registers the function tools for a single
-// database. This is the consumer serving mode: unlike RegisterAll, any
-// failure is returned so the caller can abort startup — the function tools
-// are the entire tool surface being served. The tools use the same
-// database-name prefix they would have in the authoring server, so a tool's
-// name is identical everywhere it appears.
-func (m *Manager) RegisterServe(ctx context.Context, databaseRef string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	_, err := m.ensureService(ctx, databaseRef)
-	return err
-}
-
-// Refresh re-introspects a database's @mcp functions and swaps its
-// registered tools, picking up functions created, changed, or dropped since
-// the last introspection (the MCP server emits tools/list_changed). It
-// returns the names of the database's currently-registered tools.
-func (m *Manager) Refresh(ctx context.Context, databaseRef string) ([]string, error) {
+// Load brings a single database's registered tools up to date and returns
+// their names: it re-introspects the @mcp functions of an already-loaded
+// database and swaps its tools (the MCP server emits tools/list_changed), or
+// resolves, connects to, and registers a database it hasn't seen yet. Unlike
+// LoadAll, any failure is returned — it backs the ghost_mcp_tool_refresh
+// management tool, and the consumer serving mode's startup registration,
+// which must abort when the served database can't be loaded.
+func (m *Manager) Load(ctx context.Context, databaseRef string) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	svc, err := m.ensureService(ctx, databaseRef)
+	client, projectID, err := m.app.GetClient()
 	if err != nil {
 		return nil, err
 	}
 
-	logger := m.logger.With(
-		slog.String("database", svc.database.Name),
-	)
-	tools, err := Introspect(ctx, logger, svc.pool)
+	database, err := fetchDatabase(ctx, client, projectID, databaseRef)
 	if err != nil {
 		return nil, err
 	}
 
-	m.swapServiceTools(svc, tools)
+	svc, ok := m.services[database.Id]
+	if ok {
+		// Already loaded: re-introspect and swap the registered tools.
+		tools, err := Introspect(ctx, m.logger.With(slog.String("database", svc.database.Name)), svc.pool)
+		if err != nil {
+			return nil, err
+		}
+		m.swapServiceTools(svc, tools)
+	} else {
+		// First load: connect, introspect, and register.
+		if err := common.CheckReady(database); err != nil {
+			return nil, err
+		}
+
+		var prefix string
+		if m.prefixTools {
+			prefix, err = m.databasePrefix(ctx, client, projectID, database.Id)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		svc, err = m.buildService(ctx, database, prefix)
+		if err != nil {
+			return nil, err
+		}
+
+		m.services[database.Id] = svc
+		m.registerServiceTools(svc)
+	}
+
+	// A database that ends up with no tools gets no cached service: there is
+	// nothing for its connection to serve, so don't hold one open. A later
+	// Load simply reconnects.
+	if len(svc.toolNames) == 0 {
+		delete(m.services, database.Id)
+		svc.pool.Close()
+	}
+
 	return slices.Clone(svc.toolNames), nil
 }
 
@@ -171,11 +212,9 @@ func (m *Manager) Close() {
 }
 
 // buildService connects to the database and introspects its @mcp functions.
-// When keepEmpty is false and the database has no @mcp functions, the
-// connection is closed and (nil, nil) is returned — most databases never
-// define function tools, and this keeps the startup snapshot from holding
-// idle pools open for them.
-func (m *Manager) buildService(ctx context.Context, database api.Database, prefix string, keepEmpty bool) (*service, error) {
+// The caller decides whether a service with no tools is worth keeping; both
+// callers today close its pool and discard it.
+func (m *Manager) buildService(ctx context.Context, database api.Database, prefix string) (*service, error) {
 	const role = "tsdbadmin"
 
 	password, err := common.GetPassword(database, role)
@@ -205,10 +244,6 @@ func (m *Manager) buildService(ctx context.Context, database api.Database, prefi
 		pool.Close()
 		return nil, err
 	}
-	if len(tools) == 0 && !keepEmpty {
-		pool.Close()
-		return nil, nil
-	}
 
 	return &service{
 		database: database,
@@ -218,47 +253,11 @@ func (m *Manager) buildService(ctx context.Context, database api.Database, prefi
 	}, nil
 }
 
-// ensureService returns the service for the given database ref,
-// creating (and caching) a connection for it if this is the first operation
-// to target it.
-//
-// Callers must hold m.mu.
-func (m *Manager) ensureService(ctx context.Context, databaseRef string) (*service, error) {
-	client, projectID, err := m.app.GetClient()
-	if err != nil {
-		return nil, err
-	}
-
-	database, err := fetchDatabase(ctx, client, projectID, databaseRef)
-	if err != nil {
-		return nil, err
-	}
-	if svc, ok := m.services[database.Id]; ok {
-		return svc, nil
-	}
-	if err := common.CheckReady(database); err != nil {
-		return nil, err
-	}
-
-	prefix, err := m.databasePrefix(ctx, client, projectID, database.Id)
-	if err != nil {
-		return nil, err
-	}
-
-	svc, err := m.buildService(ctx, database, prefix, true)
-	if err != nil {
-		return nil, err
-	}
-
-	m.services[database.Id] = svc
-	m.registerServiceTools(svc)
-	return svc, nil
-}
-
 // registerServiceTools registers the tools described by the service's
 // current introspection, prefixing each function name with the service's
-// tool prefix. A name that can't form a legal tool name, or that is already
-// taken by another service's tool, is skipped with a warning.
+// tool prefix (empty in the consumer serving mode, which registers bare
+// function names). A name that can't form a legal tool name, or that is
+// already taken by another service's tool, is skipped with a warning.
 //
 // Callers must hold m.mu.
 func (m *Manager) registerServiceTools(svc *service) {
@@ -270,7 +269,10 @@ func (m *Manager) registerServiceTools(svc *service) {
 			)
 			continue
 		}
-		toolName := svc.prefix + "_" + tool.Name
+		toolName := tool.Name
+		if svc.prefix != "" {
+			toolName = svc.prefix + "_" + tool.Name
+		}
 		if _, taken := m.toolNames[toolName]; taken {
 			m.logger.Warn("Skipping function tool with duplicate name",
 				slog.String("tool", toolName),
@@ -341,7 +343,7 @@ func (m *Manager) computePrefixes(databases []api.Database) map[string]string {
 // databasePrefix computes the tool prefix for a single database against the
 // full current database list, so a database targeted directly (serve mode or
 // a refresh of a database that wasn't registered at startup) gets the same
-// prefix RegisterAll would have assigned it.
+// prefix LoadAll would have assigned it.
 func (m *Manager) databasePrefix(ctx context.Context, client api.ClientWithResponsesInterface, projectID, databaseID string) (string, error) {
 	databases, err := listDatabases(ctx, client, projectID)
 	if err != nil {

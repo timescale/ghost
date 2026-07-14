@@ -5,12 +5,14 @@ import (
 	"strings"
 )
 
-// Generated tool names are prefixed with the snake_cased database name to
-// avoid collisions between services — a function named `whatever` on a
-// database named "My DB" becomes the tool `my_db_whatever`. Some
-// normalization of the database name is unavoidable: model APIs restrict
-// tool names to [a-zA-Z0-9_-], so spaces and other characters can't survive
-// into the tool name.
+// On the authoring server, generated tool names are prefixed with the
+// snake_cased database name to avoid collisions between services — a
+// function named `whatever` on a database named "My DB" becomes the tool
+// `my_db_whatever`. (The consumer serving mode exposes a single database's
+// tools and nothing else, so it skips the prefix.) Some normalization of the
+// database name is unavoidable: model APIs restrict tool names to
+// [a-zA-Z0-9_-], so spaces and other characters can't survive into the tool
+// name.
 
 // toolNamePattern restricts function names to the characters model APIs
 // accept in tool names. A quoted Postgres identifier can contain anything,

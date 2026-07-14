@@ -38,13 +38,13 @@ const serveInstructions = `This server exposes PostgreSQL functions as MCP tools
 // capabilities (e.g. `ghost mcp list`) leave buildAll unset, since
 // enumerating must not connect to any databases.
 func (s *Server) registerFunctionTools(ctx context.Context, buildAll bool) {
-	manager := function.NewManager(s.app, s.mcpServer, s.logger)
+	manager := function.NewManager(s.app, s.mcpServer, s.logger, true)
 	s.functionManager = manager
 
 	mcp.AddTool(s.mcpServer, newMCPToolRefreshTool(), s.handleMCPToolRefresh)
 
 	if buildAll {
-		manager.RegisterAll(ctx)
+		manager.LoadAll(ctx)
 	}
 }
 
@@ -69,10 +69,10 @@ func newFunctionToolsServer(ctx context.Context, app *common.App, logger *slog.L
 		app:       app,
 	}
 
-	manager := function.NewManager(app, mcpServer, logger)
+	manager := function.NewManager(app, mcpServer, logger, false)
 	server.functionManager = manager
 
-	if err := manager.RegisterServe(ctx, databaseRef); err != nil {
+	if _, err := manager.Load(ctx, databaseRef); err != nil {
 		return nil, fmt.Errorf("failed to build function tools for database %q: %w", databaseRef, err)
 	}
 
