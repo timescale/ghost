@@ -111,11 +111,20 @@ type functionRow struct {
 	RetType     int64    `db:"rettype"`
 	RetTypeName string   `db:"rettype_name"`
 	RetTypeType string   `db:"rettype_type"`
-	RetTypeRel  int64    `db:"rettype_relid"`
 	NumDefaults int      `db:"num_defaults"`
 	ArgModes    []string `db:"arg_modes"` // nil when every argument is IN
 	ArgNames    []string `db:"arg_names"` // nil when no argument is named
 	ArgTypes    []int64  `db:"arg_types"`
+	// RetColumns holds the attributes of a composite return type (a table
+	// row type or CREATE TYPE ... AS); nil for other return types.
+	RetColumns []retColumn `db:"ret_columns"`
+}
+
+// retColumn is one attribute of a composite return type, aggregated into the
+// ret_columns JSON column of functionsQuery.
+type retColumn struct {
+	Name string `json:"name"`
+	Type int64  `json:"type"`
 }
 
 // functionsQuery selects every function or procedure whose comment starts
@@ -123,7 +132,9 @@ type functionRow struct {
 // proargtypes is an oidvector, which has no direct array cast, so it is
 // round-tripped through its space-separated text form. proallargtypes is
 // only set when the function has OUT/INOUT/TABLE/VARIADIC arguments, and
-// then covers all arguments.
+// then covers all arguments. For functions returning a composite type (a
+// table row type or CREATE TYPE ... AS), the composite's attributes ride
+// along as JSON in ret_columns.
 const functionsQuery = `
 SELECT
     n.nspname AS schema_name,
@@ -135,14 +146,21 @@ SELECT
     p.prorettype::int8 AS rettype,
     pg_catalog.format_type(p.prorettype, NULL) AS rettype_name,
     rt.typtype::text AS rettype_type,
-    rt.typrelid::int8 AS rettype_relid,
     p.pronargdefaults AS num_defaults,
     p.proargmodes::text[] AS arg_modes,
     p.proargnames AS arg_names,
     COALESCE(
         p.proallargtypes::int8[],
         string_to_array(p.proargtypes::text, ' ')::int8[]
-    ) AS arg_types
+    ) AS arg_types,
+    (
+        SELECT json_agg(
+            json_build_object('name', a.attname, 'type', a.atttypid::int8)
+            ORDER BY a.attnum
+        )
+        FROM pg_catalog.pg_attribute a
+        WHERE a.attrelid = rt.typrelid AND a.attnum > 0 AND NOT a.attisdropped
+    ) AS ret_columns
 FROM pg_catalog.pg_proc p
 JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
 JOIN pg_catalog.pg_type rt ON rt.oid = p.prorettype
@@ -154,20 +172,15 @@ WHERE p.prokind IN ('f', 'p')
   AND d.description ~ '^\s*@mcp'
 ORDER BY n.nspname, p.proname`
 
-// compositeColumnsQuery returns the columns of a composite type (a table
-// row type or CREATE TYPE ... AS), for functions returning SETOF <table> or
-// a composite.
-const compositeColumnsQuery = `
-SELECT a.attname, a.atttypid::int8
-FROM pg_catalog.pg_attribute a
-WHERE a.attrelid = $1 AND a.attnum > 0 AND NOT a.attisdropped
-ORDER BY a.attnum`
-
 // Introspect reads every @mcp-marked function from the database catalog and
 // returns their tool metadata. Functions that can't be exposed — overloaded
 // @mcp names, unsupported argument or return types — are skipped with a
 // logged warning, never an error: one exotic function must not take down
 // the rest of the tool surface.
+//
+// The whole pass costs a handful of queries regardless of how many functions
+// or types are involved: one for the functions (composite return columns
+// included) and one or two batched type-info loads (see typeResolver.preload).
 func Introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([]Tool, error) {
 	rows, err := pool.Query(ctx, functionsQuery)
 	if err != nil {
@@ -195,7 +208,20 @@ func Introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([
 		counts[row.SchemaName+"."+row.Name]++
 	}
 
+	// Preload the catalog rows for every type the marked functions
+	// reference, so building the tools below never queries the database.
 	resolver := newTypeResolver(pool)
+	var oids []int64
+	for _, row := range marked {
+		oids = append(oids, row.ArgTypes...)
+		oids = append(oids, row.RetType)
+		for _, col := range row.RetColumns {
+			oids = append(oids, col.Type)
+		}
+	}
+	if err := resolver.preload(ctx, oids); err != nil {
+		return nil, err
+	}
 
 	tools := make([]Tool, 0, len(marked))
 	for _, row := range marked {
@@ -205,7 +231,7 @@ func Introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([
 			)
 			continue
 		}
-		tool, err := buildTool(ctx, resolver, row)
+		tool, err := buildTool(resolver, row)
 		if err != nil {
 			logger.Warn("Skipping @mcp function",
 				slog.String("function", row.SchemaName+"."+row.Name),
@@ -220,7 +246,7 @@ func Introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([
 }
 
 // buildTool converts one catalog row into tool metadata.
-func buildTool(ctx context.Context, resolver *typeResolver, row functionRow) (Tool, error) {
+func buildTool(resolver *typeResolver, row functionRow) (Tool, error) {
 	// Procedures are deliberately not supported: a void-returning function
 	// covers the same ground, and each tool call runs as its own
 	// transaction anyway. They are still selected by functionsQuery so a
@@ -229,7 +255,7 @@ func buildTool(ctx context.Context, resolver *typeResolver, row functionRow) (To
 		return Tool{}, fmt.Errorf("procedures are not supported; use a function returning void instead")
 	}
 
-	params, err := inputParams(ctx, resolver, row)
+	params, err := inputParams(resolver, row)
 	if err != nil {
 		return Tool{}, err
 	}
@@ -257,7 +283,7 @@ func buildTool(ctx context.Context, resolver *typeResolver, row functionRow) (To
 	if row.ReturnsSet {
 		tool.Mode = ModeMany
 	}
-	cols, err := resultColumns(ctx, resolver, row)
+	cols, err := resultColumns(resolver, row)
 	if err != nil {
 		return Tool{}, err
 	}
@@ -287,7 +313,7 @@ func argName(row functionRow, i int) string {
 // inputParams returns the function's input parameters (IN and INOUT
 // arguments) in declaration order, and validates that every argument mode
 // is supported.
-func inputParams(ctx context.Context, resolver *typeResolver, row functionRow) ([]Param, error) {
+func inputParams(resolver *typeResolver, row functionRow) ([]Param, error) {
 	var params []Param
 
 	for i, typeOID := range row.ArgTypes {
@@ -301,7 +327,7 @@ func inputParams(ctx context.Context, resolver *typeResolver, row functionRow) (
 			return nil, fmt.Errorf("unsupported argument mode %q", mode)
 		}
 
-		typ, err := resolver.resolve(ctx, typeOID)
+		typ, err := resolver.resolve(typeOID)
 		if err != nil {
 			return nil, err
 		}
@@ -332,7 +358,7 @@ func inputParams(ctx context.Context, resolver *typeResolver, row functionRow) (
 // INOUT, and TABLE arguments, in declaration order. Empty when the function
 // declares none — its result shape then comes from the return type instead
 // (see resultColumns).
-func outputColumns(ctx context.Context, resolver *typeResolver, row functionRow) ([]Column, error) {
+func outputColumns(resolver *typeResolver, row functionRow) ([]Column, error) {
 	var cols []Column
 
 	for i, typeOID := range row.ArgTypes {
@@ -342,7 +368,7 @@ func outputColumns(ctx context.Context, resolver *typeResolver, row functionRow)
 			continue
 		}
 
-		typ, err := resolver.resolve(ctx, typeOID)
+		typ, err := resolver.resolve(typeOID)
 		if err != nil {
 			return nil, err
 		}
@@ -363,8 +389,8 @@ func outputColumns(ctx context.Context, resolver *typeResolver, row functionRow)
 // rows, in order of preference: OUT/INOUT/TABLE arguments define the shape
 // when present; a composite return type contributes its attributes; any
 // other type is a single column named after the function.
-func resultColumns(ctx context.Context, resolver *typeResolver, row functionRow) ([]Column, error) {
-	outCols, err := outputColumns(ctx, resolver, row)
+func resultColumns(resolver *typeResolver, row functionRow) ([]Column, error) {
+	outCols, err := outputColumns(resolver, row)
 	if err != nil {
 		return nil, err
 	}
@@ -372,22 +398,11 @@ func resultColumns(ctx context.Context, resolver *typeResolver, row functionRow)
 		return outCols, nil
 	}
 
-	if row.RetTypeRel != 0 {
+	if len(row.RetColumns) > 0 {
 		// Composite return type (a table row type or CREATE TYPE ... AS).
-		rows, err := resolver.pool.Query(ctx, compositeColumnsQuery, row.RetTypeRel)
-		if err != nil {
-			return nil, fmt.Errorf("failed to introspect composite return type: %w", err)
-		}
-		attrs, err := pgx.CollectRows(rows, pgx.RowToStructByPos[struct {
-			Name    string
-			TypeOID int64
-		}])
-		if err != nil {
-			return nil, fmt.Errorf("failed to introspect composite return type: %w", err)
-		}
-		cols := make([]Column, len(attrs))
-		for i, attr := range attrs {
-			typ, err := resolver.resolve(ctx, attr.TypeOID)
+		cols := make([]Column, len(row.RetColumns))
+		for i, attr := range row.RetColumns {
+			typ, err := resolver.resolve(attr.Type)
 			if err != nil {
 				return nil, err
 			}
@@ -404,7 +419,7 @@ func resultColumns(ctx context.Context, resolver *typeResolver, row functionRow)
 
 	// Scalar return: a single column named after the function, which is how
 	// PostgreSQL itself names it in SELECT * FROM f(...).
-	typ, err := resolver.resolve(ctx, row.RetType)
+	typ, err := resolver.resolve(row.RetType)
 	if err != nil {
 		return nil, err
 	}
