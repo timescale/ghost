@@ -118,34 +118,10 @@ func (m *Manager) RegisterAll(ctx context.Context) {
 // database-name prefix they would have in the authoring server, so a tool's
 // name is identical everywhere it appears.
 func (m *Manager) RegisterServe(ctx context.Context, databaseRef string) error {
-	client, projectID, err := m.app.GetClient()
-	if err != nil {
-		return err
-	}
-
-	database, err := fetchDatabase(ctx, client, projectID, databaseRef)
-	if err != nil {
-		return err
-	}
-	if err := common.CheckReady(database); err != nil {
-		return err
-	}
-
-	prefix, err := m.databasePrefix(ctx, client, projectID, database.Id)
-	if err != nil {
-		return err
-	}
-
-	svc, err := m.buildService(ctx, database, prefix, true)
-	if err != nil {
-		return err
-	}
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.services[database.Id] = svc
-	m.registerServiceTools(svc)
-	return nil
+	_, err := m.ensureService(ctx, databaseRef)
+	return err
 }
 
 // Refresh re-introspects a database's @mcp functions and swaps its
@@ -156,7 +132,7 @@ func (m *Manager) Refresh(ctx context.Context, databaseRef string) ([]string, er
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	svc, err := m.ensureServiceLocked(ctx, databaseRef)
+	svc, err := m.ensureService(ctx, databaseRef)
 	if err != nil {
 		return nil, err
 	}
@@ -242,12 +218,12 @@ func (m *Manager) buildService(ctx context.Context, database api.Database, prefi
 	}, nil
 }
 
-// ensureServiceLocked returns the service for the given database ref,
+// ensureService returns the service for the given database ref,
 // creating (and caching) a connection for it if this is the first operation
 // to target it.
 //
 // Callers must hold m.mu.
-func (m *Manager) ensureServiceLocked(ctx context.Context, databaseRef string) (*service, error) {
+func (m *Manager) ensureService(ctx context.Context, databaseRef string) (*service, error) {
 	client, projectID, err := m.app.GetClient()
 	if err != nil {
 		return nil, err

@@ -14,6 +14,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/timescale/ghost/internal/util"
 )
 
 // buildMCPTool constructs the MCP tool definition and handler for a single
@@ -148,13 +150,9 @@ func typeSchema(typ TypeInfo) *jsonschema.Schema {
 func scalarTypeSchema(typ TypeInfo) *jsonschema.Schema {
 	// Enum types list their values from the catalog.
 	if len(typ.EnumVals) > 0 {
-		vals := make([]any, len(typ.EnumVals))
-		for i, v := range typ.EnumVals {
-			vals[i] = v
-		}
 		return &jsonschema.Schema{
 			Type: "string",
-			Enum: vals,
+			Enum: util.AnySlice(typ.EnumVals),
 		}
 	}
 

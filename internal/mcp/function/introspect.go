@@ -248,20 +248,20 @@ func buildTool(ctx context.Context, resolver *typeResolver, row functionRow) (To
 	}
 
 	// Determine the result shape.
-	switch {
-	case row.RetTypeName == "void":
+	if row.RetTypeName == "void" {
 		tool.Mode = ModeExec
-	default:
-		tool.Mode = ModeOne
-		if row.ReturnsSet {
-			tool.Mode = ModeMany
-		}
-		cols, err := resultColumns(ctx, resolver, row)
-		if err != nil {
-			return Tool{}, err
-		}
-		tool.Columns = cols
+		return tool, nil
 	}
+
+	tool.Mode = ModeOne
+	if row.ReturnsSet {
+		tool.Mode = ModeMany
+	}
+	cols, err := resultColumns(ctx, resolver, row)
+	if err != nil {
+		return Tool{}, err
+	}
+	tool.Columns = cols
 
 	return tool, nil
 }
