@@ -120,6 +120,10 @@ The typical workflow for API changes is:
 
 Database-scoped API endpoints accept either an ID or a name, so the path parameter is `database_ref` (generated as `api.DatabaseRef`). Use `databaseRef` for variables holding user input that could be either form; reserve `databaseID` for values resolved from `database.Id` on an API response.
 
+## Space ID Naming (`spaceID`, not `projectID`)
+
+Ghost-facing code always refers to Tiger Cloud "projects" as "spaces". Name variables holding the current space's ID `spaceID`, not `projectID`, even though some older code still uses `projectID`. Don't mass-rename existing code (or the `config.Credentials.ProjectID` struct field) unless asked.
+
 ## Command Patterns
 
 All cobra commands must:
