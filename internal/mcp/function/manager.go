@@ -234,8 +234,19 @@ func (m *Manager) buildService(ctx context.Context, database api.Database, prefi
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}
 
-	pool, err := Connect(ctx, connString)
+	// A pool (rather than a single connection) because MCP clients can issue
+	// concurrent tool calls, and *pgx.Conn is not safe for concurrent use.
+	// The pool also reestablishes connections transparently, so the server
+	// survives database restarts and idle-connection timeouts.
+	pool, err := pgxpool.New(ctx, connString)
 	if err != nil {
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	// pgxpool connects lazily; ping so a bad connection string or unreachable
+	// database fails now rather than on the first tool call.
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
