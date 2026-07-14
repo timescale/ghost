@@ -33,7 +33,7 @@ type Server struct {
 	// sense; nil for the remote HTTP transport.
 	browser *browserController
 	// functionManager owns the generated function tools (MCP tools defined
-	// by @api-marked Postgres functions in each database). Nil when the
+	// by @mcp-marked Postgres functions in each database). Nil when the
 	// feature is unavailable (not experimental and not serving).
 	functionManager *function.Manager
 }

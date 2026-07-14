@@ -4,17 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Tools are defined by marking Postgres functions with an @api comment:
+// Tools are defined by marking Postgres functions with an @mcp comment:
 //
 //	COMMENT ON FUNCTION get_pending_invoices IS
-//	'@api
+//	'@mcp
 //	Returns unpaid invoices for a customer, ordered by due date.';
 //
 // Introspect reads every marked function straight from the catalog — names,
@@ -33,7 +32,7 @@ const (
 	ModeExec Mode = "exec"
 )
 
-// Tool is the introspected metadata for one @api function.
+// Tool is the introspected metadata for one @mcp function.
 type Tool struct {
 	Schema      string
 	Name        string
@@ -85,18 +84,16 @@ type TypeInfo struct {
 	EnumVals []string
 }
 
-// apiMarker matches the @api marker that must be the first non-blank line of
-// the function's comment. An optional parenthesized group list — reserved
-// for scoping tools to named agent groups — is accepted and currently
-// ignored.
-var apiMarker = regexp.MustCompile(`^@api(\(([^)]*)\))?$`)
+// marker is the tag that exposes a function as an MCP tool. It must be the
+// first non-blank line of the function's comment, alone on its line.
+const marker = "@mcp"
 
-// parseAPIComment reports whether comment carries the @api marker, and
+// parseMarkerComment reports whether comment carries the @mcp marker, and
 // returns the remaining lines as the tool description.
-func parseAPIComment(comment string) (string, bool) {
+func parseMarkerComment(comment string) (string, bool) {
 	trimmed := strings.TrimLeft(comment, " \t\n")
 	first, rest, _ := strings.Cut(trimmed, "\n")
-	if !apiMarker.MatchString(strings.TrimSpace(first)) {
+	if strings.TrimSpace(first) != marker {
 		return "", false
 	}
 	return strings.TrimSpace(rest), true
@@ -121,7 +118,7 @@ type functionRow struct {
 }
 
 // functionsQuery selects every function or procedure whose comment starts
-// with the @api marker (the marker is re-validated precisely in Go).
+// with the @mcp marker (the marker is re-validated precisely in Go).
 // proargtypes is an oidvector, which has no direct array cast, so it is
 // round-tripped through its space-separated text form. proallargtypes is
 // only set when the function has OUT/INOUT/TABLE/VARIADIC arguments, and
@@ -153,7 +150,7 @@ JOIN pg_catalog.pg_description d
     AND d.classoid = 'pg_catalog.pg_proc'::regclass
     AND d.objsubid = 0
 WHERE p.prokind IN ('f', 'p')
-  AND d.description ~ '^\s*@api'
+  AND d.description ~ '^\s*@mcp'
 ORDER BY n.nspname, p.proname`
 
 // compositeColumnsQuery returns the columns of a composite type (a table
@@ -165,9 +162,9 @@ FROM pg_catalog.pg_attribute a
 WHERE a.attrelid = $1 AND a.attnum > 0 AND NOT a.attisdropped
 ORDER BY a.attnum`
 
-// Introspect reads every @api-marked function from the database catalog and
+// Introspect reads every @mcp-marked function from the database catalog and
 // returns their tool metadata. Functions that can't be exposed — overloaded
-// @api names, unsupported argument or return types — are skipped with a
+// @mcp names, unsupported argument or return types — are skipped with a
 // logged warning, never an error: one exotic function must not take down
 // the rest of the tool surface.
 func Introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([]Tool, error) {
@@ -183,14 +180,14 @@ func Introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([
 	// Re-validate the marker precisely and drop non-matches.
 	marked := fnRows[:0]
 	for _, row := range fnRows {
-		if desc, ok := parseAPIComment(row.Comment); ok {
+		if desc, ok := parseMarkerComment(row.Comment); ok {
 			row.Comment = desc
 			marked = append(marked, row)
 		}
 	}
 
 	// An overloaded name can't become a tool: the tool's input schema and
-	// call can't distinguish the overloads. Skip every @api function whose
+	// call can't distinguish the overloads. Skip every @mcp function whose
 	// (schema, name) appears more than once.
 	counts := make(map[string]int, len(marked))
 	for _, row := range marked {
@@ -202,14 +199,14 @@ func Introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([
 	tools := make([]Tool, 0, len(marked))
 	for _, row := range marked {
 		if counts[row.SchemaName+"."+row.Name] > 1 {
-			logger.Warn("Skipping @api function: overloaded functions cannot be exposed as tools",
+			logger.Warn("Skipping @mcp function: overloaded functions cannot be exposed as tools",
 				slog.String("function", row.SchemaName+"."+row.Name),
 			)
 			continue
 		}
 		tool, err := buildTool(ctx, resolver, row)
 		if err != nil {
-			logger.Warn("Skipping @api function",
+			logger.Warn("Skipping @mcp function",
 				slog.String("function", row.SchemaName+"."+row.Name),
 				slog.Any("error", err),
 			)
@@ -231,7 +228,7 @@ func buildTool(ctx context.Context, resolver *typeResolver, row functionRow) (To
 		return Tool{}, fmt.Errorf("procedures are not supported; use a function returning void instead")
 	}
 
-	params, outCols, err := splitArgs(ctx, resolver, row)
+	params, err := inputParams(ctx, resolver, row)
 	if err != nil {
 		return Tool{}, err
 	}
@@ -262,7 +259,7 @@ func buildTool(ctx context.Context, resolver *typeResolver, row functionRow) (To
 		if row.ReturnsSet {
 			tool.Mode = ModeMany
 		}
-		cols, err := resultColumns(ctx, resolver, row, outCols)
+		cols, err := resultColumns(ctx, resolver, row)
 		if err != nil {
 			return Tool{}, err
 		}
@@ -272,57 +269,56 @@ func buildTool(ctx context.Context, resolver *typeResolver, row functionRow) (To
 	return tool, nil
 }
 
-// splitArgs partitions the function's arguments into input parameters and
-// output columns (OUT/INOUT/TABLE arguments) using the pg_proc argument
-// arrays, which cover all arguments in declaration order.
-func splitArgs(ctx context.Context, resolver *typeResolver, row functionRow) ([]Param, []Column, error) {
+// argMode returns the mode of the function's i'th argument. proargmodes is
+// only set when the function has non-IN arguments, and then covers all
+// arguments in declaration order.
+func argMode(row functionRow, i int) string {
+	if row.ArgModes != nil {
+		return row.ArgModes[i]
+	}
+	return "i" // IN
+}
+
+// argName returns the name of the function's i'th argument, "" when unnamed.
+func argName(row functionRow, i int) string {
+	if row.ArgNames != nil {
+		return row.ArgNames[i]
+	}
+	return ""
+}
+
+// inputParams returns the function's input parameters (IN and INOUT
+// arguments) in declaration order, and validates that every argument mode
+// is supported.
+func inputParams(ctx context.Context, resolver *typeResolver, row functionRow) ([]Param, error) {
 	var params []Param
-	var outCols []Column
 
 	for i, typeOID := range row.ArgTypes {
-		mode := "i"
-		if row.ArgModes != nil {
-			mode = row.ArgModes[i]
-		}
-		name := ""
-		if row.ArgNames != nil {
-			name = row.ArgNames[i]
+		switch mode := argMode(row, i); mode {
+		case "i", "b": // IN, INOUT
+		case "o", "t": // OUT, TABLE: result columns, not inputs
+			continue
+		case "v":
+			return nil, fmt.Errorf("VARIADIC arguments are not supported")
+		default:
+			return nil, fmt.Errorf("unsupported argument mode %q", mode)
 		}
 
 		typ, err := resolver.resolve(ctx, typeOID)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
-		switch mode {
-		case "i", "b": // IN, INOUT
-			paramName := name
-			if paramName == "" {
-				paramName = fmt.Sprintf("param_%d", len(params)+1)
-			}
-			params = append(params, Param{
-				Name:    paramName,
-				ArgName: name,
-				Type:    typ,
-			})
-		case "o", "t": // OUT, TABLE
-			if name == "" {
-				name = fmt.Sprintf("column%d", len(outCols)+1)
-			}
-			outCols = append(outCols, Column{Name: name, Type: typ})
-		case "v":
-			return nil, nil, fmt.Errorf("VARIADIC arguments are not supported")
-		default:
-			return nil, nil, fmt.Errorf("unsupported argument mode %q", mode)
+		name := argName(row, i)
+		paramName := name
+		if paramName == "" {
+			paramName = fmt.Sprintf("param_%d", len(params)+1)
 		}
-
-		if mode == "b" { // INOUT arguments are both a parameter and a column
-			colName := name
-			if colName == "" {
-				colName = fmt.Sprintf("column%d", len(outCols)+1)
-			}
-			outCols = append(outCols, Column{Name: colName, Type: typ})
-		}
+		params = append(params, Param{
+			Name:    paramName,
+			ArgName: name,
+			Type:    typ,
+		})
 	}
 
 	// Defaults always attach to the trailing input arguments.
@@ -332,14 +328,49 @@ func splitArgs(ctx context.Context, resolver *typeResolver, row functionRow) ([]
 		}
 	}
 
-	return params, outCols, nil
+	return params, nil
+}
+
+// outputColumns returns the result columns declared by the function's OUT,
+// INOUT, and TABLE arguments, in declaration order. Empty when the function
+// declares none — its result shape then comes from the return type instead
+// (see resultColumns).
+func outputColumns(ctx context.Context, resolver *typeResolver, row functionRow) ([]Column, error) {
+	var cols []Column
+
+	for i, typeOID := range row.ArgTypes {
+		switch argMode(row, i) {
+		case "o", "b", "t": // OUT, INOUT, TABLE
+		default:
+			continue
+		}
+
+		typ, err := resolver.resolve(ctx, typeOID)
+		if err != nil {
+			return nil, err
+		}
+
+		name := argName(row, i)
+		if name == "" {
+			// PostgreSQL names unnamed output columns by their position in
+			// the output column list.
+			name = fmt.Sprintf("column%d", len(cols)+1)
+		}
+		cols = append(cols, Column{Name: name, Type: typ})
+	}
+
+	return cols, nil
 }
 
 // resultColumns determines the result columns for a function that returns
 // rows, in order of preference: OUT/INOUT/TABLE arguments define the shape
 // when present; a composite return type contributes its attributes; any
 // other type is a single column named after the function.
-func resultColumns(ctx context.Context, resolver *typeResolver, row functionRow, outCols []Column) ([]Column, error) {
+func resultColumns(ctx context.Context, resolver *typeResolver, row functionRow) ([]Column, error) {
+	outCols, err := outputColumns(ctx, resolver, row)
+	if err != nil {
+		return nil, err
+	}
 	if len(outCols) > 0 {
 		return outCols, nil
 	}

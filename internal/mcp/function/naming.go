@@ -14,7 +14,7 @@ import (
 
 // toolNamePattern restricts function names to the characters model APIs
 // accept in tool names. A quoted Postgres identifier can contain anything,
-// so @api functions whose names don't fit are skipped with a warning.
+// so @mcp functions whose names don't fit are skipped with a warning.
 var toolNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // toolPrefix normalizes a database name into a tool-name prefix: lowercased,

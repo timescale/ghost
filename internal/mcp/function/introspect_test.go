@@ -2,7 +2,7 @@ package function
 
 import "testing"
 
-func TestParseAPIComment(t *testing.T) {
+func TestParseMarkerComment(t *testing.T) {
 	tests := []struct {
 		name     string
 		comment  string
@@ -11,31 +11,25 @@ func TestParseAPIComment(t *testing.T) {
 	}{
 		{
 			name:     "bare marker with description",
-			comment:  "@api\nReturns unpaid invoices for a customer.",
+			comment:  "@mcp\nReturns unpaid invoices for a customer.",
 			wantDesc: "Returns unpaid invoices for a customer.",
 			wantOK:   true,
 		},
 		{
 			name:     "marker only",
-			comment:  "@api",
+			comment:  "@mcp",
 			wantDesc: "",
 			wantOK:   true,
 		},
 		{
 			name:     "leading whitespace",
-			comment:  "\n  @api\nDescription here.",
+			comment:  "\n  @mcp\nDescription here.",
 			wantDesc: "Description here.",
 			wantOK:   true,
 		},
 		{
-			name:     "group list accepted and ignored",
-			comment:  "@api(customer_service, accounts_receivable)\nReturns the customer profile.",
-			wantDesc: "Returns the customer profile.",
-			wantOK:   true,
-		},
-		{
 			name:     "multi-line description",
-			comment:  "@api\nLine one.\nLine two.",
+			comment:  "@mcp\nLine one.\nLine two.",
 			wantDesc: "Line one.\nLine two.",
 			wantOK:   true,
 		},
@@ -46,23 +40,23 @@ func TestParseAPIComment(t *testing.T) {
 		},
 		{
 			name:    "marker not on first line",
-			comment: "Some description.\n@api",
+			comment: "Some description.\n@mcp",
 			wantOK:  false,
 		},
 		{
 			name:    "marker with trailing text on same line",
-			comment: "@api this is not the syntax",
+			comment: "@mcp this is not the syntax",
 			wantOK:  false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			desc, ok := parseAPIComment(tt.comment)
+			desc, ok := parseMarkerComment(tt.comment)
 			if ok != tt.wantOK {
-				t.Fatalf("parseAPIComment(%q) ok = %v, want %v", tt.comment, ok, tt.wantOK)
+				t.Fatalf("parseMarkerComment(%q) ok = %v, want %v", tt.comment, ok, tt.wantOK)
 			}
 			if desc != tt.wantDesc {
-				t.Errorf("parseAPIComment(%q) desc = %q, want %q", tt.comment, desc, tt.wantDesc)
+				t.Errorf("parseMarkerComment(%q) desc = %q, want %q", tt.comment, desc, tt.wantDesc)
 			}
 		})
 	}

@@ -35,8 +35,8 @@ func newMCPToolRefreshTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:  "ghost_mcp_tool_refresh",
 		Title: "Refresh Function Tools",
-		Description: "Re-introspect a database's @api-marked functions and update its generated MCP tools, picking up functions created, changed, or dropped since the last refresh (or server start). " +
-			"Call this after creating or modifying @api functions (e.g. via ghost_sql) to make the corresponding tools available immediately. " +
+		Description: "Re-introspect a database's @mcp-marked functions and update its generated MCP tools, picking up functions created, changed, or dropped since the last refresh (or server start). " +
+			"Call this after creating or modifying @mcp functions (e.g. via ghost_sql) to make the corresponding tools available immediately. " +
 			"Returns the database's current tool list.",
 		InputSchema:  MCPToolRefreshInput{}.Schema(),
 		OutputSchema: MCPToolRefreshOutput{}.Schema(),

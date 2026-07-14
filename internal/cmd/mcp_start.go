@@ -40,14 +40,7 @@ func buildMCPStartCmd(app *common.App) *cobra.Command {
 		},
 	}
 
-	// The consumer serving mode is experimental: expose only a single
-	// database's generated function tools, with no management or Ghost tools.
-	if app.Experimental {
-		cmd.PersistentFlags().StringVar(&serveRef, "serve", "", "Serve only the named database's custom function tools (no other Ghost tools)")
-		if err := cmd.RegisterFlagCompletionFunc("serve", databaseCompletion(app)); err != nil {
-			cobra.CompErrorln(err.Error())
-		}
-	}
+	addServeFlag(cmd, app, &serveRef)
 
 	// Add transport subcommands
 	cmd.AddCommand(buildMCPStdioCmd(app, &serveRef))
@@ -56,9 +49,22 @@ func buildMCPStartCmd(app *common.App) *cobra.Command {
 	return cmd
 }
 
+// addServeFlag registers the --serve flag, which puts the server in the
+// stripped consumer serving mode: expose only a single database's generated
+// function tools, with no management or Ghost tools. The flag is registered
+// on `mcp start` and on each transport subcommand individually (sharing one
+// destination) rather than as a persistent flag, so it appears as a regular
+// flag in each command's help text instead of under "Global Flags".
+func addServeFlag(cmd *cobra.Command, app *common.App, serveRef *string) {
+	cmd.Flags().StringVar(serveRef, "serve", "", "Serve only the named database's custom function tools (no other Ghost tools)")
+	if err := cmd.RegisterFlagCompletionFunc("serve", databaseCompletion(app)); err != nil {
+		cobra.CompErrorln(err.Error())
+	}
+}
+
 // buildMCPStdioCmd creates the stdio subcommand
 func buildMCPStdioCmd(app *common.App, serveRef *string) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "stdio",
 		Short: "Start MCP server with stdio transport",
 		Long:  `Start the MCP server using standard input/output transport.`,
@@ -71,6 +77,10 @@ func buildMCPStdioCmd(app *common.App, serveRef *string) *cobra.Command {
 			return startStdioServer(cmd, app, *serveRef)
 		},
 	}
+
+	addServeFlag(cmd, app, serveRef)
+
+	return cmd
 }
 
 // buildMCPHTTPCmd creates the http subcommand with port/host flags
@@ -105,6 +115,8 @@ func buildMCPHTTPCmd(app *common.App, serveRef *string) *cobra.Command {
 	// Add HTTP-specific flags
 	cmd.Flags().IntVar(&httpPort, "port", 8080, "Port to run HTTP server on")
 	cmd.Flags().StringVar(&httpHost, "host", "localhost", "Host to bind to")
+
+	addServeFlag(cmd, app, serveRef)
 
 	return cmd
 }

@@ -17,7 +17,7 @@ import (
 )
 
 // Manager owns the function-tool state for the MCP server: one service
-// entry per database whose @api functions have been introspected, and the
+// entry per database whose @mcp functions have been introspected, and the
 // set of registered tool names. All tool registration on the MCP server
 // goes through the Manager so tool names stay collision-free.
 type Manager struct {
@@ -54,12 +54,12 @@ func NewManager(app *common.App, server *mcp.Server, logger *slog.Logger) *Manag
 	}
 }
 
-// RegisterAll introspects the @api functions of every database in the space
+// RegisterAll introspects the @mcp functions of every database in the space
 // and registers the resulting tools, running the per-database introspection
 // concurrently. Databases that can't be introspected — paused, no stored
 // password, unreachable — are skipped with a logged warning; their tools
 // simply don't appear until a refresh or restart when they're available.
-// Databases with no @api functions are skipped silently (and their
+// Databases with no @mcp functions are skipped silently (and their
 // connections closed).
 func (m *Manager) RegisterAll(ctx context.Context) {
 	client, projectID, err := m.app.GetClient()
@@ -97,7 +97,7 @@ func (m *Manager) RegisterAll(ctx context.Context) {
 				return
 			}
 			if svc == nil {
-				// No @api functions.
+				// No @mcp functions.
 				return
 			}
 
@@ -147,7 +147,7 @@ func (m *Manager) RegisterServe(ctx context.Context, databaseRef string) error {
 	return nil
 }
 
-// Refresh re-introspects a database's @api functions and swaps its
+// Refresh re-introspects a database's @mcp functions and swaps its
 // registered tools, picking up functions created, changed, or dropped since
 // the last introspection (the MCP server emits tools/list_changed). It
 // returns the names of the database's currently-registered tools.
@@ -190,8 +190,8 @@ func (m *Manager) Close() {
 	m.services = make(map[string]*service)
 }
 
-// buildService connects to the database and introspects its @api functions.
-// When keepEmpty is false and the database has no @api functions, the
+// buildService connects to the database and introspects its @mcp functions.
+// When keepEmpty is false and the database has no @mcp functions, the
 // connection is closed and (nil, nil) is returned — most databases never
 // define function tools, and this keeps the startup snapshot from holding
 // idle pools open for them.
@@ -204,7 +204,7 @@ func (m *Manager) buildService(ctx context.Context, database api.Database, prefi
 	}
 
 	// Function tools deliberately ignore Ghost's read_only config option:
-	// marking a function @api is an intentional act, and the volatility-
+	// marking a function @mcp is an intentional act, and the volatility-
 	// derived annotations tell clients which tools write.
 	connString, err := common.BuildConnectionString(common.ConnectionStringArgs{
 		Database: database,
@@ -284,7 +284,7 @@ func (m *Manager) ensureServiceLocked(ctx context.Context, databaseRef string) (
 func (m *Manager) registerServiceTools(svc *service) {
 	for _, tool := range svc.tools {
 		if !toolNamePattern.MatchString(tool.Name) {
-			m.logger.Warn("Skipping @api function whose name cannot form a tool name",
+			m.logger.Warn("Skipping @mcp function whose name cannot form a tool name",
 				slog.String("function", tool.Schema+"."+tool.Name),
 				slog.String("database", svc.database.Name),
 			)

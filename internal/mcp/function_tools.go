@@ -13,7 +13,7 @@ import (
 )
 
 // Generated function tools: every Ghost database can define a curated set of
-// MCP tools by marking Postgres functions with an @api comment (see
+// MCP tools by marking Postgres functions with an @mcp comment (see
 // internal/mcp/function). The authoring server registers the generated tools
 // of every database in the space alongside the ghost_mcp_tool_refresh
 // management tool; the stripped serving mode (Options.ServeFunctionTools)
@@ -23,7 +23,7 @@ import (
 // when the function-tool feature is enabled.
 const functionToolsInstructions = `
 
-Custom function tools: each database can expose its own curated MCP tools, defined by marking Postgres functions with an @api comment (the first line of the COMMENT ON FUNCTION text is '@api'; the remaining lines become the tool's description). A function tool calls one function — its inputs are the function's arguments (arguments with defaults are optional) and its output is the returned row(s). Tool schemas are introspected from the database catalog, so they reflect the real argument and result types, and tools are named with the snake_cased database name as a prefix (a function 'whatever' on database "My DB" becomes the tool 'my_db_whatever'). To add a capability, create the function and comment with ghost_sql, then call ghost_mcp_tool_refresh to pick up the change immediately.`
+Custom function tools: each database can expose its own curated MCP tools, defined by marking Postgres functions with an @mcp comment (the first line of the COMMENT ON FUNCTION text is '@mcp'; the remaining lines become the tool's description). A function tool calls one function — its inputs are the function's arguments (arguments with defaults are optional) and its output is the returned row(s). Tool schemas are introspected from the database catalog, so they reflect the real argument and result types, and tools are named with the snake_cased database name as a prefix (a function 'whatever' on database "My DB" becomes the tool 'my_db_whatever'). To add a capability, create the function and comment with ghost_sql, then call ghost_mcp_tool_refresh to pick up the change immediately.`
 
 // serveInstructions are the instructions for the stripped consumer serving
 // mode.

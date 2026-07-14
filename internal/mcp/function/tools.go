@@ -16,7 +16,7 @@ import (
 )
 
 // BuildTool constructs the MCP tool definition and handler for a single
-// @api function. toolName is the full (database-prefixed) tool name; the
+// @mcp function. toolName is the full (database-prefixed) tool name; the
 // tool's schemas and annotations come from the function's introspected
 // metadata, and the handler calls the function through pool.
 func BuildTool(toolName string, tool Tool, pool *pgxpool.Pool) (*mcp.Tool, mcp.ToolHandler) {
