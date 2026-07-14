@@ -54,8 +54,12 @@ func buildMCPStartCmd(app *common.App) *cobra.Command {
 // function tools, with no management or Ghost tools. The flag is registered
 // on `mcp start` and on each transport subcommand individually (sharing one
 // destination) rather than as a persistent flag, so it appears as a regular
-// flag in each command's help text instead of under "Global Flags".
+// flag in each command's help text instead of under "Global Flags". Like the
+// rest of the function-tool feature, it is experimental.
 func addServeFlag(cmd *cobra.Command, app *common.App, serveRef *string) {
+	if !app.Experimental {
+		return
+	}
 	cmd.Flags().StringVar(serveRef, "serve", "", "Serve only the named database's custom function tools (no other Ghost tools)")
 	if err := cmd.RegisterFlagCompletionFunc("serve", databaseCompletion(app)); err != nil {
 		cobra.CompErrorln(err.Error())

@@ -47,16 +47,20 @@ type Options struct {
 	// ServeFunctionTools, when set to a database name or ID, puts the server
 	// in the stripped consumer serving mode: it exposes only that database's
 	// generated function tools — no management tools and no other Ghost
-	// tools. This is the artifact you hand to someone as an API.
+	// tools. This is the artifact you hand to someone as an API. Reached via
+	// the (experimental) --serve flag on `ghost mcp start`.
 	ServeFunctionTools string
 	// FunctionTools enables introspecting and registering the generated
-	// function tools of every database in the space at construction
-	// (experimental; requires GHOST_EXPERIMENTAL). Set by the serving
-	// commands (`ghost mcp start`) and left unset by callers that only
-	// enumerate capabilities (`ghost mcp list`/`get`), which must not
-	// connect to any databases. The ghost_mcp_tool_refresh management tool
-	// is registered in experimental mode regardless, so capability listings
-	// stay accurate.
+	// function tools of every database in the space at construction. Set by
+	// `ghost mcp start` and left unset by callers that only enumerate
+	// capabilities (`ghost mcp list`/`get`), which must not connect to any
+	// databases.
+	//
+	// The feature is experimental: without GHOST_EXPERIMENTAL this option is
+	// a no-op, and the ghost_mcp_tool_refresh management tool is not
+	// registered either. (In experimental mode the refresh tool is
+	// registered even when this option is unset, so capability listings stay
+	// accurate.)
 	FunctionTools bool
 }
 
