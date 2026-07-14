@@ -25,10 +25,6 @@ const functionToolsInstructions = `
 
 Custom function tools: each database can expose its own curated MCP tools, defined by marking Postgres functions with an @mcp comment (the first line of the COMMENT ON FUNCTION text is '@mcp'; the remaining lines become the tool's description). A function tool calls one function — its inputs are the function's arguments (arguments with defaults are optional) and its output is the returned row(s). Tool schemas are introspected from the database catalog, so they reflect the real argument and result types, and tools are named with the snake_cased database name as a prefix (a function 'whatever' on database "My DB" becomes the tool 'my_db_whatever'). To add a capability, create the function and comment with ghost_sql, then call ghost_mcp_tool_refresh to pick up the change immediately.`
 
-// serveInstructions are the instructions for the stripped consumer serving
-// mode.
-const serveInstructions = `This server exposes PostgreSQL functions as MCP tools. Each tool calls one function - its inputs are the function's arguments (arguments with defaults are optional) and its output is the returned row(s). The tools are introspected from the database catalog, so each tool's schema reflects the function's real argument and result types.`
-
 // registerFunctionTools sets up the function-tool manager on the authoring
 // server and registers the refresh management tool. When buildAll is set it
 // also runs the startup snapshot, introspecting and registering every
@@ -54,13 +50,18 @@ func (s *Server) registerFunctionTools(ctx context.Context, buildAll bool) {
 // database that can't be introspected is a fatal startup error, since its
 // function tools are the entire tool surface being served.
 func newFunctionToolsServer(ctx context.Context, app *common.App, logger *slog.Logger, databaseRef string) (*Server, error) {
+	// The serving mode deliberately sends no server instructions: how the
+	// tools are implemented is irrelevant to a consumer, and the useful
+	// content — what this particular tool surface is for — is something only
+	// the database's author knows. TODO: let the author provide the
+	// instructions from inside the database, e.g. via a designated database
+	// or schema comment introspected alongside the @mcp functions.
 	mcpServer := mcp.NewServer(&mcp.Implementation{
 		Name:    ServerName,
 		Title:   serverTitle,
 		Version: config.Version,
 	}, &mcp.ServerOptions{
-		Instructions: serveInstructions,
-		Logger:       logger,
+		Logger: logger,
 	})
 
 	server := &Server{
