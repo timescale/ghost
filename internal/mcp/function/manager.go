@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -49,8 +50,8 @@ func NewManager(app *common.App, server *mcp.Server, logger *slog.Logger) *Manag
 		app:       app,
 		server:    server,
 		logger:    logger,
-		services:  make(map[string]*service),
-		toolNames: make(map[string]string),
+		services:  map[string]*service{},
+		toolNames: map[string]string{},
 	}
 }
 
@@ -160,13 +161,16 @@ func (m *Manager) Refresh(ctx context.Context, databaseRef string) ([]string, er
 		return nil, err
 	}
 
-	tools, err := Introspect(ctx, m.logger.With(slog.String("database", svc.database.Name)), svc.pool)
+	logger := m.logger.With(
+		slog.String("database", svc.database.Name),
+	)
+	tools, err := Introspect(ctx, logger, svc.pool)
 	if err != nil {
 		return nil, err
 	}
 
 	m.swapServiceTools(svc, tools)
-	return append([]string(nil), svc.toolNames...), nil
+	return slices.Clone(svc.toolNames), nil
 }
 
 // IsFunctionTool reports whether name is a currently-registered generated
@@ -187,7 +191,7 @@ func (m *Manager) Close() {
 	for _, svc := range m.services {
 		svc.pool.Close()
 	}
-	m.services = make(map[string]*service)
+	clear(m.services)
 }
 
 // buildService connects to the database and introspects its @mcp functions.
@@ -299,7 +303,7 @@ func (m *Manager) registerServiceTools(svc *service) {
 			continue
 		}
 
-		def, handler := BuildTool(toolName, tool, svc.pool)
+		def, handler := buildMCPTool(toolName, tool, svc.pool)
 		m.server.AddTool(def, handler)
 		m.toolNames[toolName] = svc.database.Id
 		svc.toolNames = append(svc.toolNames, toolName)

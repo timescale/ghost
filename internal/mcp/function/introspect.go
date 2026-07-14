@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -233,13 +234,9 @@ func buildTool(ctx context.Context, resolver *typeResolver, row functionRow) (To
 		return Tool{}, err
 	}
 
-	named := true
-	for _, p := range params {
-		if p.ArgName == "" {
-			named = false
-			break
-		}
-	}
+	named := !slices.ContainsFunc(params, func(p Param) bool {
+		return p.ArgName == ""
+	})
 
 	tool := Tool{
 		Schema:      row.SchemaName,

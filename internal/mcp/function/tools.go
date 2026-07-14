@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -15,11 +16,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// BuildTool constructs the MCP tool definition and handler for a single
+// buildMCPTool constructs the MCP tool definition and handler for a single
 // @mcp function. toolName is the full (database-prefixed) tool name; the
 // tool's schemas and annotations come from the function's introspected
 // metadata, and the handler calls the function through pool.
-func BuildTool(toolName string, tool Tool, pool *pgxpool.Pool) (*mcp.Tool, mcp.ToolHandler) {
+func buildMCPTool(toolName string, tool Tool, pool *pgxpool.Pool) (*mcp.Tool, mcp.ToolHandler) {
 	def := &mcp.Tool{
 		Name:         toolName,
 		Description:  tool.Description,
@@ -64,7 +65,7 @@ func toolAnnotations(tool Tool) *mcp.ToolAnnotations {
 // admits null in addition to its base type, since PostgreSQL function
 // arguments can always be passed NULL explicitly.
 func buildInputSchema(tool Tool) *jsonschema.Schema {
-	properties := make(map[string]*jsonschema.Schema)
+	properties := map[string]*jsonschema.Schema{}
 	var required []string
 
 	for _, param := range tool.Params {
@@ -98,7 +99,7 @@ func buildOutputSchema(tool Tool) *jsonschema.Schema {
 		}
 	}
 
-	properties := make(map[string]*jsonschema.Schema)
+	properties := map[string]*jsonschema.Schema{}
 	for _, col := range tool.Columns {
 		properties[col.Name] = allowNull(typeSchema(col.Type))
 	}
@@ -442,7 +443,7 @@ func executeExec(ctx context.Context, pool *pgxpool.Pool, sql string, args []any
 }
 
 func executeOne(ctx context.Context, pool *pgxpool.Pool, sql string, types []reflect.Type, args []any) *mcp.CallToolResult {
-	rows, err := pool.Query(ctx, sql, append([]any{textResults}, args...)...)
+	rows, err := pool.Query(ctx, sql, slices.Concat([]any{textResults}, args)...)
 	if err != nil {
 		return errorResult("call failed: %v", err)
 	}
@@ -473,7 +474,7 @@ func executeOne(ctx context.Context, pool *pgxpool.Pool, sql string, types []ref
 }
 
 func executeMany(ctx context.Context, pool *pgxpool.Pool, sql string, types []reflect.Type, args []any) *mcp.CallToolResult {
-	rows, err := pool.Query(ctx, sql, append([]any{textResults}, args...)...)
+	rows, err := pool.Query(ctx, sql, slices.Concat([]any{textResults}, args)...)
 	if err != nil {
 		return errorResult("call failed: %v", err)
 	}

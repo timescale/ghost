@@ -19,7 +19,7 @@ type typeResolver struct {
 func newTypeResolver(pool *pgxpool.Pool) *typeResolver {
 	return &typeResolver{
 		pool:  pool,
-		cache: make(map[int64]TypeInfo),
+		cache: map[int64]TypeInfo{},
 	}
 }
 
