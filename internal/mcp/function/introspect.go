@@ -355,6 +355,17 @@ func isNullDefault(def string) bool {
 // arguments) in declaration order, and validates that every argument mode
 // is supported.
 func inputParams(resolver *typeResolver, row functionRow) ([]Param, error) {
+	// An unnamed argument falls back to a param_<N> name; skip any N already
+	// taken by a real, explicitly-named argument (e.g. a second argument
+	// named "param_1") so the fallback can never collide with it.
+	usedNames := make(map[string]bool, len(row.ArgTypes))
+	for i := range row.ArgTypes {
+		if name := argName(row, i); name != "" {
+			usedNames[name] = true
+		}
+	}
+	nextFallback := 1
+
 	var params []Param
 
 	for i, typeOID := range row.ArgTypes {
@@ -376,7 +387,15 @@ func inputParams(resolver *typeResolver, row functionRow) ([]Param, error) {
 		name := argName(row, i)
 		paramName := name
 		if paramName == "" {
-			paramName = fmt.Sprintf("param_%d", len(params)+1)
+			for {
+				candidate := fmt.Sprintf("param_%d", nextFallback)
+				nextFallback++
+				if !usedNames[candidate] {
+					paramName = candidate
+					usedNames[candidate] = true
+					break
+				}
+			}
 		}
 		def, hasDefault := argDefault(row, i)
 		params = append(params, Param{

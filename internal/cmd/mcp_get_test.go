@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"net/http"
 	"testing"
+
+	"github.com/timescale/ghost/internal/api"
+	"github.com/timescale/ghost/internal/api/mock"
 )
 
 func TestMCPGetCmd(t *testing.T) {
@@ -195,6 +199,22 @@ title: List Databases
 		{
 			name:       "show alias",
 			args:       []string{"mcp", "show", "ghost_list"},
+			wantStdout: ghostListText,
+		},
+		{
+			// --function-tools connects to and introspects every database in
+			// the space; with none defined, ghost_list's own capability
+			// details are unaffected.
+			name: "function-tools flag with no databases",
+			args: []string{"mcp", "get", "ghost_list", "--function-tools"},
+			opts: []runOption{withEnv("GHOST_EXPERIMENTAL", "true")},
+			setup: func(m *mock.MockClientWithResponsesInterface) {
+				m.EXPECT().ListDatabasesWithResponse(validCtx, "test-project").
+					Return(&api.ListDatabasesResponse{
+						HTTPResponse: httpResponse(http.StatusOK),
+						JSON200:      &[]api.DatabaseWithUsage{},
+					}, nil)
+			},
 			wantStdout: ghostListText,
 		},
 	}

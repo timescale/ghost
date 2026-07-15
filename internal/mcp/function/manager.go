@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-	"strings"
 	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -143,10 +142,17 @@ func (m *Manager) Load(ctx context.Context, databaseRef string) ([]string, error
 		return nil, err
 	}
 
-	database, err := fetchDatabase(ctx, client, projectID, databaseRef)
+	resp, err := client.GetDatabaseWithResponse(ctx, projectID, databaseRef)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
+	if resp.StatusCode() != http.StatusOK {
+		return nil, common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
+	}
+	if resp.JSON200 == nil {
+		return nil, errors.New("empty response from API")
+	}
+	database := *resp.JSON200
 
 	svc, ok := m.services[database.Id]
 	if ok {
@@ -164,10 +170,7 @@ func (m *Manager) Load(ctx context.Context, databaseRef string) ([]string, error
 
 		var prefix string
 		if m.prefixTools {
-			prefix, err = m.databasePrefix(ctx, client, projectID, database.Id)
-			if err != nil {
-				return nil, err
-			}
+			prefix = m.assignPrefix(database)
 		}
 
 		svc, err = m.buildService(ctx, database, prefix)
@@ -265,10 +268,11 @@ func (m *Manager) buildService(ctx context.Context, database api.Database, prefi
 }
 
 // registerServiceTools registers the tools described by the service's
-// current introspection, prefixing each function name with the service's
-// tool prefix (empty in the consumer serving mode, which registers bare
-// function names). A name that can't form a legal tool name, or that is
-// already taken by another service's tool, is skipped with a warning.
+// current introspection. Each function name is qualified with its own
+// Postgres schema (unless "public") and then the service's database prefix
+// (empty in the consumer serving mode, which registers bare function/schema
+// names). A name that can't form a legal tool name, or that is already
+// taken by another service's tool, is skipped with a warning.
 //
 // Callers must hold m.mu.
 func (m *Manager) registerServiceTools(svc *service) {
@@ -280,9 +284,22 @@ func (m *Manager) registerServiceTools(svc *service) {
 			)
 			continue
 		}
-		toolName := tool.Name
+
+		name := tool.Name
+		if tool.Schema != "public" {
+			if !toolNamePattern.MatchString(tool.Schema) {
+				m.logger.Warn("Skipping @mcp function whose schema cannot form a tool name",
+					slog.String("function", tool.Schema+"."+tool.Name),
+					slog.String("database", svc.database.Name),
+				)
+				continue
+			}
+			name = tool.Schema + "_" + name
+		}
+
+		toolName := name
 		if svc.prefix != "" {
-			toolName = svc.prefix + "_" + tool.Name
+			toolName = svc.prefix + "_" + name
 		}
 		if _, taken := m.toolNames[toolName]; taken {
 			m.logger.Warn("Skipping function tool with duplicate name",
@@ -292,7 +309,15 @@ func (m *Manager) registerServiceTools(svc *service) {
 			continue
 		}
 
-		def, handler := buildMCPTool(toolName, tool, svc.pool)
+		def, handler, err := buildMCPTool(toolName, tool, svc.pool)
+		if err != nil {
+			m.logger.Warn("Skipping @mcp function whose tool definition could not be built",
+				slog.String("function", tool.Schema+"."+tool.Name),
+				slog.String("database", svc.database.Name),
+				slog.Any("error", err),
+			)
+			continue
+		}
 		m.server.AddTool(def, handler)
 		m.toolNames[toolName] = svc.database.Id
 		svc.toolNames = append(svc.toolNames, toolName)
@@ -322,66 +347,50 @@ func (m *Manager) swapServiceTools(svc *service, tools []Tool) {
 	m.registerServiceTools(svc)
 }
 
-// computePrefixes assigns each database a unique tool-name prefix derived
-// from its snake_cased name. Database names are unique within a space, so two
-// databases can only produce the same prefix when their names differ solely
-// by case or separator style; when that happens, the first database in the
-// list keeps the plain prefix and each later one is disambiguated with a
-// short suffix derived from its ID, with a warning logged. Prefixes that
-// would land in the built-in ghost_* tool namespace are disambiguated the
-// same way.
+// computePrefixes assigns each database in a startup snapshot a unique
+// tool-name prefix, comparing every database against the same one-time
+// listing. See assignPrefix for prefix assignment outside that snapshot
+// (e.g. a database registered after startup), which must not rely on a
+// second listing being ordered the same way as the first.
 func (m *Manager) computePrefixes(databases []api.Database) map[string]string {
 	taken := make(map[string]bool, len(databases))
 	prefixes := make(map[string]string, len(databases))
 
 	for _, database := range databases {
-		prefix := toolPrefix(database.Name)
-		if taken[prefix] || prefix == "ghost" || strings.HasPrefix(prefix, "ghost_") {
-			disambiguated := disambiguatePrefix(prefix, database.Id, taken)
-			m.logger.Warn("Database name produces a conflicting tool prefix; disambiguating with ID suffix",
-				slog.String("database", database.Name),
-				slog.String("prefix", disambiguated),
-			)
-			prefix = disambiguated
-		}
-		taken[prefix] = true
-		prefixes[database.Id] = prefix
+		prefixes[database.Id] = m.assignPrefixFrom(database, taken)
 	}
 
 	return prefixes
 }
 
-// databasePrefix computes the tool prefix for a single database against the
-// full current database list, so a database targeted directly (serve mode or
-// a refresh of a database that wasn't registered at startup) gets the same
-// prefix LoadAll would have assigned it.
-func (m *Manager) databasePrefix(ctx context.Context, client api.ClientWithResponsesInterface, projectID, databaseID string) (string, error) {
-	databases, err := listDatabases(ctx, client, projectID)
-	if err != nil {
-		return "", err
+// assignPrefix computes the tool prefix for a database that's being
+// registered outside the startup snapshot (a refresh, or the consumer
+// serving mode's initial load). Unlike the startup snapshot, this doesn't
+// re-list every database in the space: the prefixes already assigned to
+// live services (the only ones that can actually collide) are the source of
+// truth.
+//
+// Callers must hold m.mu.
+func (m *Manager) assignPrefix(database api.Database) string {
+	taken := make(map[string]bool, len(m.services))
+	for _, svc := range m.services {
+		taken[svc.prefix] = true
 	}
-	prefixes := m.computePrefixes(databases)
-	prefix, ok := prefixes[databaseID]
-	if !ok {
-		return "", fmt.Errorf("database %q not found in space", databaseID)
-	}
-	return prefix, nil
+	return m.assignPrefixFrom(database, taken)
 }
 
-// fetchDatabase retrieves the database details from the API by ref (name or
-// ID).
-func fetchDatabase(ctx context.Context, client api.ClientWithResponsesInterface, projectID, databaseRef string) (api.Database, error) {
-	resp, err := client.GetDatabaseWithResponse(ctx, projectID, databaseRef)
-	if err != nil {
-		return api.Database{}, fmt.Errorf("failed to get database: %w", err)
+// assignPrefixFrom computes database's tool prefix given the prefixes
+// already taken by other databases, logging when disambiguation was
+// necessary. See nextPrefix for the disambiguation rules.
+func (m *Manager) assignPrefixFrom(database api.Database, taken map[string]bool) string {
+	prefix := nextPrefix(database.Name, database.Id, taken)
+	if prefix != toolPrefix(database.Name) {
+		m.logger.Warn("Database name produces a conflicting tool prefix; disambiguating with ID suffix",
+			slog.String("database", database.Name),
+			slog.String("prefix", prefix),
+		)
 	}
-	if resp.StatusCode() != http.StatusOK {
-		return api.Database{}, common.ExitWithErrorFromStatusCode(resp.StatusCode(), resp.JSONDefault)
-	}
-	if resp.JSON200 == nil {
-		return api.Database{}, errors.New("empty response from API")
-	}
-	return *resp.JSON200, nil
+	return prefix
 }
 
 // listDatabases retrieves every database in the space.

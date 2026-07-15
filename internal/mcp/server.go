@@ -38,44 +38,48 @@ type Server struct {
 	functionManager *function.Manager
 }
 
+// FunctionToolsMode selects how much of the generated function-tool feature
+// (see internal/mcp/function) a [Server] turns on. This package has no
+// knowledge of GHOST_EXPERIMENTAL: gating the feature on it is entirely the
+// caller's responsibility (internal/cmd), which just picks the mode.
+//
+// This only covers the regular (authoring) server; the stripped consumer
+// serving mode is a wholly separate constructor, [NewFunctionToolsServer].
+type FunctionToolsMode int
+
+const (
+	// FunctionToolsDisabled turns the feature off entirely: no Manager, no
+	// ghost_mcp_tool_refresh tool, no generated tools.
+	FunctionToolsDisabled FunctionToolsMode = iota
+	// FunctionToolsManagementOnly registers the function-tool Manager and
+	// the ghost_mcp_tool_refresh management tool, without connecting to any
+	// database or registering any generated tools. Used by callers that
+	// only enumerate capabilities (`ghost mcp list`/`get`, shell
+	// completion), which must not connect to any databases, so their
+	// listings stay accurate when the feature is enabled.
+	FunctionToolsManagementOnly
+	// FunctionToolsEnabled additionally introspects and registers the
+	// generated function tools of every database in the space at
+	// construction. Set by `ghost mcp start` (without --serve).
+	FunctionToolsEnabled
+)
+
 // Options configures optional [Server] behavior.
 type Options struct {
+	// Logger receives the server's structured log output. Nil discards it.
+	Logger *slog.Logger
 	// Local indicates the server is running in local (stdio) mode, where it can
 	// open a browser on the user's machine. Enables the visualize/chart/
 	// ui_state tools backed by an in-process web UI.
 	Local bool
-	// ServeFunctionTools, when set to a database name or ID, puts the server
-	// in the stripped consumer serving mode: it exposes only that database's
-	// generated function tools — no management tools and no other Ghost
-	// tools. This is the artifact you hand to someone as an API. Reached via
-	// the (experimental) --serve flag on `ghost mcp start`.
-	ServeFunctionTools string
-	// FunctionTools enables introspecting and registering the generated
-	// function tools of every database in the space at construction. Set by
-	// `ghost mcp start` and left unset by callers that only enumerate
-	// capabilities (`ghost mcp list`/`get`), which must not connect to any
-	// databases.
-	//
-	// The feature is experimental: without GHOST_EXPERIMENTAL this option is
-	// a no-op, and the ghost_mcp_tool_refresh management tool is not
-	// registered either. (In experimental mode the refresh tool is
-	// registered even when this option is unset, so capability listings stay
-	// accurate.)
-	FunctionTools bool
+	// FunctionTools selects the function-tool feature's mode; see
+	// [FunctionToolsMode].
+	FunctionTools FunctionToolsMode
 }
 
-// NewServer creates a new Ghost MCP server instance
-func NewServer(ctx context.Context, app *common.App, logger *slog.Logger) (*Server, error) {
-	return NewServerWithOptions(ctx, app, logger, Options{})
-}
-
-// NewServerWithOptions creates a new Ghost MCP server instance with the given
-// [Options].
-func NewServerWithOptions(ctx context.Context, app *common.App, logger *slog.Logger, opts Options) (*Server, error) {
-	logger = ensureLogger(logger)
-	if opts.ServeFunctionTools != "" {
-		return newFunctionToolsServer(ctx, app, logger, opts.ServeFunctionTools)
-	}
+// NewServer creates a new Ghost MCP server instance with the given [Options].
+func NewServer(ctx context.Context, app *common.App, opts Options) (*Server, error) {
+	logger := ensureLogger(opts.Logger)
 	instructions := "Ghost provides tools for creating, managing, and querying fully-managed PostgreSQL databases. " +
 		"Use it to provision new databases, fork existing ones for isolation and testing migrations, share database copies with other users, pause and resume instances, execute SQL queries, inspect schemas, and manage credentials. " +
 		"It also provides access to PostgreSQL, TimescaleDB, and PostGIS documentation through semantic and keyword search, " +
@@ -128,7 +132,7 @@ func NewServerWithOptions(ctx context.Context, app *common.App, logger *slog.Log
 	}
 
 	// Register all tools (including proxied docs tools)
-	server.registerTools(ctx, opts.FunctionTools)
+	server.registerTools(ctx, opts)
 
 	// Add analytics tracking middleware
 	server.mcpServer.AddReceivingMiddleware(server.analyticsMiddleware)
@@ -157,10 +161,9 @@ func (s *Server) HTTPHandler() http.Handler {
 	})
 }
 
-// registerTools registers all available MCP tools. functionTools
-// additionally introspects and registers the generated function tools (see
-// Options.FunctionTools).
-func (s *Server) registerTools(ctx context.Context, functionTools bool) {
+// registerTools registers all available MCP tools, per opts.FunctionTools
+// (see [FunctionToolsMode]).
+func (s *Server) registerTools(ctx context.Context, opts Options) {
 	// Register remote docs MCP server proxy
 	s.registerDocsProxy(ctx)
 
@@ -199,9 +202,9 @@ func (s *Server) registerTools(ctx context.Context, functionTools bool) {
 	}
 
 	// Register the function-tool management tools and, when requested, the
-	// generated function tools themselves (experimental).
-	if s.app.Experimental {
-		s.registerFunctionTools(ctx, functionTools)
+	// generated function tools themselves.
+	if opts.FunctionTools != FunctionToolsDisabled {
+		s.registerFunctionTools(ctx, opts.FunctionTools == FunctionToolsEnabled)
 	}
 }
 

@@ -9,14 +9,17 @@ import (
 // snake_cased database name to avoid collisions between services — a
 // function named `whatever` on a database named "My DB" becomes the tool
 // `my_db_whatever`. (The consumer serving mode exposes a single database's
-// tools and nothing else, so it skips the prefix.) Some normalization of the
-// database name is unavoidable: model APIs restrict tool names to
-// [a-zA-Z0-9_-], so spaces and other characters can't survive into the tool
-// name.
+// tools and nothing else, so it skips the prefix.) A function's own schema
+// becomes part of the name too, unless it's "public", so two @mcp functions
+// of the same name in different schemas of one database don't collide. Some
+// normalization of the database name is unavoidable: model APIs restrict
+// tool names to [a-zA-Z0-9_-], so spaces and other characters can't survive
+// into the tool name.
 
-// toolNamePattern restricts function names to the characters model APIs
-// accept in tool names. A quoted Postgres identifier can contain anything,
-// so @mcp functions whose names don't fit are skipped with a warning.
+// toolNamePattern restricts function and schema names to the characters
+// model APIs accept in tool names. A quoted Postgres identifier can contain
+// anything, so an @mcp function (or its schema) that doesn't fit is skipped
+// with a warning.
 var toolNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // toolPrefix normalizes a database name into a tool-name prefix: lowercased,
@@ -55,4 +58,25 @@ func disambiguatePrefix(prefix, databaseID string, taken map[string]bool) string
 		}
 	}
 	return prefix + "_" + id
+}
+
+// nextPrefix computes the tool-name prefix for a database, given the
+// prefixes already taken by other databases — which it updates, so
+// repeated calls over a database list assign every one a unique prefix.
+// Database names are unique within a space, so a collision only arises
+// when two names differ solely by case or separator style once normalized
+// by toolPrefix. A prefix landing in the built-in ghost_* tool namespace is
+// treated as a collision too, but can't be disambiguated by appending a
+// suffix (the result would still start with "ghost_"), so it's rewritten
+// outright first.
+func nextPrefix(name, databaseID string, taken map[string]bool) string {
+	prefix := toolPrefix(name)
+	if prefix == "ghost" || strings.HasPrefix(prefix, "ghost_") {
+		prefix = "db_" + prefix
+	}
+	if taken[prefix] {
+		prefix = disambiguatePrefix(prefix, databaseID, taken)
+	}
+	taken[prefix] = true
+	return prefix
 }

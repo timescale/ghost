@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"net/http"
 	"testing"
+
+	"github.com/timescale/ghost/internal/api"
+	"github.com/timescale/ghost/internal/api/mock"
 )
 
 func TestMCPListCmd(t *testing.T) {
@@ -70,6 +74,23 @@ func TestMCPListCmd(t *testing.T) {
 			name: "yaml output",
 			args: []string{"mcp", "list", "--yaml"},
 			opts: []runOption{experimental},
+		},
+		{
+			// --function-tools connects to and lists every database in the
+			// space; with none defined, the tool list is unchanged from the
+			// default (ghost_mcp_tool_refresh is already registered either
+			// way).
+			name: "function-tools flag with no databases",
+			args: []string{"mcp", "list", "--function-tools"},
+			opts: []runOption{experimental},
+			setup: func(m *mock.MockClientWithResponsesInterface) {
+				m.EXPECT().ListDatabasesWithResponse(validCtx, "test-project").
+					Return(&api.ListDatabasesResponse{
+						HTTPResponse: httpResponse(http.StatusOK),
+						JSON200:      &[]api.DatabaseWithUsage{},
+					}, nil)
+			},
+			wantStdout: wantText,
 		},
 	}
 

@@ -14,16 +14,16 @@ import (
 
 // Generated function tools: every Ghost database can define a curated set of
 // MCP tools by marking Postgres functions with an @mcp comment (see
-// internal/mcp/function). The authoring server registers the generated tools
-// of every database in the space alongside the ghost_mcp_tool_refresh
-// management tool; the stripped serving mode (Options.ServeFunctionTools)
-// exposes only one database's generated tools.
+// internal/mcp/function). The authoring server (NewServer) registers the
+// generated tools of every database in the space alongside the
+// ghost_mcp_tool_refresh management tool; the stripped serving mode
+// (NewFunctionToolsServer) exposes only one database's generated tools.
 
 // functionToolsInstructions augments the authoring server's instructions
 // when the function-tool feature is enabled.
 const functionToolsInstructions = `
 
-Custom function tools: each database can expose its own curated MCP tools, defined by marking Postgres functions with an @mcp comment (the first line of the COMMENT ON FUNCTION text is '@mcp'; the remaining lines become the tool's description). A function tool calls one function — its inputs are the function's arguments and its output is the returned row(s). Tool schemas are introspected from the database catalog, so they reflect the real argument and result types, and tools are named with the snake_cased database name as a prefix (a function 'whatever' on database "My DB" becomes the tool 'my_db_whatever'). To add a capability, create the function and comment with ghost_sql, then call ghost_mcp_tool_refresh to pick up the change immediately.
+Custom function tools: each database can expose its own curated MCP tools, defined by marking Postgres functions with an @mcp comment (the first line of the COMMENT ON FUNCTION text is '@mcp'; the remaining lines become the tool's description). A function tool calls one function — its inputs are the function's arguments and its output is the returned row(s). Tool schemas are introspected from the database catalog, so they reflect the real argument and result types, and tools are named with the snake_cased database name as a prefix (a function 'whatever' in the public schema of database "My DB" becomes the tool 'my_db_whatever'); a non-public schema is folded in too (my_db_reporting_whatever). To add a capability, create the function and comment with ghost_sql, then call ghost_mcp_tool_refresh to pick up the change immediately.
 
 Authoring rules for @mcp functions:
 - Arguments with a DEFAULT are optional in the tool's input schema. All arguments reject null unless declared DEFAULT NULL, which makes an argument both optional and nullable.
@@ -50,12 +50,15 @@ func (s *Server) registerFunctionTools(ctx context.Context, buildAll bool) {
 	}
 }
 
-// newFunctionToolsServer creates a Server in the stripped consumer serving
-// mode: it exposes only the given database's generated function tools — no
-// management tools and no other Ghost tools. Unlike the authoring server, a
-// database that can't be introspected is a fatal startup error, since its
-// function tools are the entire tool surface being served.
-func newFunctionToolsServer(ctx context.Context, app *common.App, logger *slog.Logger, databaseRef string) (*Server, error) {
+// NewFunctionToolsServer creates a Server in the stripped consumer serving mode:
+// it exposes only the given database's generated function tools — no
+// management tools and no other Ghost tools. This is the artifact you hand
+// to someone as an API. Reached via `ghost mcp start --serve`. Unlike
+// NewServer, a database that can't be introspected is a fatal startup error,
+// since its function tools are the entire tool surface being served.
+func NewFunctionToolsServer(ctx context.Context, app *common.App, logger *slog.Logger, databaseRef string) (*Server, error) {
+	logger = ensureLogger(logger)
+
 	// The serving mode deliberately sends no server instructions: how the
 	// tools are implemented is irrelevant to a consumer, and the useful
 	// content — what this particular tool surface is for — is something only

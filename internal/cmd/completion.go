@@ -239,8 +239,18 @@ func mcpCapabilityCompletion(app *common.App) cobra.CompletionFunc {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 
-		// Create MCP server to get capabilities
-		server, err := mcp.NewServer(cmd.Context(), app, nil)
+		// Create MCP server to get capabilities. The function-tool mode is
+		// gated on GHOST_EXPERIMENTAL here rather than inside the mcp
+		// package, so completions include function-tool capabilities
+		// whenever the feature is enabled, without connecting to any
+		// databases.
+		functionTools := mcp.FunctionToolsDisabled
+		if app.Experimental {
+			functionTools = mcp.FunctionToolsManagementOnly
+		}
+		server, err := mcp.NewServer(cmd.Context(), app, mcp.Options{
+			FunctionTools: functionTools,
+		})
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}

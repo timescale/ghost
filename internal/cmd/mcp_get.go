@@ -19,6 +19,7 @@ import (
 func buildMCPGetCmd(app *common.App) *cobra.Command {
 	var jsonOutput bool
 	var yamlOutput bool
+	var includeFunctionTools bool
 
 	cmd := &cobra.Command{
 		Use:     "get <name>",
@@ -42,8 +43,14 @@ func buildMCPGetCmd(app *common.App) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			capabilityName := args[0]
 
-			// Create MCP server
-			server, err := mcp.NewServer(cmd.Context(), app, nil)
+			// Create MCP server. The function-tool mode is gated on
+			// GHOST_EXPERIMENTAL here rather than inside the mcp package, so
+			// the refresh management tool shows up in the listing whenever
+			// the feature is enabled, without connecting to any databases
+			// unless --function-tools was passed too.
+			server, err := mcp.NewServer(cmd.Context(), app, mcp.Options{
+				FunctionTools: functionToolsMode(app, includeFunctionTools),
+			})
 			if err != nil {
 				return fmt.Errorf("failed to create MCP server: %w", err)
 			}
@@ -92,6 +99,7 @@ func buildMCPGetCmd(app *common.App) *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	cmd.Flags().BoolVar(&yamlOutput, "yaml", false, "Output in YAML format")
 	cmd.MarkFlagsMutuallyExclusive("json", "yaml")
+	addFunctionToolsFlag(cmd, app, &includeFunctionTools)
 
 	return cmd
 }

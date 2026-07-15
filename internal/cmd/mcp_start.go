@@ -128,15 +128,29 @@ func buildMCPHTTPCmd(app *common.App, serveRef *string) *cobra.Command {
 // startStdioServer starts the MCP server with stdio transport
 func startStdioServer(cmd *cobra.Command, app *common.App, serveRef string) error {
 	ctx := cmd.Context()
-	// Create MCP server. Local (stdio) mode enables the browser-backed
-	// visualization tools, since we can open a browser on the user's machine.
-	// The Local option is not set in the function-tool serving mode, which
-	// exposes only the generated function tools.
-	server, err := mcp.NewServerWithOptions(ctx, app, log.New(cmd.ErrOrStderr()), mcp.Options{
-		Local:              serveRef == "",
-		ServeFunctionTools: serveRef,
-		FunctionTools:      true,
-	})
+	logger := log.New(cmd.ErrOrStderr())
+
+	// serveRef (only ever non-empty when app.Experimental — see
+	// addServeFlag) puts the server in the stripped consumer serving mode:
+	// only that database's generated function tools, no other Ghost tools.
+	// Local is unconditional: it's irrelevant in serving mode (no browser-
+	// backed tools are registered there regardless), and stdio is always a
+	// local, single-user session otherwise.
+	var server *mcp.Server
+	var err error
+	if serveRef != "" {
+		server, err = mcp.NewFunctionToolsServer(ctx, app, logger, serveRef)
+	} else {
+		functionTools := mcp.FunctionToolsDisabled
+		if app.Experimental {
+			functionTools = mcp.FunctionToolsEnabled
+		}
+		server, err = mcp.NewServer(ctx, app, mcp.Options{
+			Logger:        logger,
+			Local:         true,
+			FunctionTools: functionTools,
+		})
+	}
 	if err != nil {
 		return fmt.Errorf("failed to create MCP server: %w", err)
 	}
@@ -159,11 +173,23 @@ func startHTTPServer(cmd *cobra.Command, app *common.App, host string, port int,
 	ctx := cmd.Context()
 	logger := log.New(cmd.ErrOrStderr())
 
-	// Create MCP server
-	server, err := mcp.NewServerWithOptions(ctx, app, logger, mcp.Options{
-		ServeFunctionTools: serveRef,
-		FunctionTools:      true,
-	})
+	// serveRef (only ever non-empty when app.Experimental — see
+	// addServeFlag) puts the server in the stripped consumer serving mode:
+	// only that database's generated function tools, no other Ghost tools.
+	var server *mcp.Server
+	var err error
+	if serveRef != "" {
+		server, err = mcp.NewFunctionToolsServer(ctx, app, logger, serveRef)
+	} else {
+		functionTools := mcp.FunctionToolsDisabled
+		if app.Experimental {
+			functionTools = mcp.FunctionToolsEnabled
+		}
+		server, err = mcp.NewServer(ctx, app, mcp.Options{
+			Logger:        logger,
+			FunctionTools: functionTools,
+		})
+	}
 	if err != nil {
 		logger.Error("failed to create MCP server", slog.String("error", err.Error()))
 		return fmt.Errorf("failed to create MCP server: %w", err)

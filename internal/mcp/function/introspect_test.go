@@ -92,6 +92,36 @@ func TestIsNullDefault(t *testing.T) {
 	}
 }
 
+func TestInputParamsFallbackNameAvoidsCollision(t *testing.T) {
+	// f(integer, param_1 integer): the first argument is unnamed, so it
+	// would naively fall back to "param_1" — colliding with the second
+	// argument's own explicit name.
+	resolver := &typeResolver{types: map[int64]typeRow{
+		23: {OID: 23, Name: "integer", TypeType: "b"},
+	}}
+	row := functionRow{
+		ArgTypes: []int64{23, 23},
+		ArgNames: []string{"", "param_1"},
+	}
+
+	params, err := inputParams(resolver, row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(params) != 2 {
+		t.Fatalf("len(params) = %d, want 2", len(params))
+	}
+	if params[0].Name == params[1].Name {
+		t.Fatalf("both params got the name %q: fallback name collided with the explicit argument name", params[0].Name)
+	}
+	if params[1].Name != "param_1" {
+		t.Errorf(`params[1].Name = %q, want "param_1" (the function's own explicit name)`, params[1].Name)
+	}
+	if params[0].Name != "param_2" {
+		t.Errorf(`params[0].Name = %q, want "param_2" (the next available fallback)`, params[0].Name)
+	}
+}
+
 func TestBuildCall(t *testing.T) {
 	tool := Tool{
 		Schema: "public",

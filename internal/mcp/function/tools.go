@@ -19,14 +19,28 @@ import (
 )
 
 // buildMCPTool constructs the MCP tool definition and handler for a single
-// @mcp function. toolName is the full (database-prefixed) tool name; the
-// tool's schemas and annotations come from the function's introspected
-// metadata, and the handler calls the function through pool.
-func buildMCPTool(toolName string, tool Tool, pool *pgxpool.Pool) (*mcp.Tool, mcp.ToolHandler) {
+// @mcp function. toolName is the full (prefixed) tool name; the tool's
+// schemas and annotations come from the function's introspected metadata,
+// and the handler calls the function through pool.
+//
+// Tools are registered through the SDK's low-level Server.AddTool rather
+// than the generic AddTool[In, Out] (whose input/output types are known at
+// compile time), since a function tool's schema is only known once the
+// function has been introspected at runtime. That means the SDK's own
+// input-schema validation, which only runs for the generic path, never
+// applies here — so the handler resolves and validates against the input
+// schema itself, below.
+func buildMCPTool(toolName string, tool Tool, pool *pgxpool.Pool) (*mcp.Tool, mcp.ToolHandler, error) {
+	inputSchema := buildInputSchema(tool)
+	resolvedInput, err := inputSchema.Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to resolve input schema: %w", err)
+	}
+
 	def := &mcp.Tool{
 		Name:         toolName,
 		Description:  tool.Description,
-		InputSchema:  buildInputSchema(tool),
+		InputSchema:  inputSchema,
 		OutputSchema: buildOutputSchema(tool),
 		Annotations:  toolAnnotations(tool),
 	}
@@ -36,17 +50,25 @@ func buildMCPTool(toolName string, tool Tool, pool *pgxpool.Pool) (*mcp.Tool, mc
 	types := scanTypes(tool.Columns)
 
 	handler := func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		var args map[string]any
+		args := map[string]any{}
 		if req.Params.Arguments != nil {
 			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 				return nil, fmt.Errorf("failed to parse arguments: %w", err)
 			}
 		}
 
+		// Enforces both argument types and the not-null rule declared by
+		// buildInputSchema; a client that doesn't validate its own calls
+		// against the tool's schema would otherwise reach buildCall with
+		// arbitrary or explicitly-null values.
+		if err := resolvedInput.Validate(args); err != nil {
+			return errorResult("invalid arguments: %v", err), nil
+		}
+
 		return handleToolCall(ctx, pool, tool, types, args), nil
 	}
 
-	return def, handler
+	return def, handler, nil
 }
 
 // toolAnnotations builds the annotation hints for a tool. Every tool
@@ -487,7 +509,9 @@ func executeMany(ctx context.Context, pool *pgxpool.Pool, sql string, types []re
 
 	fieldDescs := rows.FieldDescriptions()
 
-	var results []map[string]any
+	// Not nil even for zero rows: the output schema declares "results" as a
+	// required array, and a nil slice would marshal to null instead of [].
+	results := make([]map[string]any, 0)
 	for rows.Next() {
 		dests := scanDests(types)
 		if err := rows.Scan(dests...); err != nil {
