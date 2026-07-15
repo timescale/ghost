@@ -62,6 +62,16 @@ func TestParseMarkerComment(t *testing.T) {
 	}
 }
 
+func TestBuildToolRejectsNonFunctionKinds(t *testing.T) {
+	// The kind check runs before any type resolution, so no resolver is
+	// needed.
+	for _, kind := range []string{"p", "a", "w"} {
+		if _, err := buildTool(nil, functionRow{Kind: kind}); err == nil {
+			t.Errorf("buildTool(kind %q) succeeded, want error", kind)
+		}
+	}
+}
+
 func TestIsNullDefault(t *testing.T) {
 	tests := []struct {
 		def  string

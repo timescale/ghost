@@ -23,7 +23,13 @@ import (
 // when the function-tool feature is enabled.
 const functionToolsInstructions = `
 
-Custom function tools: each database can expose its own curated MCP tools, defined by marking Postgres functions with an @mcp comment (the first line of the COMMENT ON FUNCTION text is '@mcp'; the remaining lines become the tool's description). A function tool calls one function — its inputs are the function's arguments (arguments with defaults are optional; all arguments reject null unless declared DEFAULT NULL, which makes an argument optional and nullable) and its output is the returned row(s). Tool schemas are introspected from the database catalog, so they reflect the real argument and result types, and tools are named with the snake_cased database name as a prefix (a function 'whatever' on database "My DB" becomes the tool 'my_db_whatever'). To add a capability, create the function and comment with ghost_sql, then call ghost_mcp_tool_refresh to pick up the change immediately.`
+Custom function tools: each database can expose its own curated MCP tools, defined by marking Postgres functions with an @mcp comment (the first line of the COMMENT ON FUNCTION text is '@mcp'; the remaining lines become the tool's description). A function tool calls one function — its inputs are the function's arguments and its output is the returned row(s). Tool schemas are introspected from the database catalog, so they reflect the real argument and result types, and tools are named with the snake_cased database name as a prefix (a function 'whatever' on database "My DB" becomes the tool 'my_db_whatever'). To add a capability, create the function and comment with ghost_sql, then call ghost_mcp_tool_refresh to pick up the change immediately.
+
+Authoring rules for @mcp functions:
+- Arguments with a DEFAULT are optional in the tool's input schema. All arguments reject null unless declared DEFAULT NULL, which makes an argument both optional and nullable.
+- Declare read-only functions STABLE (or IMMUTABLE): the tool's read-only annotation comes from the function's volatility, and the default VOLATILE is treated as potentially writing.
+- The declared return type determines the output: RETURNS <scalar or composite> and OUT parameters yield a single row, RETURNS SETOF/TABLE yields a list of rows, and RETURNS void yields a success acknowledgment (have the function return a count or summary if the caller needs one).
+- Unsupported and skipped with a logged warning: overloaded @mcp function names, procedures (use a function returning void), VARIADIC or polymorphic arguments, nested array types, aggregate and window functions, and RETURNS record without OUT parameters.`
 
 // registerFunctionTools sets up the function-tool manager on the authoring
 // server and registers the refresh management tool. When buildAll is set it

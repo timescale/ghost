@@ -133,8 +133,10 @@ type retColumn struct {
 	Type int64  `json:"type"`
 }
 
-// functionsQuery selects every function or procedure whose comment starts
-// with the @mcp marker (the marker is re-validated precisely in Go).
+// functionsQuery selects every routine — plain functions, but also
+// procedures, aggregates, and window functions, so buildTool can reject the
+// unsupported kinds loudly — whose comment starts with the @mcp marker (the
+// marker is re-validated precisely in Go).
 // proargtypes is an oidvector, which has no direct array cast, so it is
 // round-tripped through its space-separated text form. proallargtypes is
 // only set when the function has OUT/INOUT/TABLE/VARIADIC arguments, and
@@ -183,8 +185,7 @@ JOIN pg_catalog.pg_description d
     ON d.objoid = p.oid
     AND d.classoid = 'pg_catalog.pg_proc'::regclass
     AND d.objsubid = 0
-WHERE p.prokind IN ('f', 'p')
-  AND d.description ~ '^\s*@mcp'
+WHERE d.description ~ '^\s*@mcp'
 ORDER BY n.nspname, p.proname`
 
 // Introspect reads every @mcp-marked function from the database catalog and
@@ -262,12 +263,20 @@ func Introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([
 
 // buildTool converts one catalog row into tool metadata.
 func buildTool(resolver *typeResolver, row functionRow) (Tool, error) {
-	// Procedures are deliberately not supported: a void-returning function
-	// covers the same ground, and each tool call runs as its own
-	// transaction anyway. They are still selected by functionsQuery so a
-	// marked procedure is skipped loudly rather than silently ignored.
-	if row.Kind == "p" {
+	// Only plain functions become tools. Procedures are deliberately not
+	// supported: a void-returning function covers the same ground, and each
+	// tool call runs as its own transaction anyway. Aggregates and window
+	// functions compute over rows the caller must supply in a query, which a
+	// standalone tool call has none of. All are still selected by
+	// functionsQuery so a marked routine is skipped loudly rather than
+	// silently ignored.
+	switch row.Kind {
+	case "p":
 		return Tool{}, fmt.Errorf("procedures are not supported; use a function returning void instead")
+	case "a":
+		return Tool{}, fmt.Errorf("aggregate functions are not supported")
+	case "w":
+		return Tool{}, fmt.Errorf("window functions are not supported")
 	}
 
 	params, err := inputParams(resolver, row)
