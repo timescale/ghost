@@ -63,15 +63,22 @@ func toolAnnotations(tool Tool) *mcp.ToolAnnotations {
 }
 
 // buildInputSchema builds the tool's input schema from the function's
-// arguments. Arguments without a DEFAULT are required. Every argument
-// admits null in addition to its base type, since PostgreSQL function
-// arguments can always be passed NULL explicitly.
+// arguments. Arguments without a DEFAULT are required and non-nullable:
+// PostgreSQL accepts an explicit NULL for any argument, but a function that
+// doesn't expect one typically misbehaves silently (a NULL comparison
+// matches nothing) rather than erroring, so the schema forbids null unless
+// the author opts in by declaring DEFAULT NULL — which marks the argument
+// both optional and explicitly nullable.
 func buildInputSchema(tool Tool) *jsonschema.Schema {
 	properties := map[string]*jsonschema.Schema{}
 	var required []string
 
 	for _, param := range tool.Params {
-		properties[param.Name] = allowNull(typeSchema(param.Type))
+		schema := typeSchema(param.Type)
+		if param.NullDefault {
+			schema = allowNull(schema)
+		}
+		properties[param.Name] = schema
 		if !param.HasDefault {
 			required = append(required, param.Name)
 		}

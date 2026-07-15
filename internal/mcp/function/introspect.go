@@ -64,7 +64,11 @@ type Param struct {
 	// HasDefault marks arguments with a DEFAULT, which are optional in the
 	// tool's input schema.
 	HasDefault bool
-	Type       TypeInfo
+	// NullDefault marks arguments whose DEFAULT is a bare NULL constant —
+	// the authoring convention for an argument that genuinely accepts null.
+	// Only these arguments admit null in the tool's input schema.
+	NullDefault bool
+	Type        TypeInfo
 }
 
 // Column is one result column of a tool's function.
@@ -111,10 +115,12 @@ type functionRow struct {
 	RetType     int64    `db:"rettype"`
 	RetTypeName string   `db:"rettype_name"`
 	RetTypeType string   `db:"rettype_type"`
-	NumDefaults int      `db:"num_defaults"`
 	ArgModes    []string `db:"arg_modes"` // nil when every argument is IN
 	ArgNames    []string `db:"arg_names"` // nil when no argument is named
 	ArgTypes    []int64  `db:"arg_types"`
+	// ArgDefaults holds each argument's deparsed DEFAULT expression, nil for
+	// arguments without one; the slice is aligned with ArgTypes.
+	ArgDefaults []*string `db:"arg_defaults"`
 	// RetColumns holds the attributes of a composite return type (a table
 	// row type or CREATE TYPE ... AS); nil for other return types.
 	RetColumns []retColumn `db:"ret_columns"`
@@ -132,7 +138,10 @@ type retColumn struct {
 // proargtypes is an oidvector, which has no direct array cast, so it is
 // round-tripped through its space-separated text form. proallargtypes is
 // only set when the function has OUT/INOUT/TABLE/VARIADIC arguments, and
-// then covers all arguments. For functions returning a composite type (a
+// then covers all arguments. Argument defaults are deparsed one by one with
+// pg_get_function_arg_default (which returns NULL for arguments without a
+// default), producing an array aligned with arg_types. For functions
+// returning a composite type (a
 // table row type or CREATE TYPE ... AS), the composite's attributes ride
 // along as JSON in ret_columns.
 const functionsQuery = `
@@ -146,13 +155,19 @@ SELECT
     p.prorettype::int8 AS rettype,
     pg_catalog.format_type(p.prorettype, NULL) AS rettype_name,
     rt.typtype::text AS rettype_type,
-    p.pronargdefaults AS num_defaults,
     p.proargmodes::text[] AS arg_modes,
     p.proargnames AS arg_names,
     COALESCE(
         p.proallargtypes::int8[],
         string_to_array(p.proargtypes::text, ' ')::int8[]
     ) AS arg_types,
+    (
+        SELECT array_agg(pg_catalog.pg_get_function_arg_default(p.oid, i) ORDER BY i)
+        FROM pg_catalog.generate_series(
+            1,
+            COALESCE(pg_catalog.array_length(p.proallargtypes, 1), p.pronargs::int4)
+        ) AS i
+    ) AS arg_defaults,
     (
         SELECT json_agg(
             json_build_object('name', a.attname, 'type', a.atttypid::int8)
@@ -310,6 +325,23 @@ func argName(row functionRow, i int) string {
 	return ""
 }
 
+// argDefault returns the deparsed DEFAULT expression of the function's i'th
+// argument, and whether it has one.
+func argDefault(row functionRow, i int) (string, bool) {
+	if i < len(row.ArgDefaults) && row.ArgDefaults[i] != nil {
+		return *row.ArgDefaults[i], true
+	}
+	return "", false
+}
+
+// isNullDefault reports whether a deparsed argument default is a bare NULL
+// constant, which pg_get_function_arg_default renders as NULL with an
+// optional type annotation ("NULL::integer"). Expressions that merely
+// evaluate to null (e.g. NULLIF(1, 1)) deliberately don't match.
+func isNullDefault(def string) bool {
+	return def == "NULL" || strings.HasPrefix(def, "NULL::")
+}
+
 // inputParams returns the function's input parameters (IN and INOUT
 // arguments) in declaration order, and validates that every argument mode
 // is supported.
@@ -337,18 +369,14 @@ func inputParams(resolver *typeResolver, row functionRow) ([]Param, error) {
 		if paramName == "" {
 			paramName = fmt.Sprintf("param_%d", len(params)+1)
 		}
+		def, hasDefault := argDefault(row, i)
 		params = append(params, Param{
-			Name:    paramName,
-			ArgName: name,
-			Type:    typ,
+			Name:        paramName,
+			ArgName:     name,
+			HasDefault:  hasDefault,
+			NullDefault: hasDefault && isNullDefault(def),
+			Type:        typ,
 		})
-	}
-
-	// Defaults always attach to the trailing input arguments.
-	for i := len(params) - row.NumDefaults; i < len(params); i++ {
-		if i >= 0 {
-			params[i].HasDefault = true
-		}
 	}
 
 	return params, nil

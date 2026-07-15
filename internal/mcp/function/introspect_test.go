@@ -62,6 +62,26 @@ func TestParseMarkerComment(t *testing.T) {
 	}
 }
 
+func TestIsNullDefault(t *testing.T) {
+	tests := []struct {
+		def  string
+		want bool
+	}{
+		{"NULL", true},
+		{"NULL::integer", true},
+		{"NULL::character varying", true},
+		{"5", false},
+		{"'NULL'::text", false},
+		{"NULLIF(1, 1)", false},
+		{"''::text", false},
+	}
+	for _, tt := range tests {
+		if got := isNullDefault(tt.def); got != tt.want {
+			t.Errorf("isNullDefault(%q) = %v, want %v", tt.def, got, tt.want)
+		}
+	}
+}
+
 func TestBuildCall(t *testing.T) {
 	tool := Tool{
 		Schema: "public",
