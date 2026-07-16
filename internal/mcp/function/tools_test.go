@@ -7,12 +7,12 @@ import (
 )
 
 func TestInputSchemaRejectsExplicitNullForRequiredArg(t *testing.T) {
-	tool := Tool{
-		Params: []Param{
-			{Name: "p_customer_id", ArgName: "p_customer_id", Type: TypeInfo{Name: "integer"}},
+	tl := tool{
+		Params: []param{
+			{Name: "p_customer_id", ArgName: "p_customer_id", Type: typeInfo{Name: "integer"}},
 		},
 	}
-	resolved, err := buildInputSchema(tool).Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
+	resolved, err := buildInputSchema(tl).Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,12 +32,12 @@ func TestInputSchemaRejectsExplicitNullForRequiredArg(t *testing.T) {
 }
 
 func TestInputSchemaAllowsNullDefault(t *testing.T) {
-	tool := Tool{
-		Params: []Param{
-			{Name: "p_segment", ArgName: "p_segment", HasDefault: true, NullDefault: true, Type: TypeInfo{Name: "text"}},
+	tl := tool{
+		Params: []param{
+			{Name: "p_segment", ArgName: "p_segment", HasDefault: true, NullDefault: true, Type: typeInfo{Name: "text"}},
 		},
 	}
-	resolved, err := buildInputSchema(tool).Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
+	resolved, err := buildInputSchema(tl).Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
 	if err != nil {
 		t.Fatal(err)
 	}

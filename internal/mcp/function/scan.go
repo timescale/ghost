@@ -56,7 +56,7 @@ var (
 // scanTypes returns the Go type each result column is scanned into, chosen
 // from the introspected column metadata - the same metadata the tool schemas
 // are built from, so values and schemas agree by construction.
-func scanTypes(cols []Column) []reflect.Type {
+func scanTypes(cols []column) []reflect.Type {
 	types := make([]reflect.Type, len(cols))
 	for i, col := range cols {
 		t := baseScanType(col.Type)
@@ -75,7 +75,7 @@ func scanTypes(cols []Column) []reflect.Type {
 // column's PostgreSQL type. Types without a specific entry - including
 // user-defined and unknown types - scan into strings, matching their
 // string-typed schema.
-func baseScanType(typ TypeInfo) reflect.Type {
+func baseScanType(typ typeInfo) reflect.Type {
 	switch typ.Name {
 	case "smallint", "int2", "smallserial", "serial2",
 		"integer", "int", "int4", "serial", "serial4",

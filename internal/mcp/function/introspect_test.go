@@ -123,20 +123,20 @@ func TestInputParamsFallbackNameAvoidsCollision(t *testing.T) {
 }
 
 func TestBuildCall(t *testing.T) {
-	tool := Tool{
-		Schema: "public",
-		Name:   "get_pending_invoices",
-		Mode:   ModeMany,
-		Named:  true,
-		Params: []Param{
-			{Name: "p_customer_id", ArgName: "p_customer_id", Type: TypeInfo{Name: "integer"}},
-			{Name: "p_limit", ArgName: "p_limit", HasDefault: true, Type: TypeInfo{Name: "integer"}},
-			{Name: "p_segment", ArgName: "p_segment", HasDefault: true, Type: TypeInfo{Name: "text"}},
+	tl := tool{
+		Schema:    "public",
+		Name:      "get_pending_invoices",
+		Mode:      modeMany,
+		NamedArgs: true,
+		Params: []param{
+			{Name: "p_customer_id", ArgName: "p_customer_id", Type: typeInfo{Name: "integer"}},
+			{Name: "p_limit", ArgName: "p_limit", HasDefault: true, Type: typeInfo{Name: "integer"}},
+			{Name: "p_segment", ArgName: "p_segment", HasDefault: true, Type: typeInfo{Name: "text"}},
 		},
 	}
 
 	t.Run("all provided uses positional notation", func(t *testing.T) {
-		sql, args, err := buildCall(tool, map[string]any{"p_customer_id": 1, "p_limit": 5, "p_segment": "b"})
+		sql, args, err := buildCall(tl, map[string]any{"p_customer_id": 1, "p_limit": 5, "p_segment": "b"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -150,7 +150,7 @@ func TestBuildCall(t *testing.T) {
 	})
 
 	t.Run("omitted default uses named notation", func(t *testing.T) {
-		sql, args, err := buildCall(tool, map[string]any{"p_customer_id": 1, "p_segment": "b"})
+		sql, args, err := buildCall(tl, map[string]any{"p_customer_id": 1, "p_segment": "b"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -164,20 +164,20 @@ func TestBuildCall(t *testing.T) {
 	})
 
 	t.Run("missing required parameter", func(t *testing.T) {
-		if _, _, err := buildCall(tool, map[string]any{"p_limit": 5}); err == nil {
+		if _, _, err := buildCall(tl, map[string]any{"p_limit": 5}); err == nil {
 			t.Error("expected error for missing required parameter")
 		}
 	})
 
 	t.Run("unnamed args allow trailing omission only", func(t *testing.T) {
-		unnamed := Tool{
+		unnamed := tool{
 			Schema: "public",
 			Name:   "f",
-			Mode:   ModeOne,
-			Params: []Param{
-				{Name: "param_1", Type: TypeInfo{Name: "integer"}},
-				{Name: "param_2", HasDefault: true, Type: TypeInfo{Name: "integer"}},
-				{Name: "param_3", HasDefault: true, Type: TypeInfo{Name: "integer"}},
+			Mode:   modeOne,
+			Params: []param{
+				{Name: "param_1", Type: typeInfo{Name: "integer"}},
+				{Name: "param_2", HasDefault: true, Type: typeInfo{Name: "integer"}},
+				{Name: "param_3", HasDefault: true, Type: typeInfo{Name: "integer"}},
 			},
 		}
 		sql, _, err := buildCall(unnamed, map[string]any{"param_1": 1, "param_2": 2})

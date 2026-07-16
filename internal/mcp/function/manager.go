@@ -140,7 +140,7 @@ type service struct {
 	database  api.Database
 	prefix    string
 	pool      *pgxpool.Pool
-	tools     []Tool
+	tools     []tool
 	toolNames []string // currently-registered tool names for this service
 }
 
@@ -263,7 +263,7 @@ func (m *Manager) Load(ctx context.Context, databaseRef string) ([]string, error
 	svc, ok := m.services[database.Id]
 	if ok {
 		// Already loaded: re-introspect and swap the registered tools.
-		tools, err := Introspect(ctx, m.logger.With(slog.String("database", svc.database.Name)), svc.pool)
+		tools, err := introspect(ctx, m.logger.With(slog.String("database", svc.database.Name)), svc.pool)
 		if err != nil {
 			return nil, err
 		}
@@ -359,7 +359,7 @@ func (m *Manager) buildService(ctx context.Context, database api.Database, prefi
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	tools, err := Introspect(ctx, m.logger.With(slog.String("database", database.Name)), pool)
+	tools, err := introspect(ctx, m.logger.With(slog.String("database", database.Name)), pool)
 	if err != nil {
 		pool.Close()
 		return nil, err
@@ -383,7 +383,7 @@ func (m *Manager) buildService(ctx context.Context, database api.Database, prefi
 // case, not an edge case.
 //
 // Deterministic only if svc.tools is processed in the same order every
-// time, which is Introspect's job for one database (ORDER BY schema,
+// time, which is introspect's job for one database (ORDER BY schema,
 // function name); LoadAll handles the cross-database case.
 //
 // Callers must hold m.mu.
@@ -421,7 +421,7 @@ func (m *Manager) registerServiceTools(svc *service) {
 // tools/list_changed to connected sessions.
 //
 // Callers must hold m.mu.
-func (m *Manager) swapServiceTools(svc *service, tools []Tool) {
+func (m *Manager) swapServiceTools(svc *service, tools []tool) {
 	if len(svc.toolNames) > 0 {
 		m.server.RemoveTools(svc.toolNames...)
 		for _, name := range svc.toolNames {

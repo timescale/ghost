@@ -8,9 +8,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// typeResolver resolves pg_type OIDs into TypeInfo — unwrapping arrays and
+// typeResolver resolves pg_type OIDs into typeInfo — unwrapping arrays and
 // domains and collecting enum labels — from catalog rows preloaded in bulk.
-// One resolver lives for one introspection pass: Introspect preloads every
+// One resolver lives for one introspection pass: introspect preloads every
 // OID its functions reference, and resolve then works entirely in memory.
 type typeResolver struct {
 	pool  *pgxpool.Pool
@@ -95,16 +95,16 @@ func (r *typeResolver) missing(oids []int64) []int64 {
 	return out
 }
 
-// resolve returns the TypeInfo for a preloaded type OID. Arrays resolve to
+// resolve returns the typeInfo for a preloaded type OID. Arrays resolve to
 // their element type with IsArray set, and domains resolve to their base
 // type, so the resulting Name is always a name the JSON Schema and scan-type
 // mappings understand (unknown names deliberately degrade to strings there).
 // Pseudo-types (anyelement, internal, ...) are rejected: values of these
 // types can't cross the tool boundary.
-func (r *typeResolver) resolve(oid int64) (TypeInfo, error) {
+func (r *typeResolver) resolve(oid int64) (typeInfo, error) {
 	t, ok := r.types[oid]
 	if !ok {
-		return TypeInfo{}, fmt.Errorf("type %d was not loaded from the catalog", oid)
+		return typeInfo{}, fmt.Errorf("type %d was not loaded from the catalog", oid)
 	}
 
 	switch {
@@ -114,12 +114,12 @@ func (r *typeResolver) resolve(oid int64) (TypeInfo, error) {
 		// single-level JSON array.
 		elemInfo, err := r.resolve(t.Elem)
 		if err != nil {
-			return TypeInfo{}, err
+			return typeInfo{}, err
 		}
 		if elemInfo.IsArray {
-			return TypeInfo{}, fmt.Errorf("unsupported nested array type %q", t.Name)
+			return typeInfo{}, fmt.Errorf("unsupported nested array type %q", t.Name)
 		}
-		return TypeInfo{
+		return typeInfo{
 			Name:     elemInfo.Name,
 			IsArray:  true,
 			EnumVals: elemInfo.EnumVals,
@@ -128,16 +128,16 @@ func (r *typeResolver) resolve(oid int64) (TypeInfo, error) {
 		// Domain: expose it as its base type.
 		return r.resolve(t.Base)
 	case t.TypeType == "e":
-		return TypeInfo{
+		return typeInfo{
 			Name:     t.Name,
 			EnumVals: t.EnumLabels,
 		}, nil
 	case t.TypeType == "p":
-		return TypeInfo{}, fmt.Errorf("unsupported pseudo-type %q", t.Name)
+		return typeInfo{}, fmt.Errorf("unsupported pseudo-type %q", t.Name)
 	default:
 		// Base, composite, range, and multirange types all render and scan
 		// through their canonical text form; names the schema/scan mappings
 		// don't recognize degrade to plain strings.
-		return TypeInfo{Name: t.Name}, nil
+		return typeInfo{Name: t.Name}, nil
 	}
 }

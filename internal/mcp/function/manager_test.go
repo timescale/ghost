@@ -24,9 +24,9 @@ func TestRegisterServiceToolsComposesNames(t *testing.T) {
 	svc := &service{
 		database: api.Database{Id: "db1", Name: "billing"},
 		prefix:   "billing",
-		tools: []Tool{
-			{Schema: "public", Name: "get_user", Mode: ModeExec},
-			{Schema: "reporting", Name: "get_order", Mode: ModeExec},
+		tools: []tool{
+			{Schema: "public", Name: "get_user", Mode: modeExec},
+			{Schema: "reporting", Name: "get_order", Mode: modeExec},
 		},
 	}
 
@@ -50,8 +50,8 @@ func TestRegisterServiceToolsOmitsPrefixInServeMode(t *testing.T) {
 	svc := &service{
 		database: api.Database{Id: "db1", Name: "billing"},
 		// prefix left empty, as Load leaves it when prefixTools is false.
-		tools: []Tool{
-			{Schema: "public", Name: "get_user", Mode: ModeExec},
+		tools: []tool{
+			{Schema: "public", Name: "get_user", Mode: modeExec},
 		},
 	}
 
@@ -67,16 +67,16 @@ func TestRegisterServiceToolsDedupesSameNameAcrossSchemas(t *testing.T) {
 	m := newTestManager(true)
 	// Same function name in three different schemas: now that schema isn't
 	// part of the tool name, this is the common source of collisions, not
-	// an edge case. Order here is the processing order (as Introspect's own
+	// an edge case. Order here is the processing order (as introspect's own
 	// ORDER BY would produce for a real database) — the first gets the bare
 	// name, the rest get numeric suffixes, never dropped.
 	svc := &service{
 		database: api.Database{Id: "db1", Name: "billing"},
 		prefix:   "billing",
-		tools: []Tool{
-			{Schema: "public", Name: "get_user", Mode: ModeExec},
-			{Schema: "reporting", Name: "get_user", Mode: ModeExec},
-			{Schema: "admin", Name: "get_user", Mode: ModeExec},
+		tools: []tool{
+			{Schema: "public", Name: "get_user", Mode: modeExec},
+			{Schema: "reporting", Name: "get_user", Mode: modeExec},
+			{Schema: "admin", Name: "get_user", Mode: modeExec},
 		},
 	}
 
@@ -98,12 +98,12 @@ func TestRegisterServiceToolsDedupesAcrossDatabases(t *testing.T) {
 	svcA := &service{
 		database: api.Database{Id: "dbA", Name: "My!DB"},
 		prefix:   normalizeToolNameSegment("My!DB", "db"),
-		tools:    []Tool{{Schema: "public", Name: "get_user", Mode: ModeExec}},
+		tools:    []tool{{Schema: "public", Name: "get_user", Mode: modeExec}},
 	}
 	svcB := &service{
 		database: api.Database{Id: "dbB", Name: "My@DB"},
 		prefix:   normalizeToolNameSegment("My@DB", "db"),
-		tools:    []Tool{{Schema: "public", Name: "get_user", Mode: ModeExec}},
+		tools:    []tool{{Schema: "public", Name: "get_user", Mode: modeExec}},
 	}
 
 	m.registerServiceTools(svcA)
@@ -121,10 +121,10 @@ func TestRegisterServiceToolsNormalizesIllegalCharacters(t *testing.T) {
 	m := newTestManager(false)
 	svc := &service{
 		database: api.Database{Id: "db1", Name: "billing"},
-		tools: []Tool{
-			{Schema: "public", Name: "short_name", Mode: ModeExec},
-			{Schema: "public", Name: "get customer", Mode: ModeExec}, // space -> underscore
-			{Schema: "public", Name: "get_tracks_🎵", Mode: ModeExec}, // trailing emoji stripped
+		tools: []tool{
+			{Schema: "public", Name: "short_name", Mode: modeExec},
+			{Schema: "public", Name: "get customer", Mode: modeExec}, // space -> underscore
+			{Schema: "public", Name: "get_tracks_🎵", Mode: modeExec}, // trailing emoji stripped
 		},
 	}
 
@@ -166,9 +166,9 @@ func TestRegisterServiceToolsTruncatesOverLengthName(t *testing.T) {
 	longName := strings.Repeat("x", maxToolNameLength+50)
 	svc := &service{
 		database: api.Database{Id: "db1", Name: "billing"},
-		tools: []Tool{
-			{Schema: "public", Name: "short_name", Mode: ModeExec},
-			{Schema: "public", Name: longName, Mode: ModeExec},
+		tools: []tool{
+			{Schema: "public", Name: "short_name", Mode: modeExec},
+			{Schema: "public", Name: longName, Mode: modeExec},
 		},
 	}
 
@@ -191,9 +191,9 @@ func TestRegisterServiceToolsDedupesAfterTruncation(t *testing.T) {
 	base := strings.Repeat("x", maxToolNameLength)
 	svc := &service{
 		database: api.Database{Id: "db1", Name: "billing"},
-		tools: []Tool{
-			{Schema: "public", Name: base + "aaaa", Mode: ModeExec},
-			{Schema: "public", Name: base + "bbbb", Mode: ModeExec},
+		tools: []tool{
+			{Schema: "public", Name: base + "aaaa", Mode: modeExec},
+			{Schema: "public", Name: base + "bbbb", Mode: modeExec},
 		},
 	}
 
@@ -214,10 +214,10 @@ func TestRegisterServiceToolsDedupesAfterTruncation(t *testing.T) {
 
 func TestRegisterServiceToolsReloadIsStable(t *testing.T) {
 	m := newTestManager(true)
-	tools := []Tool{
-		{Schema: "public", Name: "get_user", Mode: ModeExec},
-		{Schema: "reporting", Name: "get_user", Mode: ModeExec},
-		{Schema: "public", Name: "get_order", Mode: ModeExec},
+	tools := []tool{
+		{Schema: "public", Name: "get_user", Mode: modeExec},
+		{Schema: "reporting", Name: "get_user", Mode: modeExec},
+		{Schema: "public", Name: "get_order", Mode: modeExec},
 	}
 	svc := &service{
 		database: api.Database{Id: "db1", Name: "billing"},
@@ -229,7 +229,7 @@ func TestRegisterServiceToolsReloadIsStable(t *testing.T) {
 	first := slices.Clone(svc.toolNames)
 
 	// Simulate a ghost_mcp_tool_refresh: re-introspection returns the same
-	// functions, in the same (Introspect-guaranteed) order, and Load's
+	// functions, in the same (introspect-guaranteed) order, and Load's
 	// "already loaded" branch swaps the registered tools via
 	// swapServiceTools.
 	m.swapServiceTools(svc, slices.Clone(tools))

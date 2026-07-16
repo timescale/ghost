@@ -17,42 +17,42 @@ import (
 //	'@mcp
 //	Returns unpaid invoices for a customer, ordered by due date.';
 //
-// Introspect reads every marked function straight from the catalog — names,
+// introspect reads every marked function straight from the catalog — names,
 // parameters, defaults, return shape, and volatility all come from pg_proc,
 // so there is nothing to parse or validate beyond the marker itself.
 
-// Mode describes how a tool returns results.
-type Mode string
+// mode describes how a tool returns results.
+type mode string
 
 const (
-	// ModeOne returns a single result row (RETURNS <scalar or composite>).
-	ModeOne Mode = "one"
-	// ModeMany returns a set of rows (RETURNS SETOF / RETURNS TABLE).
-	ModeMany Mode = "many"
-	// ModeExec runs for its side effects and returns no rows (RETURNS void).
-	ModeExec Mode = "exec"
+	// modeOne returns a single result row (RETURNS <scalar or composite>).
+	modeOne mode = "one"
+	// modeMany returns a set of rows (RETURNS SETOF / RETURNS TABLE).
+	modeMany mode = "many"
+	// modeExec runs for its side effects and returns no rows (RETURNS void).
+	modeExec mode = "exec"
 )
 
-// Tool is the introspected metadata for one @mcp function.
-type Tool struct {
+// tool is the introspected metadata for one @mcp function.
+type tool struct {
 	Schema      string
 	Name        string
 	Description string
-	Mode        Mode
+	Mode        mode
 	// ReadOnly reports whether the function is marked IMMUTABLE or STABLE.
 	ReadOnly bool
-	Params   []Param
-	// Columns are the result columns; empty in ModeExec.
-	Columns []Column
-	// Named reports whether every input argument has a name. Named
+	Params   []param
+	// Columns are the result columns; empty in modeExec.
+	Columns []column
+	// NamedArgs reports whether every input argument has a name. Named
 	// arguments allow calls that omit any subset of defaulted arguments
 	// (named notation); without names, omitted defaults must form a
 	// trailing suffix of the positional argument list.
-	Named bool
+	NamedArgs bool
 }
 
-// Param is one input argument of a tool's function.
-type Param struct {
+// param is one input argument of a tool's function.
+type param struct {
 	// Name is the parameter's name in the tool's input schema: the
 	// function's argument name, or param_<N> when the argument is unnamed.
 	Name string
@@ -66,18 +66,18 @@ type Param struct {
 	// the authoring convention for an argument that genuinely accepts null.
 	// Only these arguments admit null in the tool's input schema.
 	NullDefault bool
-	Type        TypeInfo
+	Type        typeInfo
 }
 
-// Column is one result column of a tool's function.
-type Column struct {
+// column is one result column of a tool's function.
+type column struct {
 	Name string
-	Type TypeInfo
+	Type typeInfo
 }
 
-// TypeInfo describes a Postgres type as needed for JSON Schema generation
+// typeInfo describes a Postgres type as needed for JSON Schema generation
 // and result scanning. Domains are resolved to their base type.
-type TypeInfo struct {
+type typeInfo struct {
 	// Name is the type's SQL name (from format_type), e.g. "integer",
 	// "timestamp with time zone", "mood". For arrays it names the element
 	// type.
@@ -186,7 +186,7 @@ JOIN pg_catalog.pg_description d
 WHERE d.description ~ '^\s*@mcp'
 ORDER BY n.nspname, p.proname`
 
-// Introspect reads every @mcp-marked function from the database catalog and
+// introspect reads every @mcp-marked function from the database catalog and
 // returns their tool metadata. Functions that can't be exposed — overloaded
 // @mcp names, unsupported argument or return types — are skipped with a
 // logged warning, never an error: one exotic function must not take down
@@ -195,7 +195,7 @@ ORDER BY n.nspname, p.proname`
 // The whole pass costs a handful of queries regardless of how many functions
 // or types are involved: one for the functions (composite return columns
 // included) and one or two batched type-info loads (see typeResolver.preload).
-func Introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([]Tool, error) {
+func introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([]tool, error) {
 	rows, err := pool.Query(ctx, functionsQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to introspect functions: %w", err)
@@ -237,7 +237,7 @@ func Introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([
 		return nil, err
 	}
 
-	tools := make([]Tool, 0, len(marked))
+	tools := make([]tool, 0, len(marked))
 	for _, row := range marked {
 		if counts[row.SchemaName+"."+row.Name] > 1 {
 			logger.Warn("Skipping @mcp function: overloaded functions cannot be exposed as tools",
@@ -260,7 +260,7 @@ func Introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([
 }
 
 // buildTool converts one catalog row into tool metadata.
-func buildTool(resolver *typeResolver, row functionRow) (Tool, error) {
+func buildTool(resolver *typeResolver, row functionRow) (tool, error) {
 	// Only plain functions become tools. Procedures are deliberately not
 	// supported: a void-returning function covers the same ground, and each
 	// tool call runs as its own transaction anyway. Aggregates and window
@@ -270,48 +270,48 @@ func buildTool(resolver *typeResolver, row functionRow) (Tool, error) {
 	// silently ignored.
 	switch row.Kind {
 	case "p":
-		return Tool{}, fmt.Errorf("procedures are not supported; use a function returning void instead")
+		return tool{}, fmt.Errorf("procedures are not supported; use a function returning void instead")
 	case "a":
-		return Tool{}, fmt.Errorf("aggregate functions are not supported")
+		return tool{}, fmt.Errorf("aggregate functions are not supported")
 	case "w":
-		return Tool{}, fmt.Errorf("window functions are not supported")
+		return tool{}, fmt.Errorf("window functions are not supported")
 	}
 
 	params, err := inputParams(resolver, row)
 	if err != nil {
-		return Tool{}, err
+		return tool{}, err
 	}
 
-	named := !slices.ContainsFunc(params, func(p Param) bool {
+	namedArgs := !slices.ContainsFunc(params, func(p param) bool {
 		return p.ArgName == ""
 	})
 
-	tool := Tool{
+	tl := tool{
 		Schema:      row.SchemaName,
 		Name:        row.Name,
 		Description: row.Comment,
 		ReadOnly:    row.Volatility == "i" || row.Volatility == "s",
 		Params:      params,
-		Named:       named,
+		NamedArgs:   namedArgs,
 	}
 
 	// Determine the result shape.
 	if row.RetTypeName == "void" {
-		tool.Mode = ModeExec
-		return tool, nil
+		tl.Mode = modeExec
+		return tl, nil
 	}
 
-	tool.Mode = ModeOne
+	tl.Mode = modeOne
 	if row.ReturnsSet {
-		tool.Mode = ModeMany
+		tl.Mode = modeMany
 	}
 	cols, err := resultColumns(resolver, row)
 	if err != nil {
-		return Tool{}, err
+		return tool{}, err
 	}
-	tool.Columns = cols
+	tl.Columns = cols
 
-	return tool, nil
+	return tl, nil
 }
 
 // argMode returns the mode of the function's i'th argument. proargmodes is
@@ -352,7 +352,7 @@ func isNullDefault(def string) bool {
 // inputParams returns the function's input parameters (IN and INOUT
 // arguments) in declaration order, and validates that every argument mode
 // is supported.
-func inputParams(resolver *typeResolver, row functionRow) ([]Param, error) {
+func inputParams(resolver *typeResolver, row functionRow) ([]param, error) {
 	// An unnamed argument falls back to a param_<N> name; skip any N already
 	// taken by a real, explicitly-named argument (e.g. a second argument
 	// named "param_1") so the fallback can never collide with it.
@@ -364,7 +364,7 @@ func inputParams(resolver *typeResolver, row functionRow) ([]Param, error) {
 	}
 	nextFallback := 1
 
-	var params []Param
+	var params []param
 
 	for i, typeOID := range row.ArgTypes {
 		switch mode := argMode(row, i); mode {
@@ -396,7 +396,7 @@ func inputParams(resolver *typeResolver, row functionRow) ([]Param, error) {
 			}
 		}
 		def, hasDefault := argDefault(row, i)
-		params = append(params, Param{
+		params = append(params, param{
 			Name:        paramName,
 			ArgName:     name,
 			HasDefault:  hasDefault,
@@ -412,8 +412,8 @@ func inputParams(resolver *typeResolver, row functionRow) ([]Param, error) {
 // INOUT, and TABLE arguments, in declaration order. Empty when the function
 // declares none — its result shape then comes from the return type instead
 // (see resultColumns).
-func outputColumns(resolver *typeResolver, row functionRow) ([]Column, error) {
-	var cols []Column
+func outputColumns(resolver *typeResolver, row functionRow) ([]column, error) {
+	var cols []column
 
 	for i, typeOID := range row.ArgTypes {
 		switch argMode(row, i) {
@@ -433,7 +433,7 @@ func outputColumns(resolver *typeResolver, row functionRow) ([]Column, error) {
 			// the output column list.
 			name = fmt.Sprintf("column%d", len(cols)+1)
 		}
-		cols = append(cols, Column{Name: name, Type: typ})
+		cols = append(cols, column{Name: name, Type: typ})
 	}
 
 	return cols, nil
@@ -443,7 +443,7 @@ func outputColumns(resolver *typeResolver, row functionRow) ([]Column, error) {
 // rows, in order of preference: OUT/INOUT/TABLE arguments define the shape
 // when present; a composite return type contributes its attributes; any
 // other type is a single column named after the function.
-func resultColumns(resolver *typeResolver, row functionRow) ([]Column, error) {
+func resultColumns(resolver *typeResolver, row functionRow) ([]column, error) {
 	outCols, err := outputColumns(resolver, row)
 	if err != nil {
 		return nil, err
@@ -454,13 +454,13 @@ func resultColumns(resolver *typeResolver, row functionRow) ([]Column, error) {
 
 	if len(row.RetColumns) > 0 {
 		// Composite return type (a table row type or CREATE TYPE ... AS).
-		cols := make([]Column, len(row.RetColumns))
+		cols := make([]column, len(row.RetColumns))
 		for i, attr := range row.RetColumns {
 			typ, err := resolver.resolve(attr.Type)
 			if err != nil {
 				return nil, err
 			}
-			cols[i] = Column{Name: attr.Name, Type: typ}
+			cols[i] = column{Name: attr.Name, Type: typ}
 		}
 		return cols, nil
 	}
@@ -477,5 +477,5 @@ func resultColumns(resolver *typeResolver, row functionRow) ([]Column, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []Column{{Name: row.Name, Type: typ}}, nil
+	return []column{{Name: row.Name, Type: typ}}, nil
 }

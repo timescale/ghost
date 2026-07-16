@@ -30,7 +30,7 @@ import (
 // input-schema validation, which only runs for the generic path, never
 // applies here — so the handler resolves and validates against the input
 // schema itself, below.
-func buildMCPTool(toolName string, tool Tool, pool *pgxpool.Pool) (*mcp.Tool, mcp.ToolHandler, error) {
+func buildMCPTool(toolName string, tool tool, pool *pgxpool.Pool) (*mcp.Tool, mcp.ToolHandler, error) {
 	inputSchema := buildInputSchema(tool)
 	resolvedInput, err := inputSchema.Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
 	if err != nil {
@@ -77,7 +77,7 @@ func buildMCPTool(toolName string, tool Tool, pool *pgxpool.Pool) (*mcp.Tool, mc
 // (IMMUTABLE/STABLE); a VOLATILE function may write, and whether its writes
 // are destructive can't be determined, so the destructive hint is left at
 // its conservative default.
-func toolAnnotations(tool Tool) *mcp.ToolAnnotations {
+func toolAnnotations(tool tool) *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{
 		ReadOnlyHint:  tool.ReadOnly,
 		OpenWorldHint: new(false),
@@ -91,7 +91,7 @@ func toolAnnotations(tool Tool) *mcp.ToolAnnotations {
 // matches nothing) rather than erroring, so the schema forbids null unless
 // the author opts in by declaring DEFAULT NULL — which marks the argument
 // both optional and explicitly nullable.
-func buildInputSchema(tool Tool) *jsonschema.Schema {
+func buildInputSchema(tool tool) *jsonschema.Schema {
 	properties := map[string]*jsonschema.Schema{}
 	var required []string
 
@@ -116,8 +116,8 @@ func buildInputSchema(tool Tool) *jsonschema.Schema {
 // buildOutputSchema builds the tool's output schema from the function's
 // result columns. Column nullability is unknowable from the catalog, so
 // every column admits null — the conservative choice.
-func buildOutputSchema(tool Tool) *jsonschema.Schema {
-	if tool.Mode == ModeExec {
+func buildOutputSchema(tool tool) *jsonschema.Schema {
+	if tool.Mode == modeExec {
 		return &jsonschema.Schema{
 			Type: "object",
 			Properties: map[string]*jsonschema.Schema{
@@ -140,7 +140,7 @@ func buildOutputSchema(tool Tool) *jsonschema.Schema {
 		Properties: properties,
 	}
 
-	if tool.Mode == ModeOne {
+	if tool.Mode == modeOne {
 		return itemSchema
 	}
 
@@ -162,7 +162,7 @@ func buildOutputSchema(tool Tool) *jsonschema.Schema {
 // typeSchema maps a Postgres type to the JSON Schema describing a single
 // value of that type, wrapping array types in one array level (with
 // nullable elements — PostgreSQL array elements can always be NULL).
-func typeSchema(typ TypeInfo) *jsonschema.Schema {
+func typeSchema(typ typeInfo) *jsonschema.Schema {
 	schema := scalarTypeSchema(typ)
 	if typ.IsArray {
 		schema = &jsonschema.Schema{
@@ -176,7 +176,7 @@ func typeSchema(typ TypeInfo) *jsonschema.Schema {
 // scalarTypeSchema maps a Postgres type name to the JSON Schema describing
 // how a single non-null, non-array value of that type appears in tool input
 // and output.
-func scalarTypeSchema(typ TypeInfo) *jsonschema.Schema {
+func scalarTypeSchema(typ typeInfo) *jsonschema.Schema {
 	// Enum types list their values from the catalog.
 	if len(typ.EnumVals) > 0 {
 		return &jsonschema.Schema{
@@ -314,7 +314,7 @@ func allowNull(schema *jsonschema.Schema) *jsonschema.Schema {
 // but bytea parameters arrive as base64 strings (as their schema advertises)
 // and must be decoded; sending the string unchanged would store the base64
 // text itself.
-func convertParamValue(typ TypeInfo, val any) (any, error) {
+func convertParamValue(typ typeInfo, val any) (any, error) {
 	if typ.Name != "bytea" {
 		return val, nil
 	}
@@ -382,9 +382,9 @@ func successResult(result any) *mcp.CallToolResult {
 // arguments, which requires the function's arguments to be named — for a
 // function with unnamed arguments, the omitted optionals must form a
 // trailing suffix of the argument list.
-func buildCall(tool Tool, input map[string]any) (string, []any, error) {
+func buildCall(tool tool, input map[string]any) (string, []any, error) {
 	type callArg struct {
-		param Param
+		param param
 		value any
 	}
 	var provided []callArg
@@ -403,7 +403,7 @@ func buildCall(tool Tool, input map[string]any) (string, []any, error) {
 		if err != nil {
 			return "", nil, fmt.Errorf("invalid value for parameter %s: %w", param.Name, err)
 		}
-		if len(omitted) > 0 && !tool.Named {
+		if len(omitted) > 0 && !tool.NamedArgs {
 			return "", nil, fmt.Errorf("parameter %s requires %s to also be provided (the function's arguments are unnamed, so defaults can only be omitted from the end)", param.Name, strings.Join(omitted, ", "))
 		}
 		provided = append(provided, callArg{param: param, value: val})
@@ -411,7 +411,7 @@ func buildCall(tool Tool, input map[string]any) (string, []any, error) {
 
 	parts := make([]string, len(provided))
 	values := make([]any, len(provided))
-	useNamed := tool.Named && len(omitted) > 0
+	useNamed := tool.NamedArgs && len(omitted) > 0
 	for i, arg := range provided {
 		placeholder := fmt.Sprintf("$%d", i+1)
 		if useNamed {
@@ -426,7 +426,7 @@ func buildCall(tool Tool, input map[string]any) (string, []any, error) {
 	argList := strings.Join(parts, ", ")
 
 	var sql string
-	if tool.Mode == ModeExec {
+	if tool.Mode == modeExec {
 		// A void-returning function is invoked bare: there are no result
 		// columns to expand.
 		sql = fmt.Sprintf("SELECT %s(%s)", fnName, argList)
@@ -439,18 +439,18 @@ func buildCall(tool Tool, input map[string]any) (string, []any, error) {
 	return sql, values, nil
 }
 
-func handleToolCall(ctx context.Context, pool *pgxpool.Pool, tool Tool, types []reflect.Type, input map[string]any) *mcp.CallToolResult {
+func handleToolCall(ctx context.Context, pool *pgxpool.Pool, tool tool, types []reflect.Type, input map[string]any) *mcp.CallToolResult {
 	sql, args, err := buildCall(tool, input)
 	if err != nil {
 		return errorResult("%v", err)
 	}
 
 	switch tool.Mode {
-	case ModeExec:
+	case modeExec:
 		return executeExec(ctx, pool, sql, args)
-	case ModeOne:
+	case modeOne:
 		return executeOne(ctx, pool, sql, types, args)
-	case ModeMany:
+	case modeMany:
 		return executeMany(ctx, pool, sql, types, args)
 	default:
 		return errorResult("unknown tool mode: %s", tool.Mode)
