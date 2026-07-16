@@ -40,8 +40,6 @@ type Tool struct {
 	Description string
 	Mode        Mode
 	// ReadOnly reports whether the function is marked IMMUTABLE or STABLE.
-	// Unlike a plan-based classification, this is the author's own
-	// declaration, which is also what the planner trusts.
 	ReadOnly bool
 	Params   []Param
 	// Columns are the result columns; empty in ModeExec.
@@ -137,15 +135,15 @@ type retColumn struct {
 // procedures, aggregates, and window functions, so buildTool can reject the
 // unsupported kinds loudly — whose comment starts with the @mcp marker (the
 // marker is re-validated precisely in Go).
+//
 // proargtypes is an oidvector, which has no direct array cast, so it is
 // round-tripped through its space-separated text form. proallargtypes is
 // only set when the function has OUT/INOUT/TABLE/VARIADIC arguments, and
 // then covers all arguments. Argument defaults are deparsed one by one with
 // pg_get_function_arg_default (which returns NULL for arguments without a
 // default), producing an array aligned with arg_types. For functions
-// returning a composite type (a
-// table row type or CREATE TYPE ... AS), the composite's attributes ride
-// along as JSON in ret_columns.
+// returning a composite type (a table row type or CREATE TYPE ... AS), the
+// composite's attributes ride along as JSON in ret_columns.
 const functionsQuery = `
 SELECT
     n.nspname AS schema_name,

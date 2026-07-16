@@ -130,12 +130,10 @@ func startStdioServer(cmd *cobra.Command, app *common.App, serveRef string) erro
 	ctx := cmd.Context()
 	logger := log.New(cmd.ErrOrStderr())
 
-	// serveRef (only ever non-empty when app.Experimental — see
-	// addServeFlag) puts the server in the stripped consumer serving mode:
-	// only that database's generated function tools, no other Ghost tools.
-	// Local is unconditional: it's irrelevant in serving mode (no browser-
-	// backed tools are registered there regardless), and stdio is always a
-	// local, single-user session otherwise.
+	// serveRef puts the server in the stripped consumer serving mode (see
+	// addServeFlag). Local is unconditional: stdio is always a local,
+	// single-user session, and serving mode registers no browser-backed
+	// tools regardless.
 	var server *mcp.Server
 	var err error
 	if serveRef != "" {
@@ -173,9 +171,8 @@ func startHTTPServer(cmd *cobra.Command, app *common.App, host string, port int,
 	ctx := cmd.Context()
 	logger := log.New(cmd.ErrOrStderr())
 
-	// serveRef (only ever non-empty when app.Experimental — see
-	// addServeFlag) puts the server in the stripped consumer serving mode:
-	// only that database's generated function tools, no other Ghost tools.
+	// serveRef puts the server in the stripped consumer serving mode (see
+	// addServeFlag).
 	var server *mcp.Server
 	var err error
 	if serveRef != "" {

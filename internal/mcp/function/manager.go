@@ -18,29 +18,19 @@ import (
 )
 
 // toolNameSeparator joins a tool name's segments (database prefix, function
-// name) after each has gone through normalizeToolNameSegment. A single "_"
-// wouldn't do: since it's a character normalization actively preserves (see
-// isToolNameChar), it's ordinary enough to appear inside a normalized
-// segment that "_" alone couldn't reliably mark a boundary between them.
-// "__" isn't perfectly rare either — a raw segment can legally contain one
-// already — but it's rare enough in practice, and dedupeToolName exists to
-// catch it gracefully on the occasion it isn't. "." was tried first, since
-// the MCP spec explicitly allows it (its own example of a valid tool name is
-// "admin.tools.list") and it mirrors how Postgres itself writes a qualified
-// name (schema.function) — but real clients that don't sanitize tool names
-// before handing them to their own model API can hit a same-request
-// validation that's narrower than the spec recommends and doesn't allow it
-// (observed against the Claude API's own tool-name pattern), which is also
-// why normalization restricts segments to isToolNameChar's set rather than
-// the spec's own (wider) recommendation.
+// name), each already normalized by normalizeToolNameSegment. "_" is too
+// ordinary a character within a normalized segment to reliably mark a
+// boundary; "." was rejected even though the MCP spec allows it, because
+// some real clients pass tool names straight through to their own model API
+// without sanitizing them, and that validation can be narrower than the spec
+// (e.g. the Claude API's tool-name pattern rejects a dot) — see
+// isToolNameChar.
 const toolNameSeparator = "__"
 
 // isToolNameChar reports whether r is one of the characters this server
 // allows in a composed tool name. Deliberately narrower than the MCP spec's
-// own recommendation (which also allows "."): that recommendation is a
-// "SHOULD", and at least one real client passes tool names through to its
-// model API without sanitizing them first, where the actual enforced
-// pattern is narrower still and rejects a dot.
+// own recommendation (which also allows "."), for the reason given on
+// toolNameSeparator.
 func isToolNameChar(r rune) bool {
 	return (r >= 'a' && r <= 'z') ||
 		(r >= 'A' && r <= 'Z') ||
@@ -50,19 +40,10 @@ func isToolNameChar(r rune) bool {
 
 // normalizeToolNameSegment converts a raw database or function name into a
 // tool-name-safe segment: every run of characters outside isToolNameChar's
-// set collapses to a single "_". Case is preserved — only genuinely illegal
-// characters are touched, so most names pass through unchanged. A segment
-// with nothing legal in it at all (e.g. entirely emoji) falls back to
-// fallback instead (callers pass something identifying which kind of
-// segment this is, e.g. "db" or "tool", rather than an uninformative "_").
-//
-// This makes a composed tool name legal by construction, unlike an
-// out-of-range length (see maxToolNameLength) or a name collision (see
-// registerServiceTools): both of those can be triggered by a legitimately
-// distinct, valid input a real user might supply, which is exactly what a
-// runtime check is for. Normalization producing an illegal character would
-// only mean a bug in this function itself — a correctness property to
-// verify with tests, not re-check at runtime on every call.
+// set collapses to a single "_". Case is preserved. A segment with nothing
+// legal in it at all (e.g. entirely emoji) falls back to fallback, which
+// callers set to something identifying the segment kind (e.g. "db" or
+// "tool") rather than an uninformative "_".
 func normalizeToolNameSegment(name, fallback string) string {
 	var b strings.Builder
 	pendingSep := false
@@ -83,31 +64,23 @@ func normalizeToolNameSegment(name, fallback string) string {
 	return b.String()
 }
 
-// maxToolNameLength is the MCP spec's recommended maximum tool name length.
-// Enforced here (rather than left to whatever MCP client eventually reads
-// it) because a client can't shorten an over-length name the way it might
-// substitute an unexpected character, and in practice a violation doesn't
-// just make one tool unavailable: a client that submits its whole tool list
-// on every request can fail the *entire* request, with an error that
-// doesn't identify which tool was the problem. Checked as a byte count, not
-// a rune count: normalizeToolNameSegment guarantees a composed name is
-// always ASCII, where the two agree. dedupeToolName truncates to this
-// rather than dropping the tool outright.
+// maxToolNameLength is the MCP spec's recommended maximum tool name length,
+// enforced here rather than left to the client — a client that submits its
+// whole tool list on every request can fail the entire request over one
+// oversized name, not just leave that tool unavailable. Checked as a byte
+// count: normalizeToolNameSegment guarantees a composed name is always
+// ASCII, so byte and rune counts agree.
 const maxToolNameLength = 128
 
-// dedupeToolName returns a variant of base that isn't already registered,
-// truncating base to fit within maxToolNameLength (reserving room for a
-// disambiguating suffix, if one turns out to be needed) rather than
-// dropping the tool: base itself if it isn't taken, otherwise base with
-// "_2", "_3", ... appended until one is free. This never fails to find a
-// name — a function fails to become a tool only if building its MCP tool
-// definition itself errors (see registerServiceTools), never because of its
-// name.
+// dedupeToolName returns a variant of base that isn't already registered:
+// base itself if free, otherwise base with "_2", "_3", ... appended, after
+// truncating base to fit within maxToolNameLength (reserving room for the
+// suffix). This never fails to find a name — a function only fails to
+// become a tool if building its MCP tool definition itself errors (see
+// registerServiceTools).
 //
 // The result is deterministic only if callers always resolve a given set of
-// colliding names in the same order — see registerServiceTools and LoadAll
-// for how that's arranged, so a refresh reproduces the same names as the
-// original load.
+// colliding names in the same order — see registerServiceTools and LoadAll.
 //
 // Callers must hold m.mu.
 func (m *Manager) dedupeToolName(base string) string {
@@ -187,26 +160,17 @@ func NewManager(app *common.App, server *mcp.Server, logger *slog.Logger, prefix
 // LoadAll introspects the @mcp functions of every database in the space
 // and registers the resulting tools. Databases that can't be introspected —
 // paused, no stored password, unreachable — are skipped with a logged
-// warning; their tools simply don't appear until a refresh or restart when
-// they're available. Databases with no @mcp functions are skipped silently
-// (and their connections closed).
+// warning; databases with no @mcp functions are skipped silently.
 //
 // Building each database's service (connect, ping, introspect) runs
-// concurrently — it's pure I/O with no shared naming state. Naming and
-// registration then happen afterward, in one single-threaded pass over the
-// databases in the order listDatabases returned them, so a cross-database
-// tool-name collision (two databases' names normalizing to the same
-// prefix) resolves the same way every time rather than depending on which
-// database's connection happened to respond first. listDatabases' order is
-// itself deterministic (the API sorts by database name, and database names
-// are unique within a space), so this pass's outcome depends only on the
-// current state of the space, not on timing.
+// concurrently, but naming and registration happen afterward in one
+// single-threaded pass over listDatabases' (deterministically sorted)
+// result, so a cross-database tool-name collision resolves the same way
+// every time rather than depending on which database's connection happened
+// to respond first.
 //
 // LoadAll is a startup-only snapshot: it assumes no databases are loaded
-// yet, and unlike Load it never reloads an existing service. If a
-// refresh-everything operation is ever needed (e.g. picking up other space
-// members' changes without a restart), rework this to share Load's
-// load-or-reload semantics rather than calling it twice.
+// yet, and unlike Load it never reloads an existing service.
 func (m *Manager) LoadAll(ctx context.Context) {
 	client, projectID, err := m.app.GetClient()
 	if err != nil {
@@ -410,30 +374,17 @@ func (m *Manager) buildService(ctx context.Context, database api.Database, prefi
 }
 
 // registerServiceTools registers the tools described by the service's
-// current introspection. Each tool's name is the database prefix (already
-// normalized, and empty in the consumer serving mode) and the normalized
-// function name, joined with toolNameSeparator; dedupeToolName then
-// resolves any collision (including one against another function of this
-// same service, e.g. same-named functions in different schemas — schema is
-// deliberately not part of the name, so this is the common case, not an
-// edge case). A function's own Postgres schema plays no part in its tool
-// name at all: letting a name collision decide when to fall back to
-// schema-qualifying would make a function's tool name depend on what other
-// functions happen to exist, changing across reloads as unrelated
-// functions are added or removed elsewhere — global, order-independent
-// numeric suffixes avoid that (see dedupeToolName).
+// current introspection. Each tool's name joins the database prefix
+// (already normalized, empty in the consumer serving mode) and the
+// normalized function name with toolNameSeparator; dedupeToolName resolves
+// any collision, including same-named functions from different Postgres
+// schemas within this service — schema is deliberately not part of the tool
+// name (see the "Tool naming" section in CLAUDE.md), so that's the common
+// case, not an edge case.
 //
-// A function only fails to become a tool if building its MCP tool
-// definition itself errors (e.g. an unresolvable input schema) — never
-// because of its name: dedupeToolName always finds a name, truncating or
-// suffixing as needed.
-//
-// This is only deterministic — i.e. a reload reproduces the same names —
-// if svc.tools is itself always processed in the same order, which is
-// Introspect's job (its query is ORDER BY schema, function name) for the
-// functions of one database. For cross-database collisions, see LoadAll,
-// which resolves every database's tools in one deterministic pass rather
-// than in whatever order each database's introspection happens to finish.
+// Deterministic only if svc.tools is processed in the same order every
+// time, which is Introspect's job for one database (ORDER BY schema,
+// function name); LoadAll handles the cross-database case.
 //
 // Callers must hold m.mu.
 func (m *Manager) registerServiceTools(svc *service) {
