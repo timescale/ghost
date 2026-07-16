@@ -128,30 +128,32 @@ func buildMCPHTTPCmd(app *common.App) *cobra.Command {
 	return cmd
 }
 
+// newMCPServer creates the MCP server for a `mcp start` transport, choosing
+// between the stripped consumer serving mode (see addServeFlag) and the
+// regular authoring server based on whether serveRef is set. local is
+// unconditional true for stdio: it's always a local, single-user session,
+// and serving mode registers no browser-backed tools regardless.
+func newMCPServer(ctx context.Context, app *common.App, logger *slog.Logger, serveRef string, local bool) (*mcp.Server, error) {
+	if serveRef != "" {
+		return mcp.NewFunctionToolsServer(ctx, app, logger, serveRef)
+	}
+	functionTools := mcp.FunctionToolsDisabled
+	if app.Experimental {
+		functionTools = mcp.FunctionToolsEnabled
+	}
+	return mcp.NewServer(ctx, app, mcp.Options{
+		Logger:        logger,
+		Local:         local,
+		FunctionTools: functionTools,
+	})
+}
+
 // startStdioServer starts the MCP server with stdio transport
 func startStdioServer(cmd *cobra.Command, app *common.App, serveRef string) error {
 	ctx := cmd.Context()
 	logger := log.New(cmd.ErrOrStderr())
 
-	// serveRef puts the server in the stripped consumer serving mode (see
-	// addServeFlag). Local is unconditional: stdio is always a local,
-	// single-user session, and serving mode registers no browser-backed
-	// tools regardless.
-	var server *mcp.Server
-	var err error
-	if serveRef != "" {
-		server, err = mcp.NewFunctionToolsServer(ctx, app, logger, serveRef)
-	} else {
-		functionTools := mcp.FunctionToolsDisabled
-		if app.Experimental {
-			functionTools = mcp.FunctionToolsEnabled
-		}
-		server, err = mcp.NewServer(ctx, app, mcp.Options{
-			Logger:        logger,
-			Local:         true,
-			FunctionTools: functionTools,
-		})
-	}
+	server, err := newMCPServer(ctx, app, logger, serveRef, true)
 	if err != nil {
 		return fmt.Errorf("failed to create MCP server: %w", err)
 	}
@@ -174,22 +176,7 @@ func startHTTPServer(cmd *cobra.Command, app *common.App, host string, port int,
 	ctx := cmd.Context()
 	logger := log.New(cmd.ErrOrStderr())
 
-	// serveRef puts the server in the stripped consumer serving mode (see
-	// addServeFlag).
-	var server *mcp.Server
-	var err error
-	if serveRef != "" {
-		server, err = mcp.NewFunctionToolsServer(ctx, app, logger, serveRef)
-	} else {
-		functionTools := mcp.FunctionToolsDisabled
-		if app.Experimental {
-			functionTools = mcp.FunctionToolsEnabled
-		}
-		server, err = mcp.NewServer(ctx, app, mcp.Options{
-			Logger:        logger,
-			FunctionTools: functionTools,
-		})
-	}
+	server, err := newMCPServer(ctx, app, logger, serveRef, false)
 	if err != nil {
 		logger.Error("failed to create MCP server", slog.String("error", err.Error()))
 		return fmt.Errorf("failed to create MCP server: %w", err)
