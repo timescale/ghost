@@ -17,100 +17,6 @@ import (
 	"github.com/timescale/ghost/internal/common"
 )
 
-// toolNameSeparator joins a tool name's segments (database prefix, function
-// name), each already normalized by normalizeToolNameSegment. "_" is too
-// ordinary a character within a normalized segment to reliably mark a
-// boundary; "." was rejected even though the MCP spec allows it, because
-// some real clients pass tool names straight through to their own model API
-// without sanitizing them, and that validation can be narrower than the spec
-// (e.g. the Claude API's tool-name pattern rejects a dot) — see
-// isToolNameChar.
-const toolNameSeparator = "__"
-
-// isToolNameChar reports whether r is one of the characters this server
-// allows in a composed tool name. Deliberately narrower than the MCP spec's
-// own recommendation (which also allows "."), for the reason given on
-// toolNameSeparator.
-func isToolNameChar(r rune) bool {
-	return (r >= 'a' && r <= 'z') ||
-		(r >= 'A' && r <= 'Z') ||
-		(r >= '0' && r <= '9') ||
-		r == '_' || r == '-'
-}
-
-// normalizeToolNameSegment converts a raw database or function name into a
-// tool-name-safe segment: every run of characters outside isToolNameChar's
-// set collapses to a single "_". Case is preserved. A segment with nothing
-// legal in it at all (e.g. entirely emoji) falls back to fallback, which
-// callers set to something identifying the segment kind (e.g. "db" or
-// "tool") rather than an uninformative "_".
-func normalizeToolNameSegment(name, fallback string) string {
-	var b strings.Builder
-	pendingSep := false
-	for _, r := range name {
-		if isToolNameChar(r) {
-			if pendingSep && b.Len() > 0 {
-				b.WriteByte('_')
-			}
-			pendingSep = false
-			b.WriteRune(r)
-		} else {
-			pendingSep = true
-		}
-	}
-	if b.Len() == 0 {
-		return fallback
-	}
-	return b.String()
-}
-
-// maxToolNameLength is the MCP spec's recommended maximum tool name length,
-// enforced here rather than left to the client — a client that submits its
-// whole tool list on every request can fail the entire request over one
-// oversized name, not just leave that tool unavailable. Checked as a byte
-// count: normalizeToolNameSegment guarantees a composed name is always
-// ASCII, so byte and rune counts agree.
-const maxToolNameLength = 128
-
-// dedupeToolName returns a variant of base that isn't already registered:
-// base itself if free, otherwise base with "_2", "_3", ... appended, after
-// truncating base to fit within maxToolNameLength (reserving room for the
-// suffix). This never fails to find a name — a function only fails to
-// become a tool if building its MCP tool definition itself errors (see
-// registerServiceTools).
-//
-// The result is deterministic only if callers always resolve a given set of
-// colliding names in the same order — see registerServiceTools and LoadAll.
-//
-// Callers must hold m.mu.
-func (m *Manager) dedupeToolName(base string) string {
-	if name := truncateToolName(base, ""); !m.toolNameTaken(name) {
-		return name
-	}
-	for n := 2; ; n++ {
-		if name := truncateToolName(base, fmt.Sprintf("_%d", n)); !m.toolNameTaken(name) {
-			return name
-		}
-	}
-}
-
-// toolNameTaken reports whether name is already registered.
-//
-// Callers must hold m.mu.
-func (m *Manager) toolNameTaken(name string) bool {
-	_, taken := m.toolNames[name]
-	return taken
-}
-
-// truncateToolName truncates base, if necessary, so that base+suffix fits
-// within maxToolNameLength.
-func truncateToolName(base, suffix string) string {
-	if max := maxToolNameLength - len(suffix); len(base) > max {
-		base = base[:max]
-	}
-	return base + suffix
-}
-
 // Manager owns the function-tool state for the MCP server: one service
 // entry per database whose @mcp functions have been introspected, and the
 // set of registered tool names. All tool registration on the MCP server
@@ -462,4 +368,98 @@ func listDatabases(ctx context.Context, client api.ClientWithResponsesInterface,
 		}
 	}
 	return databases, nil
+}
+
+// toolNameSeparator joins a tool name's segments (database prefix, function
+// name), each already normalized by normalizeToolNameSegment. "_" is too
+// ordinary a character within a normalized segment to reliably mark a
+// boundary; "." was rejected even though the MCP spec allows it, because
+// some real clients pass tool names straight through to their own model API
+// without sanitizing them, and that validation can be narrower than the spec
+// (e.g. the Claude API's tool-name pattern rejects a dot) — see
+// isToolNameChar.
+const toolNameSeparator = "__"
+
+// isToolNameChar reports whether r is one of the characters this server
+// allows in a composed tool name. Deliberately narrower than the MCP spec's
+// own recommendation (which also allows "."), for the reason given on
+// toolNameSeparator.
+func isToolNameChar(r rune) bool {
+	return (r >= 'a' && r <= 'z') ||
+		(r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9') ||
+		r == '_' || r == '-'
+}
+
+// normalizeToolNameSegment converts a raw database or function name into a
+// tool-name-safe segment: every run of characters outside isToolNameChar's
+// set collapses to a single "_". Case is preserved. A segment with nothing
+// legal in it at all (e.g. entirely emoji) falls back to fallback, which
+// callers set to something identifying the segment kind (e.g. "db" or
+// "tool") rather than an uninformative "_".
+func normalizeToolNameSegment(name, fallback string) string {
+	var b strings.Builder
+	pendingSep := false
+	for _, r := range name {
+		if isToolNameChar(r) {
+			if pendingSep && b.Len() > 0 {
+				b.WriteByte('_')
+			}
+			pendingSep = false
+			b.WriteRune(r)
+		} else {
+			pendingSep = true
+		}
+	}
+	if b.Len() == 0 {
+		return fallback
+	}
+	return b.String()
+}
+
+// maxToolNameLength is the MCP spec's recommended maximum tool name length,
+// enforced here rather than left to the client — a client that submits its
+// whole tool list on every request can fail the entire request over one
+// oversized name, not just leave that tool unavailable. Checked as a byte
+// count: normalizeToolNameSegment guarantees a composed name is always
+// ASCII, so byte and rune counts agree.
+const maxToolNameLength = 128
+
+// dedupeToolName returns a variant of base that isn't already registered:
+// base itself if free, otherwise base with "_2", "_3", ... appended, after
+// truncating base to fit within maxToolNameLength (reserving room for the
+// suffix). This never fails to find a name — a function only fails to
+// become a tool if building its MCP tool definition itself errors (see
+// registerServiceTools).
+//
+// The result is deterministic only if callers always resolve a given set of
+// colliding names in the same order — see registerServiceTools and LoadAll.
+//
+// Callers must hold m.mu.
+func (m *Manager) dedupeToolName(base string) string {
+	if name := truncateToolName(base, ""); !m.toolNameTaken(name) {
+		return name
+	}
+	for n := 2; ; n++ {
+		if name := truncateToolName(base, fmt.Sprintf("_%d", n)); !m.toolNameTaken(name) {
+			return name
+		}
+	}
+}
+
+// toolNameTaken reports whether name is already registered.
+//
+// Callers must hold m.mu.
+func (m *Manager) toolNameTaken(name string) bool {
+	_, taken := m.toolNames[name]
+	return taken
+}
+
+// truncateToolName truncates base, if necessary, so that base+suffix fits
+// within maxToolNameLength.
+func truncateToolName(base, suffix string) string {
+	if max := maxToolNameLength - len(suffix); len(base) > max {
+		base = base[:max]
+	}
+	return base + suffix
 }

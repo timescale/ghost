@@ -21,18 +21,6 @@ import (
 // parameters, defaults, return shape, and volatility all come from pg_proc,
 // so there is nothing to parse or validate beyond the marker itself.
 
-// mode describes how a tool returns results.
-type mode string
-
-const (
-	// modeOne returns a single result row (RETURNS <scalar or composite>).
-	modeOne mode = "one"
-	// modeMany returns a set of rows (RETURNS SETOF / RETURNS TABLE).
-	modeMany mode = "many"
-	// modeExec runs for its side effects and returns no rows (RETURNS void).
-	modeExec mode = "exec"
-)
-
 // tool is the introspected metadata for one @mcp function.
 type tool struct {
 	Schema      string
@@ -50,6 +38,18 @@ type tool struct {
 	// trailing suffix of the positional argument list.
 	NamedArgs bool
 }
+
+// mode describes how a tool returns results.
+type mode string
+
+const (
+	// modeOne returns a single result row (RETURNS <scalar or composite>).
+	modeOne mode = "one"
+	// modeMany returns a set of rows (RETURNS SETOF / RETURNS TABLE).
+	modeMany mode = "many"
+	// modeExec runs for its side effects and returns no rows (RETURNS void).
+	modeExec mode = "exec"
+)
 
 // param is one input argument of a tool's function.
 type param struct {
@@ -85,21 +85,6 @@ type typeInfo struct {
 	IsArray bool
 	// EnumVals holds the enum labels when the (element) type is an enum.
 	EnumVals []string
-}
-
-// marker is the tag that exposes a function as an MCP tool. It must be the
-// first non-blank line of the function's comment, alone on its line.
-const marker = "@mcp"
-
-// parseMarkerComment reports whether comment carries the @mcp marker, and
-// returns the remaining lines as the tool description.
-func parseMarkerComment(comment string) (string, bool) {
-	trimmed := strings.TrimLeft(comment, " \t\n")
-	first, rest, _ := strings.Cut(trimmed, "\n")
-	if strings.TrimSpace(first) != marker {
-		return "", false
-	}
-	return strings.TrimSpace(rest), true
 }
 
 // functionRow is the raw catalog row for one commented function.
@@ -317,7 +302,7 @@ func buildTool(resolver *typeResolver, row functionRow) (tool, error) {
 // argMode returns the mode of the function's i'th argument. proargmodes is
 // only set when the function has non-IN arguments, and then covers all
 // arguments in declaration order.
-func argMode(row functionRow, i int) string {
+func (row functionRow) argMode(i int) string {
 	if row.ArgModes != nil {
 		return row.ArgModes[i]
 	}
@@ -325,7 +310,7 @@ func argMode(row functionRow, i int) string {
 }
 
 // argName returns the name of the function's i'th argument, "" when unnamed.
-func argName(row functionRow, i int) string {
+func (row functionRow) argName(i int) string {
 	if row.ArgNames != nil {
 		return row.ArgNames[i]
 	}
@@ -334,19 +319,11 @@ func argName(row functionRow, i int) string {
 
 // argDefault returns the deparsed DEFAULT expression of the function's i'th
 // argument, and whether it has one.
-func argDefault(row functionRow, i int) (string, bool) {
+func (row functionRow) argDefault(i int) (string, bool) {
 	if i < len(row.ArgDefaults) && row.ArgDefaults[i] != nil {
 		return *row.ArgDefaults[i], true
 	}
 	return "", false
-}
-
-// isNullDefault reports whether a deparsed argument default is a bare NULL
-// constant, which pg_get_function_arg_default renders as NULL with an
-// optional type annotation ("NULL::integer"). Expressions that merely
-// evaluate to null (e.g. NULLIF(1, 1)) deliberately don't match.
-func isNullDefault(def string) bool {
-	return def == "NULL" || strings.HasPrefix(def, "NULL::")
 }
 
 // inputParams returns the function's input parameters (IN and INOUT
@@ -358,7 +335,7 @@ func inputParams(resolver *typeResolver, row functionRow) ([]param, error) {
 	// named "param_1") so the fallback can never collide with it.
 	usedNames := make(map[string]bool, len(row.ArgTypes))
 	for i := range row.ArgTypes {
-		if name := argName(row, i); name != "" {
+		if name := row.argName(i); name != "" {
 			usedNames[name] = true
 		}
 	}
@@ -367,7 +344,7 @@ func inputParams(resolver *typeResolver, row functionRow) ([]param, error) {
 	var params []param
 
 	for i, typeOID := range row.ArgTypes {
-		switch mode := argMode(row, i); mode {
+		switch mode := row.argMode(i); mode {
 		case "i", "b": // IN, INOUT
 		case "o", "t": // OUT, TABLE: result columns, not inputs
 			continue
@@ -382,7 +359,7 @@ func inputParams(resolver *typeResolver, row functionRow) ([]param, error) {
 			return nil, err
 		}
 
-		name := argName(row, i)
+		name := row.argName(i)
 		paramName := name
 		if paramName == "" {
 			for {
@@ -395,7 +372,7 @@ func inputParams(resolver *typeResolver, row functionRow) ([]param, error) {
 				}
 			}
 		}
-		def, hasDefault := argDefault(row, i)
+		def, hasDefault := row.argDefault(i)
 		params = append(params, param{
 			Name:        paramName,
 			ArgName:     name,
@@ -416,7 +393,7 @@ func outputColumns(resolver *typeResolver, row functionRow) ([]column, error) {
 	var cols []column
 
 	for i, typeOID := range row.ArgTypes {
-		switch argMode(row, i) {
+		switch row.argMode(i) {
 		case "o", "b", "t": // OUT, INOUT, TABLE
 		default:
 			continue
@@ -427,7 +404,7 @@ func outputColumns(resolver *typeResolver, row functionRow) ([]column, error) {
 			return nil, err
 		}
 
-		name := argName(row, i)
+		name := row.argName(i)
 		if name == "" {
 			// PostgreSQL names unnamed output columns by their position in
 			// the output column list.
@@ -478,4 +455,27 @@ func resultColumns(resolver *typeResolver, row functionRow) ([]column, error) {
 		return nil, err
 	}
 	return []column{{Name: row.Name, Type: typ}}, nil
+}
+
+// marker is the tag that exposes a function as an MCP tool. It must be the
+// first non-blank line of the function's comment, alone on its line.
+const marker = "@mcp"
+
+// parseMarkerComment reports whether comment carries the @mcp marker, and
+// returns the remaining lines as the tool description.
+func parseMarkerComment(comment string) (string, bool) {
+	trimmed := strings.TrimLeft(comment, " \t\n")
+	first, rest, _ := strings.Cut(trimmed, "\n")
+	if strings.TrimSpace(first) != marker {
+		return "", false
+	}
+	return strings.TrimSpace(rest), true
+}
+
+// isNullDefault reports whether a deparsed argument default is a bare NULL
+// constant, which pg_get_function_arg_default renders as NULL with an
+// optional type annotation ("NULL::integer"). Expressions that merely
+// evaluate to null (e.g. NULLIF(1, 1)) deliberately don't match.
+func isNullDefault(def string) bool {
+	return def == "NULL" || strings.HasPrefix(def, "NULL::")
 }

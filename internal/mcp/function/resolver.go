@@ -24,34 +24,6 @@ func newTypeResolver(pool *pgxpool.Pool) *typeResolver {
 	}
 }
 
-// typeRow is the catalog row for one type, with enum labels attached.
-type typeRow struct {
-	OID        int64    `db:"oid"`
-	Name       string   `db:"name"`
-	TypeType   string   `db:"type_type"`
-	Category   string   `db:"category"`
-	Elem       int64    `db:"elem"`
-	Base       int64    `db:"base"`
-	EnumLabels []string `db:"enum_labels"` // nil for non-enums
-}
-
-// typesQuery loads the catalog facts needed to classify a batch of types.
-const typesQuery = `
-SELECT
-    t.oid::int8 AS oid,
-    pg_catalog.format_type(t.oid, NULL) AS name,
-    t.typtype::text AS type_type,
-    t.typcategory::text AS category,
-    t.typelem::int8 AS elem,
-    t.typbasetype::int8 AS base,
-    (
-        SELECT array_agg(enumlabel ORDER BY enumsortorder)
-        FROM pg_catalog.pg_enum
-        WHERE enumtypid = t.oid
-    ) AS enum_labels
-FROM pg_catalog.pg_type t
-WHERE t.oid::int8 = ANY($1)`
-
 // preload fetches the catalog rows for the given type OIDs in batches. Types
 // can reference further types (an array its element, a domain its base), so
 // referenced OIDs that weren't already loaded are fetched in a follow-up
@@ -141,3 +113,31 @@ func (r *typeResolver) resolve(oid int64) (typeInfo, error) {
 		return typeInfo{Name: t.Name}, nil
 	}
 }
+
+// typeRow is the catalog row for one type, with enum labels attached.
+type typeRow struct {
+	OID        int64    `db:"oid"`
+	Name       string   `db:"name"`
+	TypeType   string   `db:"type_type"`
+	Category   string   `db:"category"`
+	Elem       int64    `db:"elem"`
+	Base       int64    `db:"base"`
+	EnumLabels []string `db:"enum_labels"` // nil for non-enums
+}
+
+// typesQuery loads the catalog facts needed to classify a batch of types.
+const typesQuery = `
+SELECT
+    t.oid::int8 AS oid,
+    pg_catalog.format_type(t.oid, NULL) AS name,
+    t.typtype::text AS type_type,
+    t.typcategory::text AS category,
+    t.typelem::int8 AS elem,
+    t.typbasetype::int8 AS base,
+    (
+        SELECT array_agg(enumlabel ORDER BY enumsortorder)
+        FROM pg_catalog.pg_enum
+        WHERE enumtypid = t.oid
+    ) AS enum_labels
+FROM pg_catalog.pg_type t
+WHERE t.oid::int8 = ANY($1)`
