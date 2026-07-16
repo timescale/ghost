@@ -21,6 +21,22 @@ import (
 // parameters, defaults, return shape, and volatility all come from pg_proc,
 // so there is nothing to parse or validate beyond the marker itself.
 
+// marker is the tag that exposes a function as an MCP tool. It must be the
+// first non-blank line of the function's comment, alone on its line.
+const marker = "@mcp"
+
+// mode describes how a tool returns results.
+type mode string
+
+const (
+	// modeOne returns a single result row (RETURNS <scalar or composite>).
+	modeOne mode = "one"
+	// modeMany returns a set of rows (RETURNS SETOF / RETURNS TABLE).
+	modeMany mode = "many"
+	// modeExec runs for its side effects and returns no rows (RETURNS void).
+	modeExec mode = "exec"
+)
+
 // tool is the introspected metadata for one @mcp function.
 type tool struct {
 	Schema      string
@@ -38,18 +54,6 @@ type tool struct {
 	// trailing suffix of the positional argument list.
 	NamedArgs bool
 }
-
-// mode describes how a tool returns results.
-type mode string
-
-const (
-	// modeOne returns a single result row (RETURNS <scalar or composite>).
-	modeOne mode = "one"
-	// modeMany returns a set of rows (RETURNS SETOF / RETURNS TABLE).
-	modeMany mode = "many"
-	// modeExec runs for its side effects and returns no rows (RETURNS void).
-	modeExec mode = "exec"
-)
 
 // param is one input argument of a tool's function.
 type param struct {
@@ -114,6 +118,33 @@ type functionRow struct {
 type retColumn struct {
 	Name string `json:"name"`
 	Type int64  `json:"type"`
+}
+
+// argMode returns the mode of the function's i'th argument. proargmodes is
+// only set when the function has non-IN arguments, and then covers all
+// arguments in declaration order.
+func (row functionRow) argMode(i int) string {
+	if row.ArgModes != nil {
+		return row.ArgModes[i]
+	}
+	return "i" // IN
+}
+
+// argName returns the name of the function's i'th argument, "" when unnamed.
+func (row functionRow) argName(i int) string {
+	if row.ArgNames != nil {
+		return row.ArgNames[i]
+	}
+	return ""
+}
+
+// argDefault returns the deparsed DEFAULT expression of the function's i'th
+// argument, and whether it has one.
+func (row functionRow) argDefault(i int) (string, bool) {
+	if i < len(row.ArgDefaults) && row.ArgDefaults[i] != nil {
+		return *row.ArgDefaults[i], true
+	}
+	return "", false
 }
 
 // functionsQuery selects every routine — plain functions, but also
@@ -244,6 +275,17 @@ func introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([
 	return tools, nil
 }
 
+// parseMarkerComment reports whether comment carries the @mcp marker, and
+// returns the remaining lines as the tool description.
+func parseMarkerComment(comment string) (string, bool) {
+	trimmed := strings.TrimLeft(comment, " \t\n")
+	first, rest, _ := strings.Cut(trimmed, "\n")
+	if strings.TrimSpace(first) != marker {
+		return "", false
+	}
+	return strings.TrimSpace(rest), true
+}
+
 // buildTool converts one catalog row into tool metadata.
 func buildTool(resolver *typeResolver, row functionRow) (tool, error) {
 	// Only plain functions become tools. Procedures are deliberately not
@@ -297,33 +339,6 @@ func buildTool(resolver *typeResolver, row functionRow) (tool, error) {
 	tl.Columns = cols
 
 	return tl, nil
-}
-
-// argMode returns the mode of the function's i'th argument. proargmodes is
-// only set when the function has non-IN arguments, and then covers all
-// arguments in declaration order.
-func (row functionRow) argMode(i int) string {
-	if row.ArgModes != nil {
-		return row.ArgModes[i]
-	}
-	return "i" // IN
-}
-
-// argName returns the name of the function's i'th argument, "" when unnamed.
-func (row functionRow) argName(i int) string {
-	if row.ArgNames != nil {
-		return row.ArgNames[i]
-	}
-	return ""
-}
-
-// argDefault returns the deparsed DEFAULT expression of the function's i'th
-// argument, and whether it has one.
-func (row functionRow) argDefault(i int) (string, bool) {
-	if i < len(row.ArgDefaults) && row.ArgDefaults[i] != nil {
-		return *row.ArgDefaults[i], true
-	}
-	return "", false
 }
 
 // inputParams returns the function's input parameters (IN and INOUT
@@ -383,6 +398,14 @@ func inputParams(resolver *typeResolver, row functionRow) ([]param, error) {
 	}
 
 	return params, nil
+}
+
+// isNullDefault reports whether a deparsed argument default is a bare NULL
+// constant, which pg_get_function_arg_default renders as NULL with an
+// optional type annotation ("NULL::integer"). Expressions that merely
+// evaluate to null (e.g. NULLIF(1, 1)) deliberately don't match.
+func isNullDefault(def string) bool {
+	return def == "NULL" || strings.HasPrefix(def, "NULL::")
 }
 
 // outputColumns returns the result columns declared by the function's OUT,
@@ -455,27 +478,4 @@ func resultColumns(resolver *typeResolver, row functionRow) ([]column, error) {
 		return nil, err
 	}
 	return []column{{Name: row.Name, Type: typ}}, nil
-}
-
-// marker is the tag that exposes a function as an MCP tool. It must be the
-// first non-blank line of the function's comment, alone on its line.
-const marker = "@mcp"
-
-// parseMarkerComment reports whether comment carries the @mcp marker, and
-// returns the remaining lines as the tool description.
-func parseMarkerComment(comment string) (string, bool) {
-	trimmed := strings.TrimLeft(comment, " \t\n")
-	first, rest, _ := strings.Cut(trimmed, "\n")
-	if strings.TrimSpace(first) != marker {
-		return "", false
-	}
-	return strings.TrimSpace(rest), true
-}
-
-// isNullDefault reports whether a deparsed argument default is a bare NULL
-// constant, which pg_get_function_arg_default renders as NULL with an
-// optional type annotation ("NULL::integer"). Expressions that merely
-// evaluate to null (e.g. NULLIF(1, 1)) deliberately don't match.
-func isNullDefault(def string) bool {
-	return def == "NULL" || strings.HasPrefix(def, "NULL::")
 }
