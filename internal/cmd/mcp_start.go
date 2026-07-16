@@ -43,8 +43,8 @@ func buildMCPStartCmd(app *common.App) *cobra.Command {
 	addServeFlag(cmd, app, &serveRef)
 
 	// Add transport subcommands
-	cmd.AddCommand(buildMCPStdioCmd(app, &serveRef))
-	cmd.AddCommand(buildMCPHTTPCmd(app, &serveRef))
+	cmd.AddCommand(buildMCPStdioCmd(app))
+	cmd.AddCommand(buildMCPHTTPCmd(app))
 
 	return cmd
 }
@@ -67,7 +67,9 @@ func addServeFlag(cmd *cobra.Command, app *common.App, serveRef *string) {
 }
 
 // buildMCPStdioCmd creates the stdio subcommand
-func buildMCPStdioCmd(app *common.App, serveRef *string) *cobra.Command {
+func buildMCPStdioCmd(app *common.App) *cobra.Command {
+	var serveRef string
+
 	cmd := &cobra.Command{
 		Use:   "stdio",
 		Short: "Start MCP server with stdio transport",
@@ -78,19 +80,20 @@ func buildMCPStdioCmd(app *common.App, serveRef *string) *cobra.Command {
 		ValidArgsFunction: cobra.NoFileCompletions,
 		SilenceUsage:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return startStdioServer(cmd, app, *serveRef)
+			return startStdioServer(cmd, app, serveRef)
 		},
 	}
 
-	addServeFlag(cmd, app, serveRef)
+	addServeFlag(cmd, app, &serveRef)
 
 	return cmd
 }
 
 // buildMCPHTTPCmd creates the http subcommand with port/host flags
-func buildMCPHTTPCmd(app *common.App, serveRef *string) *cobra.Command {
+func buildMCPHTTPCmd(app *common.App) *cobra.Command {
 	var httpPort int
 	var httpHost string
+	var serveRef string
 
 	cmd := &cobra.Command{
 		Use:   "http",
@@ -112,7 +115,7 @@ func buildMCPHTTPCmd(app *common.App, serveRef *string) *cobra.Command {
 		SilenceUsage:      true,
 		SilenceErrors:     true, // HTTP server uses slog for all output, including errors
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return startHTTPServer(cmd, app, httpHost, httpPort, *serveRef)
+			return startHTTPServer(cmd, app, httpHost, httpPort, serveRef)
 		},
 	}
 
@@ -120,7 +123,7 @@ func buildMCPHTTPCmd(app *common.App, serveRef *string) *cobra.Command {
 	cmd.Flags().IntVar(&httpPort, "port", 8080, "Port to run HTTP server on")
 	cmd.Flags().StringVar(&httpHost, "host", "localhost", "Host to bind to")
 
-	addServeFlag(cmd, app, serveRef)
+	addServeFlag(cmd, app, &serveRef)
 
 	return cmd
 }
