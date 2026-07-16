@@ -15,7 +15,7 @@ import (
 func buildMCPListCmd(app *common.App) *cobra.Command {
 	var jsonOutput bool
 	var yamlOutput bool
-	var includeFunctionTools bool
+	var functionTools bool
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -38,7 +38,7 @@ The output can be formatted as a table, JSON, or YAML.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Create MCP server (see functionToolsMode for the --function-tools gating).
 			server, err := mcp.NewServer(cmd.Context(), app, mcp.Options{
-				FunctionTools: functionToolsMode(app, includeFunctionTools),
+				FunctionTools: functionToolsMode(app, functionTools),
 			})
 			if err != nil {
 				return fmt.Errorf("failed to create MCP server: %w", err)
@@ -71,7 +71,7 @@ The output can be formatted as a table, JSON, or YAML.`,
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	cmd.Flags().BoolVar(&yamlOutput, "yaml", false, "Output in YAML format")
 	cmd.MarkFlagsMutuallyExclusive("json", "yaml")
-	addFunctionToolsFlag(cmd, app, &includeFunctionTools)
+	addFunctionToolsFlag(cmd, app, &functionTools)
 
 	return cmd
 }
