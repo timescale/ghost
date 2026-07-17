@@ -13,15 +13,6 @@ import (
 	"github.com/timescale/ghost/internal/util"
 )
 
-// chartConfigDescriptionPrefix is the shared lead-in for the chart_config
-// parameter description. It documents the expected function shape, the `data`
-// contract, and points to the ECharts option reference so less capable models
-// have the info they need (frontier models generally know ECharts already). The
-// config is type-checked against the `EChartsOption` type in the UI's editor,
-// and any issues are returned as chart_diagnostics, so the model gets corrective
-// feedback after a first attempt.
-const chartConfigDescriptionPrefix = "JavaScript source defining a function `chart(data)` that returns an Apache ECharts option object (see the ECharts option reference at https://echarts.apache.org/en/option.html). `data` provides `data.rows` (array of row objects keyed by column name) and `data.columns` ([{name, type}]). The UI's editor type-checks the config against the `EChartsOption` type and any issues are reported back as chart_diagnostics. "
-
 // VisualizeInput represents input for ghost_visualize.
 type VisualizeInput struct {
 	Ref         string `json:"name_or_id,omitempty"`
@@ -34,7 +25,7 @@ func (VisualizeInput) Schema() *jsonschema.Schema {
 	schema := util.Must(jsonschema.For[VisualizeInput](nil))
 	schema.Properties["name_or_id"].Description = "Database name or identifier to run the query against. Required when `sql` is provided; ignored when re-charting the previous run (no `sql`)."
 	schema.Properties["sql"].Description = "SQL query to run in the local web UI. When provided, the query runs in the browser, the live UI updates so the user sees exactly what you ran, and the response includes the result rows (capped at `limit`). Pair it with `chart_config` to also chart the results and get back a rendered chart image. Omit `sql` to re-chart the most recent run with a new `chart_config` (without re-running the query). Multi-statement queries are supported; query parameters are not."
-	schema.Properties["chart_config"].Description = chartConfigDescriptionPrefix + "When provided, it's applied to the run, the chart is rendered (the response includes a PNG image), and the live UI switches to the chart view. When omitted, no chart is rendered and the active view is left unchanged — just the rows are returned. You must provide at least one of `sql` or `chart_config`."
+	schema.Properties["chart_config"].Description = "JavaScript source defining a function `chart(data, echarts)` that returns an Apache ECharts option object, or a Promise of one — the function may be async, e.g. to fetch map GeoJSON and register it via `echarts.registerMap(...)` before returning the option (see the ECharts option reference at https://echarts.apache.org/en/option.html). `data` provides `data.rows` (array of row objects keyed by column name) and `data.columns` ([{name, type}]). `echarts` is the Apache ECharts namespace (also available as a global). The UI's editor type-checks the config and any issues are reported back as `chart_diagnostics`. The config should start with a JSDoc annotation line (`/** @type {ChartFunction} */`, or `/** @type {AsyncChartFunction} */` when `chart` is async). When provided, it's applied to the run, the chart is rendered (the response includes a PNG image), and the live UI switches to the chart view. When omitted, no chart is rendered and the active view is left unchanged — just the rows are returned. You must provide at least one of `sql` or `chart_config`."
 	schema.Properties["limit"].Description = fmt.Sprintf("Maximum number of result rows returned to you (the caller). Defaults to %d to conserve token usage. This caps only the rows returned in the response; the full result set is still computed in the browser (and charted, if a `chart_config` is given), so a small limit doesn't truncate the chart. Only applies when running a query (`sql`).", defaultRowLimit)
 	schema.Properties["limit"].Default = json.RawMessage(fmt.Sprintf("%d", defaultRowLimit))
 	schema.Properties["limit"].Minimum = new(0.0)

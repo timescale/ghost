@@ -119,7 +119,7 @@ export async function renderChartImage(
   // 'finished' event (see renderToDataURL) to cover progressive rendering. This
   // only affects the off-screen screenshot, never the live on-screen chart.
   const option: CaptureOption = {
-    ...buildChartOption(config, data),
+    ...(await buildChartOption(config, data, echarts)),
     animation: false,
   };
 

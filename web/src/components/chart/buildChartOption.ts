@@ -1,10 +1,15 @@
 import type { EChartsOption } from 'echarts';
 
+import type { EChartsGlobal } from './echarts';
 import type { ChartData } from './types';
 
 // buildChartOption evaluates the user-authored chart config — which defines a
-// `chart(data)` function — against the query results and returns the resulting
-// ECharts option object.
+// `chart(data, echarts)` function — against the query results and resolves
+// with the resulting ECharts option object. The function receives the ECharts
+// namespace as its second argument (the same object as the global `echarts`),
+// e.g. for echarts.registerMap(...), and may return the option directly or a
+// Promise of it — an async config can fetch resources (like map GeoJSON) and
+// register them before returning the option.
 //
 // We run the code directly via `new Function` rather than in a hardened sandbox
 // (iframe/worker): the person authoring this config is the operator of their
@@ -25,15 +30,26 @@ import type { ChartData } from './types';
 // The config is plain JavaScript (the editor's TypeScript checking is driven by
 // JSDoc, so no transpilation is needed); we append a `return` to hand back the
 // declared `chart` function.
-export function buildChartOption(code: string, data: ChartData): EChartsOption {
+export async function buildChartOption(
+  code: string,
+  data: ChartData,
+  echarts: EChartsGlobal,
+): Promise<EChartsOption> {
   const factory = new Function(
     `${code}\nreturn typeof chart === 'function' ? chart : null;`,
   );
-  const fn = factory() as ((d: ChartData) => EChartsOption) | null;
+  const fn = factory() as
+    | ((
+        d: ChartData,
+        e: EChartsGlobal,
+      ) => EChartsOption | Promise<EChartsOption>)
+    | null;
   if (typeof fn !== 'function') {
     throw new Error("chart config must define a function named 'chart'");
   }
-  const option = fn(data);
+  // Await tolerates both shapes: a sync config's plain option passes through
+  // unchanged, an async (or Promise-returning) config resolves first.
+  const option = await fn(data, echarts);
   if (option == null || typeof option !== 'object') {
     throw new Error('chart config must return an ECharts option object');
   }

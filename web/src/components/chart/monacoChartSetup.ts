@@ -7,10 +7,10 @@ const ECHARTS_VERSION = '6.1.0';
 const ECHARTS_TYPES_URL = `https://cdn.jsdelivr.net/npm/echarts@${ECHARTS_VERSION}/types/dist/echarts.d.ts`;
 
 // Ambient declarations injected into the editor's language service so the chart
-// config can reference `ChartData` and `EChartsOption` without imports. This is
-// a module (note `export {}`), so `declare global` is required to make the
-// names global. `EChartsOption` is aliased from the echarts types lib added
-// below.
+// config can reference `ChartData`, `EChartsOption`, and the `echarts` global
+// without imports. This is a module (note `export {}`), so `declare global` is
+// required to make the names global. `EChartsOption` and `EChartsNamespace`
+// are aliased from the echarts types lib added below.
 const GLOBALS_DTS = `export {};
 declare global {
   interface ChartColumn {
@@ -26,7 +26,8 @@ declare global {
      * (not 'unknown') so a config can use a column directly as ECharts axis
      * data or in arithmetic (e.g. data.rows.map((r) => r.year)) without a type
      * error on every access. The valuable check -- the returned EChartsOption
-     * shape -- is preserved via the @returns annotation in CONFIG_HEADER.
+     * shape -- is preserved via the @type annotation in the config header (see
+     * configHeader.ts).
      */
     rows: Record<string, any>[];
     /** Ordered column metadata. */
@@ -34,6 +35,34 @@ declare global {
   }
   /** Apache ECharts option object (from echarts ${ECHARTS_VERSION}). */
   type EChartsOption = import('echarts').EChartsOption;
+  /**
+   * The Apache ECharts namespace (from echarts ${ECHARTS_VERSION}), e.g. for
+   * echarts.registerMap(...). Available as the global 'echarts' and also
+   * passed to the chart function as its second argument.
+   */
+  type EChartsNamespace = typeof import('echarts');
+  /** The Apache ECharts global (loaded from the CDN). */
+  const echarts: EChartsNamespace;
+  /**
+   * The chart config's 'chart' function: builds an ECharts option from the
+   * query results. It may return the option directly or a Promise of it (e.g.
+   * when it must fetch map GeoJSON before building the option), and may
+   * declare fewer parameters than the type (e.g. just 'chart(data)').
+   */
+  type ChartFunction = (
+    data: ChartData,
+    echarts: EChartsNamespace,
+  ) => EChartsOption | Promise<EChartsOption>;
+  /**
+   * ChartFunction variant applied to 'async function chart' declarations:
+   * TypeScript requires an async function's annotated return type to be
+   * exactly the global Promise<T> (never a union), so ChartFunction's
+   * sync|async return union can't be used there.
+   */
+  type AsyncChartFunction = (
+    data: ChartData,
+    echarts: EChartsNamespace,
+  ) => Promise<EChartsOption>;
 }
 `;
 

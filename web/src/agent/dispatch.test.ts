@@ -270,7 +270,9 @@ describe('dispatch visualize', () => {
 
   test('switches to the chart view when a chart_config is provided', async () => {
     // Supplying a chart_config is the signal to chart: apply the config and
-    // switch the live UI to the chart view.
+    // switch the live UI to the chart view. The stored config gains a @type
+    // annotation line so the live editor's model is typed (hover/completions);
+    // configs that already start with a JSDoc are stored as-is.
     const { deps, chartConfig, resultViews } = makeDeps(['db1']);
     registerStubExecutor('db1');
     await dispatch(
@@ -279,7 +281,9 @@ describe('dispatch visualize', () => {
       deps,
       noSignal(),
     );
-    expect(chartConfig()).toBe('function chart(){ return {}; }');
+    expect(chartConfig()).toBe(
+      '/** @type {ChartFunction} */\nfunction chart(){ return {}; }',
+    );
     expect(resultViews).toEqual(['chart']);
   });
 
