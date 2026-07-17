@@ -92,3 +92,77 @@ func TestBuildCall(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildCallVariadic(t *testing.T) {
+	// f(a text, VARIADIC vals integer[]): the variadic argument is a required
+	// array parameter passed with the VARIADIC keyword.
+	tl := tool{
+		Schema:    "public",
+		Name:      "f",
+		Mode:      modeOne,
+		NamedArgs: true,
+		Params: []param{
+			{Name: "a", ArgName: "a", Type: typeInfo{Name: "text"}},
+			{Name: "vals", ArgName: "vals", Variadic: true, Type: typeInfo{Name: "integer", IsArray: true}},
+		},
+	}
+
+	t.Run("variadic array passed with the VARIADIC keyword", func(t *testing.T) {
+		sql, args, err := buildCall(tl, map[string]any{"a": "x", "vals": []any{1, 2}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `SELECT * FROM "public"."f"($1::text, VARIADIC $2::integer[])`
+		if sql != want {
+			t.Errorf("sql = %q, want %q", sql, want)
+		}
+		if len(args) != 2 {
+			t.Errorf("len(args) = %d, want 2", len(args))
+		}
+	})
+
+	t.Run("empty variadic array is passed through, not omitted", func(t *testing.T) {
+		// An empty array is a real value the VARIADIC keyword forwards, which
+		// is the only way to pass a variadic function zero elements.
+		sql, _, err := buildCall(tl, map[string]any{"a": "x", "vals": []any{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `SELECT * FROM "public"."f"($1::text, VARIADIC $2::integer[])`
+		if sql != want {
+			t.Errorf("sql = %q, want %q", sql, want)
+		}
+	})
+
+	t.Run("variadic function is positional-only", func(t *testing.T) {
+		// f(a text, b integer DEFAULT 5, VARIADIC vals integer[] DEFAULT '{}'):
+		// even with named arguments, PostgreSQL can't skip a middle default
+		// under named notation for a variadic call, so providing a + vals while
+		// omitting b is rejected rather than emitted as an invalid call.
+		tl := tool{
+			Schema:    "public",
+			Name:      "f",
+			Mode:      modeOne,
+			NamedArgs: true,
+			Params: []param{
+				{Name: "a", ArgName: "a", Type: typeInfo{Name: "text"}},
+				{Name: "b", ArgName: "b", HasDefault: true, Type: typeInfo{Name: "integer"}},
+				{Name: "vals", ArgName: "vals", HasDefault: true, Variadic: true, Type: typeInfo{Name: "integer", IsArray: true}},
+			},
+		}
+		if _, _, err := buildCall(tl, map[string]any{"a": "x", "vals": []any{1}}); err == nil {
+			t.Error("expected error: a variadic function can't skip a middle default")
+		}
+
+		// Trailing omissions (omit b and the variadic) are allowed and use
+		// positional notation.
+		sql, _, err := buildCall(tl, map[string]any{"a": "x"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `SELECT * FROM "public"."f"($1::text)`
+		if sql != want {
+			t.Errorf("sql = %q, want %q", sql, want)
+		}
+	})
+}

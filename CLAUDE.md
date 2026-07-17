@@ -52,7 +52,8 @@ Experimental (gated behind `GHOST_EXPERIMENTAL`): every Ghost database can defin
 Key mechanics (see `internal/mcp/function`):
 
 - **Catalog introspection**: a tool's input/output schema is derived entirely from the Postgres catalog (`pg_proc`/`pg_type`) — argument names, types, defaults, nullability, return shape, enum values, and volatility. No SQL parsing is involved.
-- **Skipped functions**: functions that can't be cleanly represented as a tool (e.g. procedures, aggregate/window functions, polymorphic or `VARIADIC` arguments) are skipped with a logged warning rather than failing, so one exotic function never takes down the rest of the tool surface.
+- **Skipped functions**: functions that can't be cleanly represented as a tool (e.g. procedures, aggregate/window functions, polymorphic or `VARIADIC "any"` arguments) are skipped with a logged warning rather than failing, so one exotic function never takes down the rest of the tool surface.
+- **VARIADIC arguments**: a `VARIADIC` argument is exposed as an array parameter and passed through with the `VARIADIC` keyword. Because PostgreSQL forbids omitting arguments under named notation for a variadic call, a variadic function's tool is always called positionally (omitted defaults must be trailing).
 - **Overloaded functions**: same-named `@mcp` functions each become their own tool, distinguished by a de-duplication suffix.
 - **Tool naming**: a tool's name joins the normalized database name and function name with `__` (`billing__get_user`), truncating and de-duplicating as needed. The function's own Postgres schema plays no part in the name.
 - **Two serving modes**: an authoring mode used by the main `ghost mcp` server, which exposes every database's function tools alongside the standard Ghost tools and management tooling; and a stripped consumer mode (`ghost mcp start --serve <database_ref>`) that exposes *only* one database's generated tools, unprefixed, with no other Ghost tools.

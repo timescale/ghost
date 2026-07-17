@@ -70,7 +70,13 @@ type param struct {
 	// the authoring convention for an argument that genuinely accepts null.
 	// Only these arguments admit null in the tool's input schema.
 	NullDefault bool
-	Type        typeInfo
+	// Variadic marks a VARIADIC argument. Its declared type is the array
+	// type, so it maps to an array parameter like any other array argument;
+	// the flag only tells buildCall to pass it with the VARIADIC keyword (and
+	// to fall back to positional notation, since PostgreSQL forbids omitting
+	// arguments under named notation for a variadic call).
+	Variadic bool
+	Type     typeInfo
 }
 
 // column is one result column of a tool's function.
@@ -351,12 +357,18 @@ func inputParams(resolver *typeResolver, row functionRow) ([]param, error) {
 	var params []param
 
 	for i, typeOID := range row.ArgTypes {
+		var variadic bool
 		switch mode := row.argMode(i); mode {
 		case "i", "b": // IN, INOUT
 		case "o", "t": // OUT, TABLE: result columns, not inputs
 			continue
-		case "v":
-			return nil, fmt.Errorf("VARIADIC arguments are not supported")
+		case "v": // VARIADIC
+			// A VARIADIC argument's declared type is already the array type,
+			// so it resolves to an array like any other array argument; the
+			// caller passes it as a JSON array and buildCall forwards it with
+			// the VARIADIC keyword. VARIADIC "any" is a pseudo-type and so is
+			// rejected below by resolver.resolve.
+			variadic = true
 		default:
 			return nil, fmt.Errorf("unsupported argument mode %q", mode)
 		}
@@ -385,6 +397,7 @@ func inputParams(resolver *typeResolver, row functionRow) ([]param, error) {
 			ArgName:     name,
 			HasDefault:  hasDefault,
 			NullDefault: hasDefault && isNullDefault(def),
+			Variadic:    variadic,
 			Type:        typ,
 		})
 	}

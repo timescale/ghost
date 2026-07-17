@@ -39,9 +39,13 @@ func handleToolCall(ctx context.Context, pool *pgxpool.Pool, tool tool, types []
 // notation; otherwise named notation ("arg" => $n) skips the omitted
 // arguments, which requires the function's arguments to be named — for a
 // function with unnamed arguments, the omitted optionals must form a
-// trailing suffix of the argument list. Every placeholder is cast to its
-// argument's declared type so PostgreSQL resolves same-named overloads to the
-// intended function (see the loop below).
+// trailing suffix of the argument list. A variadic argument is passed with
+// the VARIADIC keyword (VARIADIC $n::type[]); because PostgreSQL forbids
+// omitting any argument under named notation for a variadic call, a variadic
+// function is treated like one with unnamed arguments (positional only,
+// trailing omissions), regardless of whether its arguments are named. Every
+// placeholder is cast to its argument's declared type so PostgreSQL resolves
+// same-named overloads to the intended function (see the loop below).
 func buildCall(tool tool, input map[string]any) (string, []any, error) {
 	type callArg struct {
 		param param
@@ -49,6 +53,13 @@ func buildCall(tool tool, input map[string]any) (string, []any, error) {
 	}
 	var provided []callArg
 	var omitted []string
+
+	// Named notation can skip an omitted default that precedes a provided
+	// argument, but only for a non-variadic function with named arguments.
+	hasVariadic := slices.ContainsFunc(tool.Params, func(p param) bool {
+		return p.Variadic
+	})
+	canSkip := tool.NamedArgs && !hasVariadic
 
 	for _, param := range tool.Params {
 		val, ok := input[param.Name]
@@ -63,15 +74,19 @@ func buildCall(tool tool, input map[string]any) (string, []any, error) {
 		if err != nil {
 			return "", nil, fmt.Errorf("invalid value for parameter %s: %w", param.Name, err)
 		}
-		if len(omitted) > 0 && !tool.NamedArgs {
-			return "", nil, fmt.Errorf("parameter %s requires %s to also be provided (the function's arguments are unnamed, so defaults can only be omitted from the end)", param.Name, strings.Join(omitted, ", "))
+		if len(omitted) > 0 && !canSkip {
+			reason := "the function's arguments are unnamed, so defaults can only be omitted from the end"
+			if hasVariadic {
+				reason = "the function is variadic, so its arguments must be passed positionally and defaults can only be omitted from the end"
+			}
+			return "", nil, fmt.Errorf("parameter %s requires %s to also be provided (%s)", param.Name, strings.Join(omitted, ", "), reason)
 		}
 		provided = append(provided, callArg{param: param, value: val})
 	}
 
 	parts := make([]string, len(provided))
 	values := make([]any, len(provided))
-	useNamed := tool.NamedArgs && len(omitted) > 0
+	useNamed := canSkip && len(omitted) > 0
 	for i, arg := range provided {
 		// Cast every placeholder to the argument's declared type. This pins
 		// overload resolution to the function this tool was introspected from
@@ -81,6 +96,13 @@ func buildCall(tool tool, input map[string]any) (string, []any, error) {
 		// otherwise. Explicit casts are a superset of the implicit coercion a
 		// bare $n would undergo, so this never changes a working call's result.
 		placeholder := fmt.Sprintf("$%d::%s", i+1, castType(arg.param.Type))
+		// A variadic argument is passed as a single array with the VARIADIC
+		// keyword, which is also the only way to pass it an empty array. This
+		// never combines with named notation above (useNamed is false whenever
+		// the function is variadic).
+		if arg.param.Variadic {
+			placeholder = "VARIADIC " + placeholder
+		}
 		if useNamed {
 			parts[i] = pgx.Identifier{arg.param.ArgName}.Sanitize() + " => " + placeholder
 		} else {

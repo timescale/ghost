@@ -30,7 +30,8 @@ Authoring rules for @mcp functions:
 - Declare read-only functions STABLE (or IMMUTABLE): the tool's read-only annotation comes from the function's volatility, and the default VOLATILE is treated as potentially writing.
 - The declared return type determines the output: RETURNS <scalar or composite> and OUT parameters yield a single row, RETURNS SETOF/TABLE yields a list of rows, and RETURNS void yields a success acknowledgment (have the function return a count or summary if the caller needs one).
 - Overloaded @mcp names (same name, different argument lists) each become their own tool, distinguished only by the '_2', '_3', etc. suffix described above. Prefer distinct function names when you want self-describing tools.
-- Unsupported and skipped with a logged warning: procedures (use a function returning void), VARIADIC or polymorphic arguments, nested array types, aggregate and window functions, and RETURNS record without OUT parameters.`
+- A VARIADIC argument is exposed as an array parameter and passed through with the VARIADIC keyword. Give it a DEFAULT (e.g. '{}') to make it optional; otherwise the caller must supply the array (an empty array is allowed). A variadic function is called positionally, so any omitted defaults must be trailing.
+- Unsupported and skipped with a logged warning: procedures (use a function returning void), polymorphic and VARIADIC "any" arguments, nested array types, aggregate and window functions, and RETURNS record without OUT parameters.`
 
 // registerFunctionTools sets up the function-tool manager on the authoring
 // server and registers the refresh management tool. When buildAll is set it

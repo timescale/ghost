@@ -121,3 +121,52 @@ func TestInputParamsFallbackNameAvoidsCollision(t *testing.T) {
 		t.Errorf(`params[0].Name = %q, want "param_2" (the next available fallback)`, params[0].Name)
 	}
 }
+
+func TestInputParamsVariadic(t *testing.T) {
+	// f(a text, VARIADIC vals integer[]): the variadic argument's declared
+	// type is the array type (integer[]), so it resolves to an array parameter
+	// and is flagged Variadic.
+	resolver := &typeResolver{types: map[int64]typeRow{
+		25:   {OID: 25, Name: "text", TypeType: "b"},
+		1007: {OID: 1007, Name: "integer[]", TypeType: "b", Category: "A", Elem: 23},
+		23:   {OID: 23, Name: "integer", TypeType: "b"},
+	}}
+	row := functionRow{
+		ArgTypes: []int64{25, 1007},
+		ArgModes: []string{"i", "v"},
+		ArgNames: []string{"a", "vals"},
+	}
+
+	params, err := inputParams(resolver, row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(params) != 2 {
+		t.Fatalf("len(params) = %d, want 2", len(params))
+	}
+	if params[0].Variadic {
+		t.Error("params[0] (a) should not be flagged variadic")
+	}
+	if !params[1].Variadic {
+		t.Error("params[1] (vals) should be flagged variadic")
+	}
+	if !params[1].Type.IsArray || params[1].Type.Name != "integer" {
+		t.Errorf("params[1].Type = %+v, want an integer array", params[1].Type)
+	}
+}
+
+func TestInputParamsVariadicAnyRejected(t *testing.T) {
+	// VARIADIC "any" (2276) is a pseudo-type; a value of it can't cross the
+	// tool boundary, so the function is rejected (and skipped by buildTool).
+	resolver := &typeResolver{types: map[int64]typeRow{
+		2276: {OID: 2276, Name: "\"any\"", TypeType: "p", Category: "P"},
+	}}
+	row := functionRow{
+		ArgTypes: []int64{2276},
+		ArgModes: []string{"v"},
+		ArgNames: []string{"args"},
+	}
+	if _, err := inputParams(resolver, row); err == nil {
+		t.Error(`expected error for VARIADIC "any" argument`)
+	}
+}
