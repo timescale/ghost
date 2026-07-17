@@ -39,7 +39,9 @@ func handleToolCall(ctx context.Context, pool *pgxpool.Pool, tool tool, types []
 // notation; otherwise named notation ("arg" => $n) skips the omitted
 // arguments, which requires the function's arguments to be named — for a
 // function with unnamed arguments, the omitted optionals must form a
-// trailing suffix of the argument list.
+// trailing suffix of the argument list. Every placeholder is cast to its
+// argument's declared type so PostgreSQL resolves same-named overloads to the
+// intended function (see the loop below).
 func buildCall(tool tool, input map[string]any) (string, []any, error) {
 	type callArg struct {
 		param param
@@ -71,7 +73,14 @@ func buildCall(tool tool, input map[string]any) (string, []any, error) {
 	values := make([]any, len(provided))
 	useNamed := tool.NamedArgs && len(omitted) > 0
 	for i, arg := range provided {
-		placeholder := fmt.Sprintf("$%d", i+1)
+		// Cast every placeholder to the argument's declared type. This pins
+		// overload resolution to the function this tool was introspected from
+		// (same-named overloads each become their own tool), and is a no-op
+		// for a non-overloaded function: PostgreSQL already infers $n's type
+		// from the argument, so $n::type carries the same type it would
+		// otherwise. Explicit casts are a superset of the implicit coercion a
+		// bare $n would undergo, so this never changes a working call's result.
+		placeholder := fmt.Sprintf("$%d::%s", i+1, castType(arg.param.Type))
 		if useNamed {
 			parts[i] = pgx.Identifier{arg.param.ArgName}.Sanitize() + " => " + placeholder
 		} else {
@@ -95,6 +104,18 @@ func buildCall(tool tool, input map[string]any) (string, []any, error) {
 	}
 
 	return sql, values, nil
+}
+
+// castType renders the SQL type expression to cast a placeholder to. typ.Name
+// comes from format_type, which is already a re-parseable (schema-qualified
+// where needed) type name, so it's interpolated directly rather than quoted as
+// an identifier. Arrays carry the element name with IsArray set, so the "[]"
+// suffix is reattached here.
+func castType(typ typeInfo) string {
+	if typ.IsArray {
+		return typ.Name + "[]"
+	}
+	return typ.Name
 }
 
 func executeExec(ctx context.Context, pool *pgxpool.Pool, sql string, args []any) *mcp.CallToolResult {

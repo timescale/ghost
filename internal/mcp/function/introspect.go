@@ -200,13 +200,19 @@ JOIN pg_catalog.pg_description d
     AND d.classoid = 'pg_catalog.pg_proc'::regclass
     AND d.objsubid = 0
 WHERE d.description ~ '^\s*@mcp'
-ORDER BY n.nspname, p.proname`
+ORDER BY n.nspname, p.proname, pg_catalog.pg_get_function_identity_arguments(p.oid)`
 
 // introspect reads every @mcp-marked function from the database catalog and
-// returns their tool metadata. Functions that can't be exposed — overloaded
-// @mcp names, unsupported argument or return types — are skipped with a
-// logged warning, never an error: one exotic function must not take down
-// the rest of the tool surface.
+// returns their tool metadata. Functions that can't be exposed — unsupported
+// argument or return types — are skipped with a logged warning, never an
+// error: one exotic function must not take down the rest of the tool surface.
+//
+// Overloaded @mcp names each become their own tool: the Manager's tool-name
+// de-duplication distinguishes them with a numeric suffix, and buildCall
+// casts every argument to its declared type so PostgreSQL resolves the call
+// to the intended overload (see execute.go). The (schema, name, identity
+// arguments) ordering below keeps which overload gets the base name — and
+// which gets the suffix — deterministic across reloads.
 //
 // The whole pass costs a handful of queries regardless of how many functions
 // or types are involved: one for the functions (composite return columns
@@ -230,14 +236,6 @@ func introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([
 		}
 	}
 
-	// An overloaded name can't become a tool: the tool's input schema and
-	// call can't distinguish the overloads. Skip every @mcp function whose
-	// (schema, name) appears more than once.
-	counts := make(map[string]int, len(marked))
-	for _, row := range marked {
-		counts[row.SchemaName+"."+row.Name]++
-	}
-
 	// Preload the catalog rows for every type the marked functions
 	// reference, so building the tools below never queries the database.
 	resolver := newTypeResolver(pool)
@@ -255,12 +253,6 @@ func introspect(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool) ([
 
 	tools := make([]tool, 0, len(marked))
 	for _, row := range marked {
-		if counts[row.SchemaName+"."+row.Name] > 1 {
-			logger.Warn("Skipping @mcp function: overloaded functions cannot be exposed as tools",
-				slog.String("function", row.SchemaName+"."+row.Name),
-			)
-			continue
-		}
 		tool, err := buildTool(resolver, row)
 		if err != nil {
 			logger.Warn("Skipping @mcp function",

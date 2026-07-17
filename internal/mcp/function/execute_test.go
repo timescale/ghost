@@ -20,7 +20,7 @@ func TestBuildCall(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := `SELECT * FROM "public"."get_pending_invoices"($1, $2, $3)`
+		want := `SELECT * FROM "public"."get_pending_invoices"($1::integer, $2::integer, $3::text)`
 		if sql != want {
 			t.Errorf("sql = %q, want %q", sql, want)
 		}
@@ -34,7 +34,7 @@ func TestBuildCall(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := `SELECT * FROM "public"."get_pending_invoices"("p_customer_id" => $1, "p_segment" => $2)`
+		want := `SELECT * FROM "public"."get_pending_invoices"("p_customer_id" => $1::integer, "p_segment" => $2::text)`
 		if sql != want {
 			t.Errorf("sql = %q, want %q", sql, want)
 		}
@@ -64,12 +64,31 @@ func TestBuildCall(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := `SELECT * FROM "public"."f"($1, $2)`
+		want := `SELECT * FROM "public"."f"($1::integer, $2::integer)`
 		if sql != want {
 			t.Errorf("sql = %q, want %q", sql, want)
 		}
 		if _, _, err := buildCall(unnamed, map[string]any{"param_1": 1, "param_3": 3}); err == nil {
 			t.Error("expected error for non-trailing omission with unnamed arguments")
+		}
+	})
+
+	t.Run("array argument casts to the element type with a [] suffix", func(t *testing.T) {
+		arrayTool := tool{
+			Schema: "public",
+			Name:   "f",
+			Mode:   modeOne,
+			Params: []param{
+				{Name: "ids", ArgName: "ids", Type: typeInfo{Name: "integer", IsArray: true}},
+			},
+		}
+		sql, _, err := buildCall(arrayTool, map[string]any{"ids": []any{1, 2}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `SELECT * FROM "public"."f"($1::integer[])`
+		if sql != want {
+			t.Errorf("sql = %q, want %q", sql, want)
 		}
 	})
 }
