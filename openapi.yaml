@@ -1112,6 +1112,7 @@ components:
       enum:
         - no_payment_method
         - compute_limit_exceeded
+        - signups_disabled
 
     StatusResponse:
       type: object

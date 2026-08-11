@@ -116,6 +116,7 @@ func (e DatabaseType) Valid() bool {
 const (
 	ErrorCodeComputeLimitExceeded ErrorCode = "compute_limit_exceeded"
 	ErrorCodeNoPaymentMethod      ErrorCode = "no_payment_method"
+	ErrorCodeSignupsDisabled      ErrorCode = "signups_disabled"
 )
 
 // Valid indicates whether the value is a known member of the ErrorCode enum.
@@ -124,6 +125,8 @@ func (e ErrorCode) Valid() bool {
 	case ErrorCodeComputeLimitExceeded:
 		return true
 	case ErrorCodeNoPaymentMethod:
+		return true
+	case ErrorCodeSignupsDisabled:
 		return true
 	default:
 		return false

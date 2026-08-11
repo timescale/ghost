@@ -16,6 +16,7 @@ import (
 	"github.com/timescale/ghost/internal/analytics"
 	"github.com/timescale/ghost/internal/api"
 	"github.com/timescale/ghost/internal/config"
+	"github.com/timescale/ghost/internal/util"
 )
 
 // ghostClientID must match the constant in ghost-api
@@ -74,6 +75,9 @@ func Login(ctx context.Context, app *App, headless bool, out io.Writer) (*LoginR
 	// Get the user's existing Ghost space, or create a new one
 	spaceID, err := l.findOrCreateSpace(ctx, client)
 	if err != nil {
+		if apiErr, ok := errors.AsType[*api.Error](err); ok && util.Deref(apiErr.Code) == api.ErrorCodeSignupsDisabled {
+			return nil, apiErr
+		}
 		return nil, fmt.Errorf("failed to select space: %w", err)
 	}
 

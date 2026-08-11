@@ -496,6 +496,40 @@ Successfully logged in as new@example.com
 		assertOutput(t, result.err.Error(), "failed to select space: failed to create space: forbidden")
 	})
 
+	t.Run("create space rejected because signups are disabled", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		postLoginMock := mock.NewMockClientWithResponsesInterface(ctrl)
+
+		emptySpaces := []api.Space{}
+		postLoginMock.EXPECT().ListSpacesWithResponse(validCtx).
+			Return(&api.ListSpacesResponse{
+				HTTPResponse: httpResponse(http.StatusOK),
+				JSON200:      &emptySpaces,
+			}, nil)
+		postLoginMock.EXPECT().CreateSpaceWithResponse(validCtx, api.CreateSpaceJSONRequestBody{}).
+			Return(&api.CreateSpaceResponse{
+				HTTPResponse: httpResponse(http.StatusForbidden),
+				JSONDefault: &api.Error{
+					Message: "sorry, Ghost is not accepting new users right now",
+					Code:    new(api.ErrorCodeSignupsDisabled),
+				},
+			}, nil)
+
+		result := runCommand(t, []string{"login"}, nil,
+			withEnv("GHOST_API_URL", tokenServer.URL),
+			withOpenBrowser(mockBrowserForOAuth()),
+			withNewGhostClient(func(apiURL string, auth api.AuthMethod) (api.ClientWithResponsesInterface, error) {
+				return postLoginMock, nil
+			}),
+		)
+
+		if result.err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		// The API's message stands alone: no "failed to select space" prefixes.
+		assertOutput(t, result.err.Error(), "sorry, Ghost is not accepting new users right now")
+	})
+
 	t.Run("create space nil response body", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		postLoginMock := mock.NewMockClientWithResponsesInterface(ctrl)
