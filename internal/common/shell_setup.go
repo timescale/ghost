@@ -65,6 +65,60 @@ func DetectShellRC() string {
 	return filepath.Join(home, ".bashrc")
 }
 
+// PackageInstalledCompletionPath returns the path of a Ghost shell
+// completion file installed by a package manager (Homebrew on macOS,
+// deb/rpm on Linux) for the given shell. Returns "" if shell is empty,
+// unsupported, or no such file exists. When found, the caller should treat
+// completions as already configured and skip writing to the user's rc file.
+//
+// Homebrew's prefix is taken from $HOMEBREW_PREFIX when set; otherwise the
+// well-known prefixes (/opt/homebrew, /usr/local, /home/linuxbrew/.linuxbrew)
+// are probed. The deb/rpm system paths under /usr/share are checked
+// unconditionally.
+func PackageInstalledCompletionPath(shell string) string {
+	for _, path := range packageCompletionCandidates(shell) {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
+func packageCompletionCandidates(shell string) []string {
+	prefixes := homebrewPrefixCandidates()
+	switch shell {
+	case "bash":
+		paths := make([]string, 0, len(prefixes)+1)
+		for _, p := range prefixes {
+			paths = append(paths, filepath.Join(p, "etc", "bash_completion.d", "ghost"))
+		}
+		return append(paths, "/usr/share/bash-completion/completions/ghost")
+	case "zsh":
+		paths := make([]string, 0, len(prefixes)+2)
+		for _, p := range prefixes {
+			paths = append(paths, filepath.Join(p, "share", "zsh", "site-functions", "_ghost"))
+		}
+		return append(paths,
+			"/usr/share/zsh/vendor-completions/_ghost",
+			"/usr/share/zsh/site-functions/_ghost",
+		)
+	case "fish":
+		paths := make([]string, 0, len(prefixes)+1)
+		for _, p := range prefixes {
+			paths = append(paths, filepath.Join(p, "share", "fish", "vendor_completions.d", "ghost.fish"))
+		}
+		return append(paths, "/usr/share/fish/vendor_completions.d/ghost.fish")
+	}
+	return nil
+}
+
+func homebrewPrefixCandidates() []string {
+	if prefix := os.Getenv("HOMEBREW_PREFIX"); prefix != "" {
+		return []string{prefix}
+	}
+	return []string{"/opt/homebrew", "/usr/local", "/home/linuxbrew/.linuxbrew"}
+}
+
 // IsInPath reports whether dir is an element of $PATH.
 func IsInPath(dir string) bool {
 	if dir == "" {

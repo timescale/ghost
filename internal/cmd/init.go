@@ -324,12 +324,17 @@ func detectCompletionsState() initStepState {
 		return state
 	}
 	shellType := common.DetectShellType()
-	rc := common.DetectShellRC()
 	if shellType == "" {
 		state.status = "unsupported shell — skipping"
 		state.configured = true
 		return state
 	}
+	if pkgPath := common.PackageInstalledCompletionPath(shellType); pkgPath != "" {
+		state.configured = true
+		state.status = "already installed at " + util.DisplayPath(pkgPath)
+		return state
+	}
+	rc := common.DetectShellRC()
 	mentioned, err := common.ShellRCMentionsGhostCompletion(rc)
 	if err != nil {
 		state.status = fmt.Sprintf("could not read %s", rc)
@@ -414,6 +419,10 @@ func runInitCompletions(cmd *cobra.Command) (bool, error) {
 	shellType := common.DetectShellType()
 	if shellType == "" {
 		cmd.PrintErrln("Could not detect your shell from $SHELL; skipping completions.")
+		return false, nil
+	}
+	if pkgPath := common.PackageInstalledCompletionPath(shellType); pkgPath != "" {
+		cmd.PrintErrf("Completions already installed at %s.\n", pkgPath)
 		return false, nil
 	}
 	rc := common.DetectShellRC()

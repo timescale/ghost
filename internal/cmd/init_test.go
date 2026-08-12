@@ -166,6 +166,10 @@ func TestRunSelectedInitSteps_ConfiguresPathBeforeCompletions(t *testing.T) {
 	t.Setenv("PATH", filepath.Join(home, "not-in-path"))
 	t.Setenv("ZDOTDIR", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
+	// Point HOMEBREW_PREFIX at an empty dir so PackageInstalledCompletionPath
+	// doesn't pick up a real brew-installed completion on the dev machine
+	// and skip writing the snippet.
+	t.Setenv("HOMEBREW_PREFIX", t.TempDir())
 
 	executablePath, err := getGhostExecutablePath()
 	if err != nil {
