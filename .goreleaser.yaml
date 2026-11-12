@@ -101,6 +101,12 @@ homebrew_casks:
       owner: timescale
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: timescale
+          name: homebrew-tap
+          branch: main
     homepage: https://ghost.build
     description: |-
       Ghost - The first database designed for agents.
